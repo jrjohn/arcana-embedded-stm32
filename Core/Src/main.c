@@ -22,7 +22,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "App.hpp"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -193,10 +193,14 @@ void SystemClock_Config(void)
 void StartDefaultTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
+
+  /* Initialize C++ application */
+  App_Init();
+
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+    App_Run();
   }
   /* USER CODE END 5 */
 }
