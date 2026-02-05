@@ -36,9 +36,12 @@ void TimeDisplayService::updateTimeString() {
     uint8_t seconds = getSeconds();
     uint16_t ms = getMilliseconds();
 
-    /* Format: HH:MM:SS.mmm */
+    /* Format: HH:MM:SS.mmm (ms is always 0-999) */
     snprintf(timeBuffer_, TIME_BUFFER_SIZE, "%02u:%02u:%02u.%03u",
-             hours, minutes, seconds, ms);
+             static_cast<unsigned>(hours),
+             static_cast<unsigned>(minutes),
+             static_cast<unsigned>(seconds),
+             static_cast<unsigned>(ms % 1000));
 }
 
 void TimeDisplayService::init(Observable<TimerModel>* timerObs) {

@@ -18,8 +18,11 @@ void TimerService::timerCallback(TimerHandle_t xTimer) {
     // Update model
     self->model_.update(self->periodMs_);
 
-    // Publish to observers (async via dispatcher)
-    self->observable.publish(&self->model_);
+    // Publish to observers (async via dispatcher) - check queue space first
+    if (ObservableDispatcher::hasQueueSpace()) {
+        self->observable.publish(&self->model_);
+    }
+    // If queue full, skip this tick (error callback will be triggered by enqueue)
 }
 
 void TimerService::init(uint16_t periodMs) {

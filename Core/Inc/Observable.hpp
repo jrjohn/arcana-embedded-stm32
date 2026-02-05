@@ -27,6 +27,25 @@ constexpr uint8_t DISPATCHER_QUEUE_SIZE = 8;
 constexpr uint16_t DISPATCHER_STACK_SIZE = 128;  /* Reduced from 256 */
 
 /**
+ * @brief Error codes for Observable operations
+ */
+enum class ObservableError : uint8_t {
+    None = 0,
+    QueueFull,          /* Dispatcher queue overflow */
+    QueueNotReady,      /* Dispatcher not started */
+    InvalidModel,       /* Null model pointer */
+    NoObservers,        /* No observers subscribed (not an error, info only) */
+};
+
+/**
+ * @brief Error callback type
+ * @param error Error code
+ * @param observableName Name of the observable that failed
+ * @param context User context
+ */
+using ErrorCallback = void (*)(ObservableError error, const char* observableName, void* context);
+
+/**
  * @brief Base Model class - all models should inherit from this
  */
 class Model {
@@ -132,12 +151,30 @@ public:
     /**
      * @brief Publish to dispatcher queue (asynchronous)
      * @param model Pointer to model
-     * @return true if queued successfully
+     * @return true if queued successfully, false if queue full
      */
     bool publish(T* model);
 
+    /**
+     * @brief Publish from ISR context (interrupt-safe)
+     * @param model Pointer to model
+     * @param pxHigherPriorityTaskWoken Set to pdTRUE if context switch needed
+     * @return true if queued successfully
+     */
+    bool publishFromISR(T* model, BaseType_t* pxHigherPriorityTaskWoken);
+
     uint8_t getObserverCount() const { return count_; }
     const char* getName() const { return name_; }
+};
+
+/**
+ * @brief Statistics for dispatcher operations
+ */
+struct DispatcherStats {
+    uint32_t publishCount = 0;      /* Total publish attempts */
+    uint32_t overflowCount = 0;     /* Queue overflow count */
+    uint32_t dispatchCount = 0;     /* Successfully dispatched */
+    uint8_t queueHighWaterMark = 0; /* Max queue usage */
 };
 
 /**
@@ -149,6 +186,7 @@ public:
         void (*notifyFunc)(void* observable, Model* model);
         void* observable;
         Model* model;
+        const char* observableName;  /* For error reporting */
     };
 
 private:
@@ -160,17 +198,93 @@ private:
     static StackType_t taskStack_[DISPATCHER_STACK_SIZE];
     static TaskHandle_t taskHandle_;
 
+    static ErrorCallback errorCallback_;
+    static void* errorContext_;
+    static DispatcherStats stats_;
+
     static void dispatcherTask(void* pvParameters);
 
 public:
+    /**
+     * @brief Start dispatcher task
+     */
     static void start();
+
+    /**
+     * @brief Enqueue item for dispatch (non-blocking)
+     * @param item Dispatch item
+     * @return true if enqueued successfully
+     */
     static bool enqueue(const DispatchItem& item);
+
+    /**
+     * @brief Enqueue item from ISR context
+     * @param item Dispatch item
+     * @param pxHigherPriorityTaskWoken Set to pdTRUE if context switch needed
+     * @return true if enqueued successfully
+     */
+    static bool enqueueFromISR(const DispatchItem& item, BaseType_t* pxHigherPriorityTaskWoken);
+
+    /**
+     * @brief Set error callback for overflow notifications
+     * @param callback Error callback function
+     * @param context User context
+     */
+    static void setErrorCallback(ErrorCallback callback, void* context = nullptr) {
+        errorCallback_ = callback;
+        errorContext_ = context;
+    }
+
+    /**
+     * @brief Get dispatcher statistics
+     * @return Reference to stats structure
+     */
+    static const DispatcherStats& getStats() { return stats_; }
+
+    /**
+     * @brief Reset statistics
+     */
+    static void resetStats() { stats_ = DispatcherStats{}; }
+
+    /**
+     * @brief Get current queue space available
+     * @return Number of free slots
+     */
+    static uint8_t getQueueSpaceAvailable() {
+        if (queue_ == nullptr) return 0;
+        return static_cast<uint8_t>(uxQueueSpacesAvailable(queue_));
+    }
+
+    /**
+     * @brief Check if queue has space
+     * @return true if at least one slot available
+     */
+    static bool hasQueueSpace() { return getQueueSpaceAvailable() > 0; }
+
     static QueueHandle_t getQueue() { return queue_; }
 };
 
 /* Template implementation for publish */
 template<typename T>
 bool Observable<T>::publish(T* model) {
+    if (model == nullptr) return true;  /* No-op for null model */
+    if (count_ == 0) return true;       /* No observers, nothing to do */
+    if (ObservableDispatcher::getQueue() == nullptr) return false;
+
+    ObservableDispatcher::DispatchItem item;
+    item.notifyFunc = [](void* obs, Model* m) {
+        static_cast<Observable<T>*>(obs)->notify(static_cast<T*>(m));
+    };
+    item.observable = this;
+    item.model = model;
+    item.observableName = name_;
+
+    return ObservableDispatcher::enqueue(item);
+}
+
+/* Template implementation for publishFromISR */
+template<typename T>
+bool Observable<T>::publishFromISR(T* model, BaseType_t* pxHigherPriorityTaskWoken) {
     if (model == nullptr || count_ == 0) return true;
     if (ObservableDispatcher::getQueue() == nullptr) return false;
 
@@ -180,8 +294,9 @@ bool Observable<T>::publish(T* model) {
     };
     item.observable = this;
     item.model = model;
+    item.observableName = name_;
 
-    return ObservableDispatcher::enqueue(item);
+    return ObservableDispatcher::enqueueFromISR(item, pxHigherPriorityTaskWoken);
 }
 
 } // namespace arcana
