@@ -47,10 +47,28 @@ uint32_t App_GetPublishCount(void);
 uint32_t App_GetDispatchCount(void);
 
 /**
- * @brief Get queue high water mark
+ * @brief Get queue high water mark (normal priority)
  * @return Peak queue usage
  */
 uint8_t App_GetQueueHighWaterMark(void);
+
+/**
+ * @brief Get high priority queue space available
+ * @return Number of free slots (0-4)
+ */
+uint8_t App_GetHighQueueSpaceAvailable(void);
+
+/**
+ * @brief Get high priority publish count
+ * @return Total high priority publish attempts
+ */
+uint32_t App_GetHighPublishCount(void);
+
+/**
+ * @brief Get high priority dispatch count
+ * @return Successfully dispatched high priority events
+ */
+uint32_t App_GetHighDispatchCount(void);
 
 #ifdef __cplusplus
 }

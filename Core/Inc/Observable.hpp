@@ -23,8 +23,17 @@ namespace arcana {
 
 /* Configuration */
 constexpr uint8_t MAX_OBSERVERS = 4;
-constexpr uint8_t DISPATCHER_QUEUE_SIZE = 8;
-constexpr uint16_t DISPATCHER_STACK_SIZE = 128;  /* Reduced from 256 */
+constexpr uint8_t DISPATCHER_QUEUE_SIZE_NORMAL = 8;   /* Normal priority queue */
+constexpr uint8_t DISPATCHER_QUEUE_SIZE_HIGH = 4;     /* High priority queue */
+constexpr uint16_t DISPATCHER_STACK_SIZE = 128;       /* Reduced from 256 */
+
+/**
+ * @brief Event priority levels
+ */
+enum class Priority : uint8_t {
+    Normal = 0,   /* Regular events, processed after high priority */
+    High = 1,     /* Critical events, processed first */
+};
 
 /**
  * @brief Error codes for Observable operations
@@ -149,19 +158,34 @@ public:
     }
 
     /**
-     * @brief Publish to dispatcher queue (asynchronous)
+     * @brief Publish to dispatcher queue (normal priority, asynchronous)
      * @param model Pointer to model
      * @return true if queued successfully, false if queue full
      */
     bool publish(T* model);
 
     /**
-     * @brief Publish from ISR context (interrupt-safe)
+     * @brief Publish to high priority queue (asynchronous)
+     * @param model Pointer to model
+     * @return true if queued successfully, false if queue full
+     */
+    bool publishHighPriority(T* model);
+
+    /**
+     * @brief Publish from ISR context (normal priority, interrupt-safe)
      * @param model Pointer to model
      * @param pxHigherPriorityTaskWoken Set to pdTRUE if context switch needed
      * @return true if queued successfully
      */
     bool publishFromISR(T* model, BaseType_t* pxHigherPriorityTaskWoken);
+
+    /**
+     * @brief Publish from ISR context (high priority, interrupt-safe)
+     * @param model Pointer to model
+     * @param pxHigherPriorityTaskWoken Set to pdTRUE if context switch needed
+     * @return true if queued successfully
+     */
+    bool publishHighPriorityFromISR(T* model, BaseType_t* pxHigherPriorityTaskWoken);
 
     uint8_t getObserverCount() const { return count_; }
     const char* getName() const { return name_; }
@@ -171,14 +195,18 @@ public:
  * @brief Statistics for dispatcher operations
  */
 struct DispatcherStats {
-    uint32_t publishCount = 0;      /* Total publish attempts */
-    uint32_t overflowCount = 0;     /* Queue overflow count */
-    uint32_t dispatchCount = 0;     /* Successfully dispatched */
-    uint8_t queueHighWaterMark = 0; /* Max queue usage */
+    uint32_t publishCount = 0;            /* Total publish attempts (normal) */
+    uint32_t publishHighCount = 0;        /* Total publish attempts (high priority) */
+    uint32_t overflowCount = 0;           /* Normal queue overflow count */
+    uint32_t overflowHighCount = 0;       /* High priority queue overflow count */
+    uint32_t dispatchCount = 0;           /* Successfully dispatched (normal) */
+    uint32_t dispatchHighCount = 0;       /* Successfully dispatched (high priority) */
+    uint8_t queueHighWaterMark = 0;       /* Max normal queue usage */
+    uint8_t queueHighHighWaterMark = 0;   /* Max high priority queue usage */
 };
 
 /**
- * @brief Dispatcher for async observable processing
+ * @brief Dispatcher for async observable processing with priority queues
  */
 class ObservableDispatcher {
 public:
@@ -190,9 +218,15 @@ public:
     };
 
 private:
+    /* Normal priority queue */
     static StaticQueue_t queueBuffer_;
-    static uint8_t queueStorage_[DISPATCHER_QUEUE_SIZE * sizeof(DispatchItem)];
+    static uint8_t queueStorage_[DISPATCHER_QUEUE_SIZE_NORMAL * sizeof(DispatchItem)];
     static QueueHandle_t queue_;
+
+    /* High priority queue */
+    static StaticQueue_t queueHighBuffer_;
+    static uint8_t queueHighStorage_[DISPATCHER_QUEUE_SIZE_HIGH * sizeof(DispatchItem)];
+    static QueueHandle_t queueHigh_;
 
     static StaticTask_t taskBuffer_;
     static StackType_t taskStack_[DISPATCHER_STACK_SIZE];
@@ -211,19 +245,34 @@ public:
     static void start();
 
     /**
-     * @brief Enqueue item for dispatch (non-blocking)
+     * @brief Enqueue item for dispatch (normal priority, non-blocking)
      * @param item Dispatch item
      * @return true if enqueued successfully
      */
     static bool enqueue(const DispatchItem& item);
 
     /**
-     * @brief Enqueue item from ISR context
+     * @brief Enqueue item with high priority (non-blocking)
+     * @param item Dispatch item
+     * @return true if enqueued successfully
+     */
+    static bool enqueueHighPriority(const DispatchItem& item);
+
+    /**
+     * @brief Enqueue item from ISR context (normal priority)
      * @param item Dispatch item
      * @param pxHigherPriorityTaskWoken Set to pdTRUE if context switch needed
      * @return true if enqueued successfully
      */
     static bool enqueueFromISR(const DispatchItem& item, BaseType_t* pxHigherPriorityTaskWoken);
+
+    /**
+     * @brief Enqueue item from ISR context (high priority)
+     * @param item Dispatch item
+     * @param pxHigherPriorityTaskWoken Set to pdTRUE if context switch needed
+     * @return true if enqueued successfully
+     */
+    static bool enqueueHighPriorityFromISR(const DispatchItem& item, BaseType_t* pxHigherPriorityTaskWoken);
 
     /**
      * @brief Set error callback for overflow notifications
@@ -247,7 +296,7 @@ public:
     static void resetStats() { stats_ = DispatcherStats{}; }
 
     /**
-     * @brief Get current queue space available
+     * @brief Get current normal queue space available
      * @return Number of free slots
      */
     static uint8_t getQueueSpaceAvailable() {
@@ -256,15 +305,31 @@ public:
     }
 
     /**
-     * @brief Check if queue has space
+     * @brief Get current high priority queue space available
+     * @return Number of free slots
+     */
+    static uint8_t getHighQueueSpaceAvailable() {
+        if (queueHigh_ == nullptr) return 0;
+        return static_cast<uint8_t>(uxQueueSpacesAvailable(queueHigh_));
+    }
+
+    /**
+     * @brief Check if normal queue has space
      * @return true if at least one slot available
      */
     static bool hasQueueSpace() { return getQueueSpaceAvailable() > 0; }
 
+    /**
+     * @brief Check if high priority queue has space
+     * @return true if at least one slot available
+     */
+    static bool hasHighQueueSpace() { return getHighQueueSpaceAvailable() > 0; }
+
     static QueueHandle_t getQueue() { return queue_; }
+    static QueueHandle_t getHighQueue() { return queueHigh_; }
 };
 
-/* Template implementation for publish */
+/* Template implementation for publish (normal priority) */
 template<typename T>
 bool Observable<T>::publish(T* model) {
     if (model == nullptr) return true;  /* No-op for null model */
@@ -282,7 +347,25 @@ bool Observable<T>::publish(T* model) {
     return ObservableDispatcher::enqueue(item);
 }
 
-/* Template implementation for publishFromISR */
+/* Template implementation for publishHighPriority */
+template<typename T>
+bool Observable<T>::publishHighPriority(T* model) {
+    if (model == nullptr) return true;  /* No-op for null model */
+    if (count_ == 0) return true;       /* No observers, nothing to do */
+    if (ObservableDispatcher::getHighQueue() == nullptr) return false;
+
+    ObservableDispatcher::DispatchItem item;
+    item.notifyFunc = [](void* obs, Model* m) {
+        static_cast<Observable<T>*>(obs)->notify(static_cast<T*>(m));
+    };
+    item.observable = this;
+    item.model = model;
+    item.observableName = name_;
+
+    return ObservableDispatcher::enqueueHighPriority(item);
+}
+
+/* Template implementation for publishFromISR (normal priority) */
 template<typename T>
 bool Observable<T>::publishFromISR(T* model, BaseType_t* pxHigherPriorityTaskWoken) {
     if (model == nullptr || count_ == 0) return true;
@@ -297,6 +380,23 @@ bool Observable<T>::publishFromISR(T* model, BaseType_t* pxHigherPriorityTaskWok
     item.observableName = name_;
 
     return ObservableDispatcher::enqueueFromISR(item, pxHigherPriorityTaskWoken);
+}
+
+/* Template implementation for publishHighPriorityFromISR */
+template<typename T>
+bool Observable<T>::publishHighPriorityFromISR(T* model, BaseType_t* pxHigherPriorityTaskWoken) {
+    if (model == nullptr || count_ == 0) return true;
+    if (ObservableDispatcher::getHighQueue() == nullptr) return false;
+
+    ObservableDispatcher::DispatchItem item;
+    item.notifyFunc = [](void* obs, Model* m) {
+        static_cast<Observable<T>*>(obs)->notify(static_cast<T*>(m));
+    };
+    item.observable = this;
+    item.model = model;
+    item.observableName = name_;
+
+    return ObservableDispatcher::enqueueHighPriorityFromISR(item, pxHigherPriorityTaskWoken);
 }
 
 } // namespace arcana

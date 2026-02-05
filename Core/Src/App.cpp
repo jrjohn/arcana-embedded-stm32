@@ -92,9 +92,33 @@ extern "C" uint32_t App_GetDispatchCount(void) {
 }
 
 /**
- * @brief Get queue high water mark
+ * @brief Get queue high water mark (normal priority)
  * @return Peak queue usage
  */
 extern "C" uint8_t App_GetQueueHighWaterMark(void) {
     return ObservableDispatcher::getStats().queueHighWaterMark;
+}
+
+/**
+ * @brief Get high priority queue space available
+ * @return Number of free slots (0-4)
+ */
+extern "C" uint8_t App_GetHighQueueSpaceAvailable(void) {
+    return ObservableDispatcher::getHighQueueSpaceAvailable();
+}
+
+/**
+ * @brief Get high priority publish count
+ * @return Total high priority publish attempts
+ */
+extern "C" uint32_t App_GetHighPublishCount(void) {
+    return ObservableDispatcher::getStats().publishHighCount;
+}
+
+/**
+ * @brief Get high priority dispatch count
+ * @return Successfully dispatched high priority events
+ */
+extern "C" uint32_t App_GetHighDispatchCount(void) {
+    return ObservableDispatcher::getStats().dispatchHighCount;
 }
