@@ -1,0 +1,14 @@
+# Build output
+Debug/
+Release/
+
+# IDE metadata
+.metadata/
+.settings/
+
+# macOS
+.DS_Store
+
+# Backup files
+*.bak
+*~
