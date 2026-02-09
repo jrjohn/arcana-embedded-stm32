@@ -1,17 +1,17 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Architecture-Observable_Pattern-gold?style=for-the-badge" alt="Architecture">
+  <img src="https://img.shields.io/badge/Architecture-Layered_Embedded-gold?style=for-the-badge" alt="Architecture">
   <img src="https://img.shields.io/badge/MCU-STM32F051C8-03234B?style=for-the-badge&logo=stmicroelectronics" alt="STM32">
   <img src="https://img.shields.io/badge/RTOS-FreeRTOS-00A86B?style=for-the-badge" alt="FreeRTOS">
   <img src="https://img.shields.io/badge/Language-C++14-00599C?style=for-the-badge&logo=cplusplus" alt="C++">
-  <img src="https://img.shields.io/badge/RAM-53%25_Used-success?style=for-the-badge" alt="RAM">
-  <img src="https://img.shields.io/badge/Flash-26%25_Used-success?style=for-the-badge" alt="Flash">
+  <img src="https://img.shields.io/badge/RAM-67%25_Used-yellow?style=for-the-badge" alt="RAM">
+  <img src="https://img.shields.io/badge/Flash-34%25_Used-success?style=for-the-badge" alt="Flash">
   <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License">
 </p>
 
 <h1 align="center">Arcana Embedded STM32</h1>
 
 <p align="center">
-  <strong>Lightweight Observable Pattern implementation for resource-constrained STM32 microcontrollers with FreeRTOS</strong>
+  <strong>Layered embedded architecture with Observable Pattern, Command Pattern, and Wire Protocol for resource-constrained STM32 microcontrollers with FreeRTOS</strong>
 </p>
 
 <p align="center">
@@ -29,16 +29,16 @@
 
 | Category | Score | Details |
 |----------|-------|---------|
-| **Memory Efficiency** | ⭐⭐⭐⭐⭐ 9.5/10 | Static allocation, zero-copy, ~55% RAM usage |
+| **Memory Efficiency** | ⭐⭐⭐⭐⭐ 9.5/10 | Static allocation, zero-copy, 67% RAM / 34% Flash |
+| **Layered Design** | ⭐⭐⭐⭐⭐ 9.5/10 | Observable → Command → Protocol, clear separation |
+| **Wire Compatibility** | ⭐⭐⭐⭐⭐ 9.5/10 | Same frame format as ESP32, CRC-16 integrity |
 | **Error Handling** | ⭐⭐⭐⭐⭐ 9.5/10 | Queue overflow detection, error callbacks, statistics |
 | **Priority System** | ⭐⭐⭐⭐⭐ 9.5/10 | Dual queue (High/Normal), priority-first processing |
-| **Code Quality** | ⭐⭐⭐⭐⭐ 9.0/10 | Type-safe templates, SOLID principles |
-| **Scalability** | ⭐⭐⭐⭐☆ 8.5/10 | Easy to add new observers/services |
+| **Code Quality** | ⭐⭐⭐⭐⭐ 9.0/10 | Type-safe templates, SOLID principles, header-only codecs |
+| **Extensibility** | ⭐⭐⭐⭐⭐ 9.0/10 | ICommand interface, CommandRegistry, transport-agnostic |
 | **Performance** | ⭐⭐⭐⭐⭐ 9.0/10 | ~22μs event latency, non-blocking |
-| **Maintainability** | ⭐⭐⭐⭐⭐ 9.0/10 | Decoupled components, clear interfaces |
 | **ISR Safety** | ⭐⭐⭐⭐⭐ 9.0/10 | publishFromISR(), ISR-safe queue operations |
-| **Documentation** | ⭐⭐⭐⭐☆ 8.5/10 | Comprehensive README, code comments |
-| **Overall** | **⭐⭐⭐⭐⭐ 9.1/10** | Production-ready for embedded systems |
+| **Overall** | **⭐⭐⭐⭐⭐ 9.3/10** | Production-ready layered embedded architecture |
 
 ### Rank: 🏆 A-Tier Embedded Architecture
 
@@ -53,15 +53,15 @@ C-Tier │ ░░░░░░░░░░░░░░░░░░░░ │ Basi
 
 | ✅ Strengths | ❌ Weaknesses |
 |-------------|---------------|
-| **Zero-Copy Design** - No memory allocation during publish | **Fixed Observer Limit** - Max 4 observers per observable |
-| **Full Static Allocation** - Predictable memory, no fragmentation | **Single Dispatcher Task** - Shared processing thread |
-| **Dual Priority Queues** - High priority events processed first | **Pointer Lifetime** - Model must outlive dispatch |
-| **Type-Safe Templates** - Compile-time type checking | **No Event Filtering** - All observers get all events |
-| **Error Handling** - Queue overflow detection & callbacks | **No Persistence** - Lost events on queue overflow |
-| **ISR-Safe API** - publishFromISR() for interrupt contexts | **C++ Only** - No pure C API |
-| **Runtime Statistics** - Publish/dispatch counts, high water mark | **Fixed Queue Sizes** - 8 normal + 4 high priority |
-| **Thread-Safe** - FreeRTOS queue synchronization | |
-| **Low Latency** - ~22μs event delivery | |
+| **3-Layer Architecture** - Observable → Command → Protocol | **Fixed Observer Limit** - Max 4 observers per observable |
+| **Wire-Compatible with ESP32** - Same frame format + CRC-16 | **No Transport Layer Yet** - UART/SPI/BLE pending |
+| **Full Static Allocation** - Predictable memory, no fragmentation | **No Encryption** - By design (Cortex-M0 constraints) |
+| **Transport-Agnostic Protocol** - Ready for UART/SPI/BLE | **Single Dispatcher Task** - Shared processing thread |
+| **ICommand Interface** - Clean command registration + routing | **No Retransmission** - No ARQ / flow control |
+| **Header-Only Codecs** - Zero RAM cost, linker strips unused | **Fixed Queue Sizes** - 8 normal + 4 high priority |
+| **CRC-16 Integrity** - Polynomial 0x8408 matches esp_crc16_le | **No Event Filtering** - All observers get all events |
+| **ISR-Safe API** - publishFromISR() for interrupt contexts | |
+| **Runtime Statistics** - Publish/dispatch counts, high water mark | |
 
 ### Risk Mitigation
 
@@ -72,49 +72,106 @@ C-Tier │ ░░░░░░░░░░░░░░░░░░░░ │ Basi
 | ISR Publish Failure | `publishFromISR()` with wake flag | ✅ Implemented |
 | Memory Corruption | Static allocation, no malloc | ✅ By Design |
 | Race Conditions | FreeRTOS queue primitives | ✅ By Design |
+| Frame Corruption | CRC-16 verification on deframe | ✅ Implemented |
+| Invalid Commands | CommandStatus error codes, param length validation | ✅ Implemented |
 | Debug Visibility | `getStats()`, high water mark | ✅ Implemented |
 
 ---
 
 ## Architecture
 
-### Observable Pattern Overview (Dual Priority Queue)
+### System Overview (3-Layer Architecture)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        APPLICATION LAYER                         │
-├─────────────────────────────────────────────────────────────────┤
+│                     APPLICATION LAYER                            │
 │                                                                  │
-│   ┌──────────────┐    ┌──────────────┐    ┌──────────────┐     │
-│   │ TimerService │    │CounterService│    │TimeDisplaySvc│     │
-│   │              │    │              │    │              │     │
-│   │  Observable  │    │   Observer   │    │   Observer   │     │
-│   └──────┬───────┘    └──────▲───────┘    └──────▲───────┘     │
-│          │                   │                   │              │
-│          │ publish()         │   subscribe()     │              │
-│          │ publishHighPriority()                 │              │
-│          ▼                   │                   │              │
+│   ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐ │
+│   │ TimerService │  │CounterService│  │  TimeDisplayService  │ │
+│   │  (publisher) │  │  (observer)  │  │     (observer)       │ │
+│   └──────┬───────┘  └──────▲───────┘  └──────────▲───────────┘ │
+│          │ publish()       │ subscribe()         │              │
+├──────────┼─────────────────┼─────────────────────┼──────────────┤
+│          ▼                 │                     │              │
 │   ┌────────────────────────────────────────────────────────┐   │
-│   │              DUAL PRIORITY QUEUE SYSTEM                 │   │
-│   │  ┌─────────────────┐    ┌─────────────────────────┐    │   │
-│   │  │ HIGH PRIORITY   │ >> │ NORMAL PRIORITY         │    │   │
-│   │  │   (4 items)     │    │   (8 items)             │    │   │
-│   │  └────────┬────────┘    └────────────┬────────────┘    │   │
-│   │           │  processed first         │                  │   │
-│   └───────────┼──────────────────────────┼──────────────────┘   │
-│               └────────────┬─────────────┘                      │
-│                            ▼                                    │
-│   ┌──────────────────────────────────────────────────────┐     │
-│   │              DISPATCHER TASK (128 words)              │     │
-│   │         High → Normal → notify() → all observers      │     │
-│   └──────────────────────────────────────────────────────┘     │
+│   │         OBSERVABLE LAYER (Dual Priority Queue)          │   │
+│   │  ┌──────────────┐          ┌────────────────────────┐  │   │
+│   │  │ HIGH (4 slots)│    >>   │ NORMAL (8 slots)       │  │   │
+│   │  └──────┬───────┘          └───────────┬────────────┘  │   │
+│   │         └──────────┬───────────────────┘               │   │
+│   │                    ▼                                    │   │
+│   │          Dispatcher Task (128 words)                    │   │
+│   └────────────────────────────────────────────────────────┘   │
 │                                                                  │
-├─────────────────────────────────────────────────────────────────┤
-│                         FreeRTOS KERNEL                          │
-├─────────────────────────────────────────────────────────────────┤
-│                      STM32F051C8 HARDWARE                        │
-│                     (8KB RAM / 64KB Flash)                       │
-└─────────────────────────────────────────────────────────────────┘
+├──────────────────────────────────────────────────────────────────┤
+│                       COMMAND LAYER                               │
+│                                                                  │
+│   ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐ │
+│   │CommandService│─▶│  Dispatcher  │─▶│  CommandRegistry     │ │
+│   │  execute()   │  │   route()    │  │  lookup() → ICommand │ │
+│   └──────────────┘  └──────────────┘  └──────────────────────┘ │
+│          │                                       │              │
+│          │ CommandResponseModel                   │ execute()    │
+│          ▼ (via Observable)                       ▼              │
+│   ┌──────────────────────────────────────────────────────────┐ │
+│   │  ICommand implementations (PingCommand, GetCounter...)   │ │
+│   └──────────────────────────────────────────────────────────┘ │
+│                                                                  │
+├──────────────────────────────────────────────────────────────────┤
+│                      PROTOCOL LAYER                              │
+│                                                                  │
+│   ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐ │
+│   │ CommandCodec │─▶│  FrameCodec  │─▶│      Crc16           │ │
+│   │ decode/encode│  │ frame/deframe│  │  polynomial 0x8408   │ │
+│   └──────────────┘  └──────────────┘  └──────────────────────┘ │
+│                                                                  │
+├──────────────────────────────────────────────────────────────────┤
+│              TRANSPORT (Future: UART / SPI / BLE)                │
+├──────────────────────────────────────────────────────────────────┤
+│                       FreeRTOS KERNEL                             │
+├──────────────────────────────────────────────────────────────────┤
+│                    STM32F051C8 HARDWARE                           │
+│                   (8KB RAM / 64KB Flash)                         │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Wire Protocol Data Flow
+
+```
+Transport (UART/SPI/BLE)
+    │ raw bytes
+    ▼
+FrameCodec::deframe()     ← verify magic 0xAC DA, version, CRC-16
+    │ payload bytes
+    ▼
+CommandCodec::decodeRequest()  ← binary deserialize
+    │ CommandRequest {cluster, commandId, params[]}
+    ▼
+CommandService::execute()
+    │ CommandResponseModel (via Observable)
+    ▼
+CommandCodec::encodeResponse()  ← binary serialize
+    │ payload bytes
+    ▼
+FrameCodec::frame()       ← add header + CRC-16
+    │ raw bytes
+    ▼
+Transport (UART/SPI/BLE)
+```
+
+### Wire Frame Format
+
+```
+┌────────┬────────┬─────┬───────┬─────┬───────────┬───────────┬─────┐
+│ Magic  │ Magic  │ Ver │ Flags │ SID │ Len (LE)  │ Payload   │ CRC │
+│ 0xAC   │ 0xDA   │ 0x01│ bit0  │     │ 2 bytes   │ N bytes   │ (LE)│
+│        │        │     │ =FIN  │     │           │           │ 2B  │
+└────────┴────────┴─────┴───────┴─────┴───────────┴───────────┴─────┘
+ ◄──────────── 7-byte header ────────────►         ◄── 2B ──►
+                    Overhead: 9 bytes total
+
+Request payload:  [cluster:1][commandId:1][paramsLen:1][params:0-8]  (max 20B frame)
+Response payload: [cluster:1][commandId:1][status:1][dataLen:1][data:0-16]  (max 29B frame)
 ```
 
 ### Event Flow
@@ -145,51 +202,6 @@ Timer Interrupt (100ms)
           └─────────────────┘      └─────────────────┘      └─────────────────┘
 ```
 
-### Class Diagram
-
-```
-┌─────────────────────────────────────┐
-│            Model (base)             │
-├─────────────────────────────────────┤
-│ + timestamp: uint32_t               │
-│ + type: uint8_t                     │
-├─────────────────────────────────────┤
-│ + updateTimestamp()                 │
-└──────────────────┬──────────────────┘
-                   │ extends
-       ┌───────────┴───────────┐
-       ▼                       ▼
-┌─────────────────┐    ┌─────────────────┐
-│   TimerModel    │    │  CounterModel   │
-├─────────────────┤    ├─────────────────┤
-│ + tickCount     │    │ + count         │
-│ + periodMs      │    └─────────────────┘
-└─────────────────┘
-
-┌─────────────────────────────────────┐
-│       Observable<T : Model>         │
-├─────────────────────────────────────┤
-│ - observers_[4]: Observer           │
-│ - count_: uint8_t                   │
-│ - name_: const char*                │
-├─────────────────────────────────────┤
-│ + subscribe(callback, context)      │
-│ + unsubscribe(callback)             │
-│ + publish(model) → async            │
-│ + notify(model) → sync              │
-└─────────────────────────────────────┘
-
-┌─────────────────────────────────────┐
-│       ObservableDispatcher          │
-├─────────────────────────────────────┤
-│ - queue_: QueueHandle_t             │
-│ - taskHandle_: TaskHandle_t         │
-├─────────────────────────────────────┤
-│ + start()                           │
-│ + enqueue(item)                     │
-└─────────────────────────────────────┘
-```
-
 ---
 
 ## Features
@@ -204,9 +216,12 @@ Timer Interrupt (100ms)
 | 🔄 **Async Dispatch** | Non-blocking publish via FreeRTOS queue |
 | 🧵 **Thread-Safe** | FreeRTOS primitives for synchronization |
 | 📊 **Minimal Overhead** | ~22μs event latency, 2% C++ overhead |
-| 🛡️ **Error Handling** | Queue overflow detection, error callbacks |
+| 🛡️ **Error Handling** | Queue overflow detection, error callbacks, command status codes |
 | 📈 **Runtime Statistics** | Publish/dispatch counts, high water mark |
 | ⚡ **ISR-Safe API** | `publishFromISR()` for interrupt contexts |
+| 🔌 **Command Pattern** | ICommand interface + registry + cluster-based routing |
+| 📡 **Wire Protocol** | CRC-16 framed binary protocol, ESP32-compatible |
+| 🔗 **Transport-Agnostic** | Protocol layer ready for UART/SPI/BLE |
 
 ### Memory Features
 
@@ -216,54 +231,66 @@ Timer Interrupt (100ms)
 | Normal Priority Queue | 8 items |
 | High Priority Queue | 4 items |
 | Dispatcher Stack | 128 words (512 bytes) |
-| Total RAM Usage | ~4.5KB / 8KB (55%) |
-| Total Flash Usage | ~17KB / 64KB (27%) |
+| Max Registered Commands | 8 |
+| Max Request Frame | 20 bytes |
+| Max Response Frame | 29 bytes |
+| Total RAM Usage | ~5.5KB / 8KB (67%) |
+| Total Flash Usage | ~22KB / 64KB (34%) |
 
 ---
 
 ## Memory Usage
 
-### RAM Distribution
+### `arm-none-eabi-size` Output
+
+```
+   text    data     bss     dec     hex  filename
+  21932     132    5380   27444    6b34  arcana-embedded-stm32.elf
+```
+
+### RAM Distribution (data + bss = 5,512 bytes)
 
 ```
 ┌────────────────────────────────────────────────────────┐
 │                    RAM: 8,192 bytes                    │
 ├────────────────────────────────────────────────────────┤
-│ ████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░ │
-│ ◄────── 53% Used ──────►◄────── 47% Free ──────►      │
+│ █████████████████████████████████░░░░░░░░░░░░░░░░░░░░ │
+│ ◄──────── 67% Used ────────►◄──── 33% Free ────►      │
 ├────────────────────────────────────────────────────────┤
 │                                                        │
 │  FreeRTOS Heap     ████████░░░░░░░░░░  1,536 bytes    │
 │  Dispatcher        ████░░░░░░░░░░░░░░    788 bytes    │
 │  FreeRTOS Core     ██████░░░░░░░░░░░░  1,000 bytes    │
+│  Command System    ███░░░░░░░░░░░░░░░    500 bytes    │
 │  Services          ██░░░░░░░░░░░░░░░░    200 bytes    │
 │  System/HAL        █░░░░░░░░░░░░░░░░░    100 bytes    │
 │  Reserved Stack    ███░░░░░░░░░░░░░░░    512 bytes    │
-│  Reserved Heap     █░░░░░░░░░░░░░░░░░    256 bytes    │
+│  .data             █░░░░░░░░░░░░░░░░░    132 bytes    │
 │                                                        │
-│  TOTAL USED:       4,356 bytes (53.2%)                │
-│  FREE:             3,836 bytes (46.8%)                │
+│  TOTAL USED:       5,512 bytes (67.3%)                │
+│  FREE:             2,680 bytes (32.7%)                │
 └────────────────────────────────────────────────────────┘
 ```
 
-### Flash Distribution
+### Flash Distribution (text + data = 22,064 bytes)
 
 ```
 ┌────────────────────────────────────────────────────────┐
 │                   Flash: 65,536 bytes                  │
 ├────────────────────────────────────────────────────────┤
-│ ████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │
-│ ◄─ 26% ─►◄─────────── 74% Free ───────────►           │
+│ █████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │
+│ ◄──── 34% ────►◄────────── 66% Free ──────────►       │
 ├────────────────────────────────────────────────────────┤
 │                                                        │
-│  .text (code)      ████████░░░░░░░░░░  16,644 bytes   │
-│  .rodata           █░░░░░░░░░░░░░░░░░     228 bytes   │
-│  .data             ░░░░░░░░░░░░░░░░░░      96 bytes   │
+│  .text (code)      █████████████░░░░░  21,932 bytes   │
+│  .data             ░░░░░░░░░░░░░░░░░░     132 bytes   │
 │                                                        │
-│  TOTAL USED:       16,968 bytes (25.9%)               │
-│  FREE:             48,568 bytes (74.1%)               │
+│  TOTAL USED:       22,064 bytes (33.7%)               │
+│  FREE:             43,472 bytes (66.3%)               │
 └────────────────────────────────────────────────────────┘
 ```
+
+> **Note:** Protocol layer (Crc16, FrameCodec, CommandCodec) is compiled but currently stripped by `--gc-sections` since no transport calls it yet. Expect ~530 bytes Flash increase when wired to UART/SPI/BLE.
 
 ---
 
@@ -299,25 +326,38 @@ git clone https://github.com/jrjohn/arcana-embedded-stm32.git
 arcana-embedded-stm32/
 ├── Core/
 │   ├── Inc/
-│   │   ├── Observable.hpp        # Observable pattern core
-│   │   ├── Models.hpp            # Model definitions
-│   │   ├── TimerService.hpp      # Timer service (publisher)
-│   │   ├── CounterService.hpp    # Counter service (observer)
-│   │   ├── TimeDisplayService.hpp# Time display (observer)
-│   │   ├── App.hpp               # Application interface
-│   │   └── FreeRTOSConfig.h      # RTOS configuration
+│   │   ├── Observable.hpp          # Observable pattern core (dual priority queue)
+│   │   ├── Models.hpp              # Model definitions (Timer, Counter)
+│   │   ├── CommandTypes.hpp        # Cluster, CommandKey, CommandRequest, CommandResponseModel
+│   │   ├── ICommand.hpp            # ICommand interface
+│   │   ├── CommandRegistry.hpp     # Command lookup registry (max 8 commands)
+│   │   ├── CommandDispatcher.hpp   # Cluster-based command routing
+│   │   ├── CommandService.hpp      # High-level execute() / executeSync()
+│   │   ├── Commands/               # ICommand implementations (Ping, GetCounter)
+│   │   ├── Crc16.hpp              # CRC-16 (header-only, polynomial 0x8408)
+│   │   ├── FrameCodec.hpp         # Frame codec (header-only, magic 0xAC DA)
+│   │   ├── CommandCodec.hpp       # Binary encode/decode for wire protocol
+│   │   ├── TimerService.hpp       # Timer service (publisher)
+│   │   ├── CounterService.hpp     # Counter service (observer)
+│   │   ├── TimeDisplayService.hpp # Time display (observer)
+│   │   ├── App.hpp                # Application interface
+│   │   └── FreeRTOSConfig.h       # RTOS configuration
 │   ├── Src/
-│   │   ├── Observable.cpp        # Dispatcher implementation
-│   │   ├── TimerService.cpp      # Timer implementation
-│   │   ├── CounterService.cpp    # Counter implementation
-│   │   ├── TimeDisplayService.cpp# Time display implementation
-│   │   ├── App.cpp               # Application entry point
-│   │   └── main.c                # System initialization
+│   │   ├── Observable.cpp         # Dispatcher implementation
+│   │   ├── CommandCodec.cpp       # CommandCodec implementation
+│   │   ├── CommandDispatcher.cpp  # Command routing implementation
+│   │   ├── CommandRegistry.cpp    # Registry implementation
+│   │   ├── CommandService.cpp     # Service implementation
+│   │   ├── TimerService.cpp       # Timer implementation
+│   │   ├── CounterService.cpp     # Counter implementation
+│   │   ├── TimeDisplayService.cpp # Time display implementation
+│   │   ├── App.cpp                # Application entry point
+│   │   └── main.c                 # System initialization
 │   └── Startup/
 │       └── startup_stm32f051c8tx.s
-├── Drivers/                      # STM32 HAL drivers
-├── Middlewares/                  # FreeRTOS
-├── STM32F051C8TX_FLASH.ld       # Linker script
+├── Drivers/                        # STM32 HAL drivers
+├── Middlewares/                    # FreeRTOS
+├── STM32F051C8TX_FLASH.ld         # Linker script
 └── README.md
 ```
 
@@ -396,61 +436,95 @@ public:
 ```cpp
 namespace arcana {
 
-// Error types
-enum class ObservableError : uint8_t {
-    None = 0,
-    QueueFull,       // Queue overflow
-    QueueNotReady,   // Dispatcher not started
-    InvalidModel,    // Null model pointer
-    NoObservers,     // No subscribers (info only)
-};
-
-// Error callback signature
-using ErrorCallback = void (*)(ObservableError error, const char* name, void* ctx);
-
-// Statistics structure (dual queue)
-struct DispatcherStats {
-    uint32_t publishCount;           // Normal priority publish attempts
-    uint32_t publishHighCount;       // High priority publish attempts
-    uint32_t overflowCount;          // Normal queue overflow count
-    uint32_t overflowHighCount;      // High priority queue overflow count
-    uint32_t dispatchCount;          // Normal priority dispatched
-    uint32_t dispatchHighCount;      // High priority dispatched
-    uint8_t queueHighWaterMark;      // Peak normal queue usage
-    uint8_t queueHighHighWaterMark;  // Peak high priority queue usage
-};
-
 class ObservableDispatcher {
 public:
-    // Start dispatcher task (call once at init)
     static void start();
-
-    // Enqueue event (normal priority)
     static bool enqueue(const DispatchItem& item);
-
-    // Enqueue event (high priority - processed first)
     static bool enqueueHighPriority(const DispatchItem& item);
-
-    // ISR-safe enqueue (normal priority)
     static bool enqueueFromISR(const DispatchItem& item, BaseType_t* woken);
-
-    // ISR-safe enqueue (high priority)
     static bool enqueueHighPriorityFromISR(const DispatchItem& item, BaseType_t* woken);
-
-    // Error handling
     static void setErrorCallback(ErrorCallback cb, void* ctx = nullptr);
-
-    // Queue status (normal priority)
     static bool hasQueueSpace();
-    static uint8_t getQueueSpaceAvailable();
-
-    // Queue status (high priority)
     static bool hasHighQueueSpace();
-    static uint8_t getHighQueueSpaceAvailable();
-
-    // Statistics
     static const DispatcherStats& getStats();
     static void resetStats();
+};
+
+}
+```
+
+### CommandService (Command Layer)
+
+```cpp
+namespace arcana {
+
+// Command clusters
+enum class Cluster : uint8_t { System = 0x00, Sensor = 0x01 };
+enum class CommandStatus : uint8_t { Success, NotFound, InvalidParam, Busy, Error };
+
+struct CommandRequest {
+    CommandKey key;          // {Cluster, commandId}
+    uint8_t params[8];
+    uint8_t paramsLength;
+};
+
+// ICommand interface - implement to add new commands
+class ICommand {
+public:
+    virtual CommandKey getKey() const = 0;
+    virtual CommandStatus execute(const CommandRequest& req,
+                                  CommandResponseModel& rsp) = 0;
+};
+
+// Service API
+class CommandService {
+public:
+    void init();
+    void registerCommand(ICommand* cmd);
+    bool execute(const CommandRequest& request);      // async via Observable
+    bool executeSync(const CommandRequest& request);   // synchronous
+};
+
+}
+```
+
+### CommandCodec / FrameCodec (Protocol Layer)
+
+```cpp
+namespace arcana {
+
+// CRC-16 (matches esp_crc16_le)
+uint16_t crc16(uint16_t init, const uint8_t* data, size_t len);
+
+// Frame codec - header-only static class
+class FrameCodec {
+public:
+    static constexpr size_t kOverhead = 9;   // 7 header + 2 CRC
+    static constexpr uint8_t kFlagFin = 0x01;
+    static constexpr uint8_t kSidNone = 0x00;
+
+    static bool frame(const uint8_t* payload, size_t payloadLen,
+                      uint8_t flags, uint8_t streamId,
+                      uint8_t* outBuf, size_t outBufSize, size_t& outLen);
+
+    static bool deframe(const uint8_t* frameBuf, size_t frameLen,
+                        const uint8_t*& outPayload, size_t& outPayloadLen,
+                        uint8_t& outFlags, uint8_t& outStreamId);
+};
+
+// Command codec - binary encode/decode
+class CommandCodec {
+public:
+    static constexpr size_t MAX_REQUEST_FRAME  = 20;  // 9 + 3 + 8
+    static constexpr size_t MAX_RESPONSE_FRAME = 29;  // 9 + 4 + 16
+
+    static bool decodeRequest(const uint8_t* frame, size_t frameLen,
+                              CommandRequest& out);
+
+    static bool encodeResponse(const CommandResponseModel& rsp,
+                               uint8_t* buf, size_t bufSize, size_t& outLen,
+                               uint8_t flags = FrameCodec::kFlagFin,
+                               uint8_t streamId = FrameCodec::kSidNone);
 };
 
 }
@@ -632,15 +706,19 @@ Queue Utilization: < 10%
 
 | Aspect | ESP32 | STM32 (This) |
 |--------|-------|--------------|
-| RAM | ~400KB | 4.3KB |
+| RAM | ~400KB | 5.5KB |
 | Dynamic Memory | Heavy use | None (static) |
 | Task Pool | 10+ workers | 1 dispatcher |
 | Model Transfer | clone() | Zero-copy |
 | Observer Storage | std::vector | Fixed array |
 | Callback Type | std::function | Function pointer |
+| Serialization | Protobuf | Manual binary |
+| Wire Protocol | Same frame format | Same frame format |
+| CRC | esp_crc16_le() | crc16() (same polynomial) |
+| Encryption | AES-GCM | None (M0 constraints) |
 | Error Handling | Exception-based | Callback + Stats |
 | ISR Safety | Limited | Full support |
-| Language | C++ | C++ (optimized) |
+| Language | C++ | C++14 (optimized) |
 
 ### Error Handling Comparison
 
@@ -673,6 +751,9 @@ Queue Utilization: < 10%
 - [x] ~~ISR-safe publish API~~ ✅ v1.1
 - [x] ~~Pre-publish queue space check~~ ✅ v1.1
 - [x] ~~Priority-based event dispatch (dual queue)~~ ✅ v1.2
+- [x] ~~Command Pattern (ICommand + Registry + Dispatcher)~~ ✅ v1.3
+- [x] ~~Wire Protocol (CRC-16 + FrameCodec + CommandCodec)~~ ✅ v1.4
+- [ ] UART transport layer (DMA-based)
 - [ ] Event filtering mechanism
 - [ ] Support for more STM32 families (F1, F4, L0)
 - [ ] Optional event persistence (circular buffer fallback)
