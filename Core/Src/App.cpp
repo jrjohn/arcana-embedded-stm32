@@ -8,6 +8,7 @@
 #include "TimerService.hpp"
 #include "CounterService.hpp"
 #include "TimeDisplayService.hpp"
+#include "CommandService.hpp"
 #include "cmsis_os.h"
 
 using namespace arcana;
@@ -47,7 +48,10 @@ extern "C" void App_Init(void) {
     counterService.init(&timerService.observable);
     timeDisplayService.init(&timerService.observable);
 
-    // 4. Start timer
+    // 4. Initialize command service
+    commandService.init();
+
+    // 5. Start timer
     timerService.start();
 }
 

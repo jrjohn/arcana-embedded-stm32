@@ -17,6 +17,7 @@ enum class ModelType : uint8_t {
     Base = 0,
     Timer,
     Counter,
+    Command,
     User
 };
 
