@@ -1,0 +1,6 @@
+services:
+  stm32-build:
+    build:
+      context: .
+      dockerfile: Dockerfile.ci
+    image: stm32-app-build:${VERSION:-1.0.0}
