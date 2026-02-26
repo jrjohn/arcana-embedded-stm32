@@ -1,0 +1,21 @@
+# ============================================
+# STM32 Build Environment (CI)
+# arm-none-eabi-gcc / CMake
+# ============================================
+FROM ubuntu:24.04 AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib \
+    cmake make \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY . .
+
+RUN mkdir -p build && cd build && cmake -DCMAKE_BUILD_TYPE=Release .. && make -j$(nproc)
+
+FROM builder AS artifacts
+RUN mkdir -p /artifacts \
+    && cp /app/build/*.bin /artifacts/ 2>/dev/null || true \
+    && cp /app/build/*.hex /artifacts/ 2>/dev/null || true \
+    && cp /app/build/*.elf /artifacts/ 2>/dev/null || true
