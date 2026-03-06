@@ -22,7 +22,9 @@ private:
     LcdServiceImpl& operator=(const LcdServiceImpl&);
 
     static void onSensorData(SensorDataModel* model, void* ctx);
+    static void onLightData(LightDataModel* model, void* ctx);
     void updateSensorDisplay(const SensorDataModel* data);
+    void updateLightDisplay(const LightDataModel* data);
     void drawInitialScreen();
 
     static void intToStr(char* buf, int value);
@@ -30,7 +32,7 @@ private:
     Ili9341Lcd mLcd;
 
     static const uint16_t TEMP_VALUE_Y = 120;
-    static const uint16_t HUMI_VALUE_Y = 220;
+    static const uint16_t LIGHT_VALUE_Y = 220;
     static const uint16_t VALUE_X = 20;
 };
 

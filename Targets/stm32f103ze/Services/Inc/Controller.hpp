@@ -4,6 +4,7 @@
 #include "LedService.hpp"
 #include "SensorService.hpp"
 #include "LcdService.hpp"
+#include "LightService.hpp"
 #include "ServiceTypes.hpp"
 
 // Forward declarations for future services
@@ -36,6 +37,7 @@ private:
     led::LedService*                 mLed;
     sensor::SensorService*           mSensor;
     lcd::LcdService*                 mLcd;
+    light::LightService*             mLight;
     // mqtt::MqttTransportService*   mMqtt;
     // CommandBridgeService*         mBridge;
     // diagnostic::DiagnosticService* mDiag;

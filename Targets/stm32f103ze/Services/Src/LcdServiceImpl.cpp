@@ -26,6 +26,9 @@ ServiceStatus LcdServiceImpl::init() {
     if (input.SensorData) {
         input.SensorData->subscribe(onSensorData, this);
     }
+    if (input.LightData) {
+        input.LightData->subscribe(onLightData, this);
+    }
 
     return ServiceStatus::OK;
 }
@@ -37,8 +40,7 @@ ServiceStatus LcdServiceImpl::start() {
 void LcdServiceImpl::stop() {}
 
 void LcdServiceImpl::drawInitialScreen() {
-    // Fill RED to verify LCD is alive
-    mLcd.fillScreen(Ili9341Lcd::RED);
+    mLcd.fillScreen(Ili9341Lcd::BLACK);
 
     // Title
     mLcd.drawString(30, 20, "Arcana F103", Ili9341Lcd::WHITE, Ili9341Lcd::BLACK, 2);
@@ -49,15 +51,16 @@ void LcdServiceImpl::drawInitialScreen() {
     // Separator
     mLcd.drawHLine(10, 70, 220, Ili9341Lcd::DARKGRAY);
 
-    // Labels
+    // Temperature (MPU6050)
     mLcd.drawString(VALUE_X, 90, "Temperature", Ili9341Lcd::WHITE, Ili9341Lcd::BLACK, 2);
     mLcd.drawString(VALUE_X, TEMP_VALUE_Y, "-- C", Ili9341Lcd::YELLOW, Ili9341Lcd::BLACK, 3);
 
     // Separator
     mLcd.drawHLine(10, 170, 220, Ili9341Lcd::DARKGRAY);
 
-    mLcd.drawString(VALUE_X, 190, "Humidity", Ili9341Lcd::WHITE, Ili9341Lcd::BLACK, 2);
-    mLcd.drawString(VALUE_X, HUMI_VALUE_Y, "-- %", Ili9341Lcd::CYAN, Ili9341Lcd::BLACK, 3);
+    // Light (AP3216C)
+    mLcd.drawString(VALUE_X, 190, "Light", Ili9341Lcd::WHITE, Ili9341Lcd::BLACK, 2);
+    mLcd.drawString(VALUE_X, LIGHT_VALUE_Y, "-- lux", Ili9341Lcd::CYAN, Ili9341Lcd::BLACK, 3);
 }
 
 void LcdServiceImpl::onSensorData(SensorDataModel* model, void* ctx) {
@@ -65,28 +68,33 @@ void LcdServiceImpl::onSensorData(SensorDataModel* model, void* ctx) {
     self->updateSensorDisplay(model);
 }
 
+void LcdServiceImpl::onLightData(LightDataModel* model, void* ctx) {
+    LcdServiceImpl* self = static_cast<LcdServiceImpl*>(ctx);
+    self->updateLightDisplay(model);
+}
+
 void LcdServiceImpl::updateSensorDisplay(const SensorDataModel* data) {
     char buf[12];
 
-    // Temperature: clear and redraw value area
     intToStr(buf, static_cast<int>(data->temperature));
-    // Append " C"
     char* p = buf;
     while (*p) p++;
     *p++ = ' '; *p++ = 'C'; *p = '\0';
 
-    // Clear value area (max ~7 chars at scale 3 = 126px wide, 21px tall)
     mLcd.fillRect(VALUE_X, TEMP_VALUE_Y, 180, 24, Ili9341Lcd::BLACK);
     mLcd.drawString(VALUE_X, TEMP_VALUE_Y, buf, Ili9341Lcd::YELLOW, Ili9341Lcd::BLACK, 3);
+}
 
-    // Humidity
-    intToStr(buf, static_cast<int>(data->humidity));
-    p = buf;
+void LcdServiceImpl::updateLightDisplay(const LightDataModel* data) {
+    char buf[16];
+
+    intToStr(buf, static_cast<int>(data->ambientLight));
+    char* p = buf;
     while (*p) p++;
-    *p++ = ' '; *p++ = '%'; *p = '\0';
+    *p++ = ' '; *p++ = 'l'; *p++ = 'u'; *p++ = 'x'; *p = '\0';
 
-    mLcd.fillRect(VALUE_X, HUMI_VALUE_Y, 180, 24, Ili9341Lcd::BLACK);
-    mLcd.drawString(VALUE_X, HUMI_VALUE_Y, buf, Ili9341Lcd::CYAN, Ili9341Lcd::BLACK, 3);
+    mLcd.fillRect(VALUE_X, LIGHT_VALUE_Y, 200, 24, Ili9341Lcd::BLACK);
+    mLcd.drawString(VALUE_X, LIGHT_VALUE_Y, buf, Ili9341Lcd::CYAN, Ili9341Lcd::BLACK, 3);
 }
 
 void LcdServiceImpl::intToStr(char* buf, int value) {

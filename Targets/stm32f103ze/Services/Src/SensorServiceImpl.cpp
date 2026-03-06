@@ -1,4 +1,5 @@
 #include "SensorServiceImpl.hpp"
+#include "I2cBus.hpp"
 
 namespace arcana {
 namespace sensor {
@@ -6,7 +7,7 @@ namespace sensor {
 SensorServiceImpl::SensorServiceImpl()
     : mDataObs("SensorSvc Data")
     , mSensorData()
-    , mDht()
+    , mMpu()
     , mTaskBuffer()
     , mTaskStack{}
     , mTaskHandle(0)
@@ -25,11 +26,13 @@ SensorService& SensorServiceImpl::getInstance() {
 }
 
 ServiceStatus SensorServiceImpl::initHAL() {
-    mDht.initHAL();
+    // Initialize shared I2C bus (used by both MPU6050 and AP3216C)
+    I2cBus::getInstance().initHAL();
     return ServiceStatus::OK;
 }
 
 ServiceStatus SensorServiceImpl::init() {
+    mMpu.init(&I2cBus::getInstance());
     return ServiceStatus::OK;
 }
 
@@ -46,10 +49,7 @@ ServiceStatus SensorServiceImpl::start() {
         &mTaskBuffer
     );
 
-    if (!mTaskHandle) {
-        return ServiceStatus::Error;
-    }
-
+    if (!mTaskHandle) return ServiceStatus::Error;
     return ServiceStatus::OK;
 }
 
@@ -60,15 +60,14 @@ void SensorServiceImpl::stop() {
 void SensorServiceImpl::sensorTask(void* param) {
     SensorServiceImpl* self = static_cast<SensorServiceImpl*>(param);
 
-    // Initial delay to let DHT11 stabilize (1s after power-on)
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(100));
 
     while (self->mRunning) {
-        DhtReading reading = self->mDht.read();
+        Mpu6050Reading reading = self->mMpu.read();
 
         if (reading.valid) {
             self->mSensorData.temperature = reading.temperature;
-            self->mSensorData.humidity = reading.humidity;
+            self->mSensorData.humidity = 0;
             self->mSensorData.quality = 100;
             self->mSensorData.updateTimestamp();
             self->mDataObs.publish(&self->mSensorData);

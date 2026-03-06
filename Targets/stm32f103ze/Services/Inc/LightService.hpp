@@ -5,29 +5,27 @@
 #include "ServiceTypes.hpp"
 
 namespace arcana {
-namespace lcd {
+namespace light {
 
-class LcdService {
+class LightService {
 public:
-    struct Input {
-        Observable<SensorDataModel>* SensorData;
-        Observable<LightDataModel>*  LightData;
+    struct Output {
+        Observable<LightDataModel>* DataEvents;
     };
 
-    Input input;
+    Output output;
 
-    virtual ~LcdService() {}
+    virtual ~LightService() {}
     virtual ServiceStatus initHAL() = 0;
     virtual ServiceStatus init() = 0;
     virtual ServiceStatus start() = 0;
     virtual void stop() = 0;
 
 protected:
-    LcdService() : input() {
-        input.SensorData = 0;
-        input.LightData = 0;
+    LightService() : output() {
+        output.DataEvents = 0;
     }
 };
 
-} // namespace lcd
+} // namespace light
 } // namespace arcana

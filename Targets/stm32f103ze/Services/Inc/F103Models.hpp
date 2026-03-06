@@ -5,10 +5,11 @@
 namespace arcana {
 
 enum class F103ModelType : uint8_t {
-    Sensor       = 100,
-    MqttCommand  = 101,
+    Sensor         = 100,
+    MqttCommand    = 101,
     MqttConnection = 102,
-    LedFrame     = 103
+    LedFrame       = 103,
+    Light          = 104
 };
 
 class SensorDataModel : public Model {
@@ -43,6 +44,17 @@ public:
     MqttConnectionModel()
         : Model(static_cast<uint8_t>(F103ModelType::MqttConnection))
         , connected(false) {}
+};
+
+class LightDataModel : public Model {
+public:
+    uint16_t ambientLight;
+    uint16_t proximity;
+
+    LightDataModel()
+        : Model(static_cast<uint8_t>(F103ModelType::Light))
+        , ambientLight(0)
+        , proximity(0) {}
 };
 
 class LedFrameModel : public Model {

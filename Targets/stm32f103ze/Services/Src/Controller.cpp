@@ -3,6 +3,7 @@
 #include "LedServiceImpl.hpp"
 #include "SensorServiceImpl.hpp"
 #include "LcdServiceImpl.hpp"
+#include "LightServiceImpl.hpp"
 
 namespace arcana {
 
@@ -11,6 +12,7 @@ Controller::Controller()
     , mLed(0)
     , mSensor(0)
     , mLcd(0)
+    , mLight(0)
 {
 }
 
@@ -33,32 +35,39 @@ void Controller::wireServices() {
     mLed    = &led::LedServiceImpl::getInstance();
     mSensor = &sensor::SensorServiceImpl::getInstance();
     mLcd    = &lcd::LcdServiceImpl::getInstance();
+    mLight  = &light::LightServiceImpl::getInstance();
 
     // Wire LED <- Timer (base tick for 1-second color cycling)
     mLed->input.TimerEvents = mTimer->output.BaseTimer;
 
-    // Wire LCD <- Sensor (display temperature/humidity)
+    // Wire LCD <- Sensor (display temperature from MPU6050)
     mLcd->input.SensorData = mSensor->output.DataEvents;
+
+    // Wire LCD <- Light (display ambient light from AP3216C)
+    mLcd->input.LightData = mLight->output.DataEvents;
 }
 
 void Controller::initHAL() {
     mTimer->initHAL();
     mLed->initHAL();
-    mSensor->initHAL();
+    mSensor->initHAL();   // Initializes shared I2C bus
+    mLight->initHAL();
     mLcd->initHAL();
 }
 
 void Controller::initServices() {
     mTimer->init();
     mLed->init();
+    mSensor->init();      // Initializes MPU6050
+    mLight->init();       // Initializes AP3216C
     mLcd->init();
-    mSensor->init();
 }
 
 void Controller::startServices() {
     mTimer->start();
     mLed->start();
     mSensor->start();
+    mLight->start();
     mLcd->start();
 }
 

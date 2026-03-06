@@ -1,16 +1,16 @@
 #pragma once
 
-#include "SensorService.hpp"
-#include "Mpu6050Sensor.hpp"
+#include "LightService.hpp"
+#include "Ap3216cSensor.hpp"
 #include "FreeRTOS.h"
 #include "task.h"
 
 namespace arcana {
-namespace sensor {
+namespace light {
 
-class SensorServiceImpl : public SensorService {
+class LightServiceImpl : public LightService {
 public:
-    static SensorService& getInstance();
+    static LightService& getInstance();
 
     ServiceStatus initHAL() override;
     ServiceStatus init() override;
@@ -18,19 +18,19 @@ public:
     void stop() override;
 
 private:
-    SensorServiceImpl();
-    ~SensorServiceImpl();
-    SensorServiceImpl(const SensorServiceImpl&);
-    SensorServiceImpl& operator=(const SensorServiceImpl&);
+    LightServiceImpl();
+    ~LightServiceImpl();
+    LightServiceImpl(const LightServiceImpl&);
+    LightServiceImpl& operator=(const LightServiceImpl&);
 
-    static void sensorTask(void* param);
+    static void lightTask(void* param);
 
     static const uint32_t READ_INTERVAL_MS = 1000;
     static const uint16_t TASK_STACK_SIZE = 256;
 
-    Observable<SensorDataModel> mDataObs;
-    SensorDataModel mSensorData;
-    Mpu6050Sensor mMpu;
+    Observable<LightDataModel> mDataObs;
+    LightDataModel mLightData;
+    Ap3216cSensor mSensor;
 
     StaticTask_t mTaskBuffer;
     StackType_t mTaskStack[TASK_STACK_SIZE];
@@ -38,5 +38,5 @@ private:
     bool mRunning;
 };
 
-} // namespace sensor
+} // namespace light
 } // namespace arcana
