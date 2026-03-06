@@ -45,41 +45,42 @@ void Ili9341Lcd::initFsmc() {
 }
 
 void Ili9341Lcd::initSequence() {
-    // Software reset
-    writeCmd(0x01);
-    delayMs(150);
+    // Power Control B
+    writeCmd(0xCF);
+    writeData(0x00); writeData(0x81); writeData(0x30);
 
-    // Display off
-    writeCmd(0x28);
+    // Power on Sequence Control
+    writeCmd(0xED);
+    writeData(0x64); writeData(0x03); writeData(0x12); writeData(0x81);
+
+    // Driver Timing Control A
+    writeCmd(0xE8);
+    writeData(0x85); writeData(0x10); writeData(0x78);
 
     // Power Control A
     writeCmd(0xCB);
     writeData(0x39); writeData(0x2C); writeData(0x00);
     writeData(0x34); writeData(0x02);
 
-    // Power Control B
-    writeCmd(0xCF);
-    writeData(0x00); writeData(0xC1); writeData(0x30);
-
-    // Driver Timing Control A
-    writeCmd(0xE8);
-    writeData(0x85); writeData(0x00); writeData(0x78);
+    // Pump Ratio Control
+    writeCmd(0xF7);
+    writeData(0x20);
 
     // Driver Timing Control B
     writeCmd(0xEA);
     writeData(0x00); writeData(0x00);
 
-    // Power on Sequence Control
-    writeCmd(0xED);
-    writeData(0x64); writeData(0x03); writeData(0x12); writeData(0x81);
+    // Frame Rate Control
+    writeCmd(0xB1);
+    writeData(0x00); writeData(0x1B);
 
-    // Pump Ratio Control
-    writeCmd(0xF7);
-    writeData(0x20);
+    // Display Function Control
+    writeCmd(0xB6);
+    writeData(0x0A); writeData(0xA2);
 
     // Power Control 1
     writeCmd(0xC0);
-    writeData(0x23);
+    writeData(0x25);
 
     // Power Control 2
     writeCmd(0xC1);
@@ -87,27 +88,15 @@ void Ili9341Lcd::initSequence() {
 
     // VCOM Control 1
     writeCmd(0xC5);
-    writeData(0x3E); writeData(0x28);
+    writeData(0x45); writeData(0x45);
 
     // VCOM Control 2
     writeCmd(0xC7);
-    writeData(0x86);
+    writeData(0xA2);
 
-    // Memory Access Control (portrait, RGB)
-    writeCmd(0x36);
-    writeData(0x40);
-
-    // Pixel Format: 16-bit RGB565
-    writeCmd(0x3A);
-    writeData(0x55);
-
-    // Frame Rate Control
-    writeCmd(0xB1);
-    writeData(0x00); writeData(0x18);
-
-    // Display Function Control
-    writeCmd(0xB6);
-    writeData(0x08); writeData(0x82); writeData(0x27);
+    // Enable 3G
+    writeCmd(0xF2);
+    writeData(0x00);
 
     // Gamma Set
     writeCmd(0x26);
@@ -115,17 +104,35 @@ void Ili9341Lcd::initSequence() {
 
     // Positive Gamma Correction
     writeCmd(0xE0);
-    writeData(0x0F); writeData(0x31); writeData(0x2B); writeData(0x0C);
-    writeData(0x0E); writeData(0x08); writeData(0x4E); writeData(0xF1);
-    writeData(0x37); writeData(0x07); writeData(0x10); writeData(0x03);
-    writeData(0x0E); writeData(0x09); writeData(0x00);
+    writeData(0x0F); writeData(0x26); writeData(0x24); writeData(0x0B);
+    writeData(0x0E); writeData(0x09); writeData(0x54); writeData(0xA8);
+    writeData(0x46); writeData(0x0C); writeData(0x17); writeData(0x09);
+    writeData(0x0F); writeData(0x07); writeData(0x00);
 
     // Negative Gamma Correction
     writeCmd(0xE1);
-    writeData(0x00); writeData(0x0E); writeData(0x14); writeData(0x03);
-    writeData(0x11); writeData(0x07); writeData(0x31); writeData(0xC1);
-    writeData(0x48); writeData(0x08); writeData(0x0F); writeData(0x0C);
-    writeData(0x31); writeData(0x36); writeData(0x0F);
+    writeData(0x00); writeData(0x19); writeData(0x1B); writeData(0x04);
+    writeData(0x10); writeData(0x07); writeData(0x2A); writeData(0x47);
+    writeData(0x39); writeData(0x03); writeData(0x06); writeData(0x06);
+    writeData(0x30); writeData(0x38); writeData(0x0F);
+
+    // Memory Access Control (portrait, BGR)
+    writeCmd(0x36);
+    writeData(0xC8);
+
+    // Column address: 0-239
+    writeCmd(0x2A);
+    writeData(0x00); writeData(0x00);
+    writeData(0x00); writeData(0xEF);
+
+    // Page address: 0-319
+    writeCmd(0x2B);
+    writeData(0x00); writeData(0x00);
+    writeData(0x01); writeData(0x3F);
+
+    // Pixel Format: 16-bit RGB565
+    writeCmd(0x3A);
+    writeData(0x55);
 
     // Sleep Out
     writeCmd(0x11);
@@ -136,32 +143,27 @@ void Ili9341Lcd::initSequence() {
 }
 
 void Ili9341Lcd::enableBacklight() {
-    __HAL_RCC_GPIOE_CLK_ENABLE();
-    __HAL_RCC_GPIOF_CLK_ENABLE();
     __HAL_RCC_GPIOG_CLK_ENABLE();
 
     GPIO_InitTypeDef gpio = {};
     gpio.Mode = GPIO_MODE_OUTPUT_PP;
     gpio.Pull = GPIO_NOPULL;
-    gpio.Speed = GPIO_SPEED_FREQ_LOW;
+    gpio.Speed = GPIO_SPEED_FREQ_HIGH;
 
-    // LCD Reset: PE1 LOW → HIGH
-    gpio.Pin = GPIO_PIN_1;
-    HAL_GPIO_Init(GPIOE, &gpio);
-    HAL_GPIO_WritePin(GPIOE, GPIO_PIN_1, GPIO_PIN_RESET);
-    delayMs(20);
-    HAL_GPIO_WritePin(GPIOE, GPIO_PIN_1, GPIO_PIN_SET);
-    delayMs(150);
+    // LCD Reset: PG11 HIGH → LOW → HIGH
+    gpio.Pin = GPIO_PIN_11;
+    HAL_GPIO_Init(GPIOG, &gpio);
+    HAL_GPIO_WritePin(GPIOG, GPIO_PIN_11, GPIO_PIN_SET);
+    delayMs(50);
+    HAL_GPIO_WritePin(GPIOG, GPIO_PIN_11, GPIO_PIN_RESET);
+    delayMs(50);
+    HAL_GPIO_WritePin(GPIOG, GPIO_PIN_11, GPIO_PIN_SET);
+    delayMs(50);
 
-    // Backlight enable: PG6 LOW (active low)
+    // Backlight: PG6 LOW (active low = ON)
     gpio.Pin = GPIO_PIN_6;
     HAL_GPIO_Init(GPIOG, &gpio);
     HAL_GPIO_WritePin(GPIOG, GPIO_PIN_6, GPIO_PIN_RESET);
-
-    // Backlight control: PF12 HIGH
-    gpio.Pin = GPIO_PIN_12;
-    HAL_GPIO_Init(GPIOF, &gpio);
-    HAL_GPIO_WritePin(GPIOF, GPIO_PIN_12, GPIO_PIN_SET);
 }
 
 uint16_t Ili9341Lcd::readId() {
