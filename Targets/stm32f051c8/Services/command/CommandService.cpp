@@ -4,8 +4,8 @@
  */
 
 #include "CommandService.hpp"
-#include "Commands/PingCommand.hpp"
-#include "Commands/GetCounterCommand.hpp"
+#include "PingCommand.hpp"
+#include "GetCounterCommand.hpp"
 
 namespace arcana {
 

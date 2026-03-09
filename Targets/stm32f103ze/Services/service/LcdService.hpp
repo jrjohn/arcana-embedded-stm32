@@ -10,8 +10,9 @@ namespace lcd {
 class LcdService {
 public:
     struct Input {
-        Observable<SensorDataModel>* SensorData;
-        Observable<LightDataModel>*  LightData;
+        Observable<SensorDataModel>*    SensorData;
+        Observable<LightDataModel>*     LightData;
+        Observable<StorageStatsModel>*  StorageStats;
     };
 
     Input input;
@@ -26,6 +27,7 @@ protected:
     LcdService() : input() {
         input.SensorData = 0;
         input.LightData = 0;
+        input.StorageStats = 0;
     }
 };
 

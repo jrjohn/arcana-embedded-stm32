@@ -1,10 +1,11 @@
 #pragma once
 
-#include "TimerService.hpp"
+#include "ITimerService.hpp"
 #include "LedService.hpp"
 #include "SensorService.hpp"
 #include "LcdService.hpp"
 #include "LightService.hpp"
+#include "StorageService.hpp"
 #include "ServiceTypes.hpp"
 
 // Forward declarations for future services
@@ -38,6 +39,7 @@ private:
     sensor::SensorService*           mSensor;
     lcd::LcdService*                 mLcd;
     light::LightService*             mLight;
+    storage::StorageService*         mStorage;
     // mqtt::MqttTransportService*   mMqtt;
     // CommandBridgeService*         mBridge;
     // diagnostic::DiagnosticService* mDiag;

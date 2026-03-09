@@ -1,6 +1,6 @@
 #pragma once
 
-#include "TimerService.hpp"
+#include "ITimerService.hpp"
 #include "FreeRTOS.h"
 #include "timers.h"
 

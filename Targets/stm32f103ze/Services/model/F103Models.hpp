@@ -9,7 +9,8 @@ enum class F103ModelType : uint8_t {
     MqttCommand    = 101,
     MqttConnection = 102,
     LedFrame       = 103,
-    Light          = 104
+    Light          = 104,
+    StorageStats   = 105
 };
 
 class SensorDataModel : public Model {
@@ -64,6 +65,17 @@ public:
     LedFrameModel()
         : Model(static_cast<uint8_t>(F103ModelType::LedFrame))
         , r(0), g(0), b(0) {}
+};
+
+class StorageStatsModel : public Model {
+public:
+    uint32_t recordCount;
+    uint16_t writesPerSec;  // Writes completed in last 1-second window
+
+    StorageStatsModel()
+        : Model(static_cast<uint8_t>(F103ModelType::StorageStats))
+        , recordCount(0)
+        , writesPerSec(0) {}
 };
 
 } // namespace arcana
