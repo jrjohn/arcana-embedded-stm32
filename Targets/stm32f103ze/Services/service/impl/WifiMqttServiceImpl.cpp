@@ -1,4 +1,5 @@
 #include "WifiMqttServiceImpl.hpp"
+#include "Credentials.hpp"
 #include "Ili9341Lcd.hpp"
 #include <cstdio>
 #include <cstring>
@@ -53,9 +54,9 @@ namespace arcana {
 namespace mqtt {
 
 // --- Configuration ---
-const char* WifiMqttServiceImpl::WIFI_SSID      = "YOUR_SSID";
-const char* WifiMqttServiceImpl::WIFI_PASS      = "YOUR_PASS";
-const char* WifiMqttServiceImpl::MQTT_BROKER    = "YOUR_BROKER";
+const char* WifiMqttServiceImpl::WIFI_SSID      = WIFI_SSID_VALUE;
+const char* WifiMqttServiceImpl::WIFI_PASS      = WIFI_PASS_VALUE;
+const char* WifiMqttServiceImpl::MQTT_BROKER    = MQTT_BROKER_VALUE;
 const char* WifiMqttServiceImpl::MQTT_CLIENT_ID = "arcana_f103";
 const char* WifiMqttServiceImpl::TOPIC_SENSOR   = "arcana/sensor";
 const char* WifiMqttServiceImpl::TOPIC_CMD      = "arcana/cmd";

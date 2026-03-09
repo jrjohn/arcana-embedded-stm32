@@ -9,6 +9,9 @@ Release/
 # macOS
 .DS_Store
 
+# Credentials (local only, not committed)
+Credentials.hpp
+
 # Backup files
 *.bak
 *~
