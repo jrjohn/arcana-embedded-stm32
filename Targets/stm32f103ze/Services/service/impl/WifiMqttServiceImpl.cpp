@@ -4,6 +4,9 @@
 #include <cstdio>
 #include <cstring>
 
+/* Wait for exFAT format+mount before connecting */
+extern "C" volatile uint8_t g_exfat_ready;
+
 // Debug: show MQTT status on LCD (y=154, below WiFi/MQTT label)
 static void lcdStatus(const char* msg) {
     arcana::lcd::Ili9341Lcd disp;
@@ -146,7 +149,12 @@ void WifiMqttServiceImpl::onLightData(LightDataModel* model, void* ctx) {
 
 void WifiMqttServiceImpl::mqttTask(void* param) {
     WifiMqttServiceImpl* self = static_cast<WifiMqttServiceImpl*>(param);
-    vTaskDelay(pdMS_TO_TICKS(1000));
+
+    // Wait for exFAT format+mount to complete before starting WiFi/MQTT
+    while (!g_exfat_ready) {
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+
     self->runTask();
     vTaskDelete(0);
 }

@@ -9,7 +9,7 @@ extern "C" {
     volatile uint8_t g_sd_ready = 0;
 
     static StaticSemaphore_t g_sd_dma_sem_buf;
-    static SemaphoreHandle_t g_sd_dma_sem = 0;
+    SemaphoreHandle_t g_sd_dma_sem = 0;  // Non-static: shared with sd_diskio.c
 
     void HAL_SD_TxCpltCallback(SD_HandleTypeDef* hsd) {
         (void)hsd;

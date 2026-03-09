@@ -96,8 +96,8 @@ void Controller::startServices() {
     mLight->start();
     mLcd->start();
     // mStorage->start();
-    mMqtt->start();       // Starts WiFi + MQTT connection task
-    mSdBench->start();    // Start after MQTT (SDIO DMA interferes with UART)
+    mSdBench->start();    // Start first: exFAT format+mount must succeed before MQTT
+    mMqtt->start();       // MQTT task waits for g_exfat_ready flag
 }
 
 } // namespace arcana

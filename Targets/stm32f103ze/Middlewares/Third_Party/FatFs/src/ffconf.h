@@ -1,63 +1,69 @@
 /*---------------------------------------------------------------------------/
-/  FatFs - FAT file system module configuration file  R0.11 (C)ChaN, 2015
+/  FatFs R0.15 — Configuration for STM32F103ZE (exFAT on SD card)
 /---------------------------------------------------------------------------*/
 
-#ifndef _FFCONF
-#define _FFCONF 32020
+#define FFCONF_DEF	80286	/* Revision ID */
 
 /*---------------------------------------------------------------------------/
-/ Functions and Buffer Configurations
+/ Function Configurations
 /---------------------------------------------------------------------------*/
 
-#define	_FS_TINY                0
-#define _FS_READONLY            0
-#define _FS_MINIMIZE            1	/* Remove stat/unlink/mkdir/etc. */
-#define	_USE_STRFUNC            0
-#define _USE_FIND               0
-#define	_USE_MKFS               1	/* Enable f_mkfs() for formatting */
-#define	_USE_FASTSEEK           0
-#define _USE_LABEL              0
-#define	_USE_FORWARD            0
-#define _USE_BUFF_WO_ALIGNMENT  0
+#define FF_FS_READONLY	0
+#define FF_FS_MINIMIZE	0	/* Full API (need f_lseek, f_stat, etc.) */
+#define FF_USE_FIND	0
+#define FF_USE_MKFS	1	/* Enable f_mkfs() for on-device exFAT format */
+#define FF_USE_FASTSEEK	0
+#define FF_USE_EXPAND	0
+#define FF_USE_CHMOD	0
+#define FF_USE_LABEL	0
+#define FF_USE_FORWARD	0
+#define FF_USE_STRFUNC	0
+#define FF_PRINT_LLI	0
+#define FF_PRINT_FLOAT	0
+#define FF_STRF_ENCODE	0
 
 /*---------------------------------------------------------------------------/
 / Locale and Namespace Configurations
 /---------------------------------------------------------------------------*/
 
-#define _CODE_PAGE              437	/* US ASCII */
-#define	_USE_LFN                0	/* Disable LFN (8.3 only, no heap needed) */
-#define	_MAX_LFN                255
-#define	_LFN_UNICODE            0
-#define _STRF_ENCODE            3
-#define _FS_RPATH               0
+#define FF_CODE_PAGE	437	/* US ASCII — smallest code page */
+
+#define FF_USE_LFN	2	/* LFN with working buffer on STACK (required for exFAT) */
+#define FF_MAX_LFN	64	/* Short names only (e.g. "20260309.enc"), save RAM */
+
+#define FF_LFN_UNICODE	0	/* ANSI/OEM (TCHAR = char) */
+#define FF_LFN_BUF	64
+#define FF_SFN_BUF	12
+#define FF_FS_RPATH	0
 
 /*---------------------------------------------------------------------------/
 / Drive/Volume Configurations
 /---------------------------------------------------------------------------*/
 
-#define _VOLUMES                1
-#define _STR_VOLUME_ID          0
-#define _VOLUME_STRS            "SD"
-#define	_MULTI_PARTITION        0
-#define	_MIN_SS                 512
-#define	_MAX_SS                 512
-#define	_USE_TRIM               0
-#define _FS_NOFSINFO            0
+#define FF_VOLUMES	1
+#define FF_STR_VOLUME_ID	0
+#define FF_VOLUME_STRS	"SD"
+#define FF_MULTI_PARTITION	0
+#define FF_MIN_SS	512
+#define FF_MAX_SS	512
+#define FF_LBA64	0	/* 32-bit LBA — sufficient for SD up to 2TB */
+#define FF_MIN_GPT	0x10000000
+#define FF_USE_TRIM	0
 
 /*---------------------------------------------------------------------------/
 / System Configurations
 /---------------------------------------------------------------------------*/
 
-#define _FS_NORTC               1
-#define _NORTC_MON              3
-#define _NORTC_MDAY             9
-#define _NORTC_YEAR             2026
+#define FF_FS_TINY	0
+#define FF_FS_EXFAT	1	/* Enable exFAT support */
+#define FF_FS_NORTC	1	/* No RTC — use fixed timestamp */
+#define FF_NORTC_MON	3
+#define FF_NORTC_MDAY	9
+#define FF_NORTC_YEAR	2026
 
-#define	_FS_LOCK                0
-#define _FS_REENTRANT           0
-#define _FS_TIMEOUT             1000
-#define	_SYNC_t                 void*
+#define FF_FS_NOFSINFO	0
+#define FF_FS_LOCK	0
+#define FF_FS_REENTRANT	0
+#define FF_FS_TIMEOUT	1000
 
-#define _WORD_ACCESS            0
-
-#endif /* _FFCONF */
+/*--- End of configuration options ---*/

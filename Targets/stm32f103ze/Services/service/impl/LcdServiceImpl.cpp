@@ -56,19 +56,10 @@ void LcdServiceImpl::drawInitialScreen() {
     mLcd.drawString(VALUE_X, 30, "Temperature", Ili9341Lcd::WHITE, Ili9341Lcd::BLACK, 1);
     mLcd.drawString(VALUE_X, TEMP_VALUE_Y, "-- C", Ili9341Lcd::YELLOW, Ili9341Lcd::BLACK, 2);
 
-    // === SD Benchmark section ===
+    // === SD Storage section ===
     mLcd.drawHLine(10, 62, 220, Ili9341Lcd::DARKGRAY);
-    mLcd.drawString(VALUE_X, 68, "SD Bench (ChaCha20)", Ili9341Lcd::WHITE, Ili9341Lcd::BLACK, 1);
-    mLcd.drawString(VALUE_X, SD_SPEED_Y, "-- KB/s", Ili9341Lcd::CYAN, Ili9341Lcd::BLACK, 2);
-
-    mLcd.drawString(VALUE_X, SD_TOTAL_Y, "Written:", Ili9341Lcd::GRAY, Ili9341Lcd::BLACK, 1);
-    mLcd.drawString(VALUE_X + 60, SD_TOTAL_Y, "0 KB", Ili9341Lcd::GREEN, Ili9341Lcd::BLACK, 1);
-
-    mLcd.drawString(VALUE_X, SD_RECORDS_Y, "Records:", Ili9341Lcd::GRAY, Ili9341Lcd::BLACK, 1);
-    mLcd.drawString(VALUE_X + 60, SD_RECORDS_Y, "0", Ili9341Lcd::GREEN, Ili9341Lcd::BLACK, 1);
-
-    mLcd.drawString(VALUE_X, SD_RATE_Y, "Rate:", Ili9341Lcd::GRAY, Ili9341Lcd::BLACK, 1);
-    mLcd.drawString(VALUE_X + 40, SD_RATE_Y, "-- /s", Ili9341Lcd::GREEN, Ili9341Lcd::BLACK, 1);
+    mLcd.drawString(VALUE_X, 68, "SD Storage (exFAT)", Ili9341Lcd::WHITE, Ili9341Lcd::BLACK, 1);
+    mLcd.drawString(VALUE_X, SD_SPEED_Y, "Initializing...", Ili9341Lcd::GRAY, Ili9341Lcd::BLACK, 1);
 
     // === MQTT section ===
     mLcd.drawHLine(10, 136, 220, Ili9341Lcd::DARKGRAY);
