@@ -6,6 +6,7 @@
 #include "LcdService.hpp"
 #include "LightService.hpp"
 #include "StorageService.hpp"
+#include "SdBenchmarkService.hpp"
 #include "ServiceTypes.hpp"
 
 // Forward declarations for future services
@@ -40,6 +41,7 @@ private:
     lcd::LcdService*                 mLcd;
     light::LightService*             mLight;
     storage::StorageService*         mStorage;
+    sdbench::SdBenchmarkService*     mSdBench;
     // mqtt::MqttTransportService*   mMqtt;
     // CommandBridgeService*         mBridge;
     // diagnostic::DiagnosticService* mDiag;

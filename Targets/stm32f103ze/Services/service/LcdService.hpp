@@ -13,6 +13,7 @@ public:
         Observable<SensorDataModel>*    SensorData;
         Observable<LightDataModel>*     LightData;
         Observable<StorageStatsModel>*  StorageStats;
+        Observable<SdBenchmarkModel>*   SdBenchmark;
     };
 
     Input input;
@@ -28,6 +29,7 @@ protected:
         input.SensorData = 0;
         input.LightData = 0;
         input.StorageStats = 0;
+        input.SdBenchmark = 0;
     }
 };
 

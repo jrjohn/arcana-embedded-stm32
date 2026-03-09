@@ -24,9 +24,11 @@ private:
     static void onSensorData(SensorDataModel* model, void* ctx);
     static void onLightData(LightDataModel* model, void* ctx);
     static void onStorageStats(StorageStatsModel* model, void* ctx);
+    static void onSdBenchmark(SdBenchmarkModel* model, void* ctx);
     void updateSensorDisplay(const SensorDataModel* data);
     void updateLightDisplay(const LightDataModel* data);
     void updateStorageDisplay(const StorageStatsModel* data);
+    void updateSdBenchmarkDisplay(const SdBenchmarkModel* data);
     void drawInitialScreen();
 
     static void intToStr(char* buf, int value);
@@ -34,9 +36,11 @@ private:
 
     Ili9341Lcd mLcd;
 
-    static const uint16_t TEMP_VALUE_Y = 100;
-    static const uint16_t LIGHT_VALUE_Y = 175;
-    static const uint16_t STORAGE_VALUE_Y = 260;
+    static const uint16_t TEMP_VALUE_Y = 80;
+    static const uint16_t SD_SPEED_Y = 145;
+    static const uint16_t SD_TOTAL_Y = 195;
+    static const uint16_t SD_RECORDS_Y = 225;
+    static const uint16_t STORAGE_VALUE_Y = 280;
     static const uint16_t VALUE_X = 20;
 };
 

@@ -1,17 +1,13 @@
 #include "StorageServiceImpl.hpp"
+#include "DeviceKey.hpp"
 #include <cstring>
+#include "stm32f1xx_hal.h"
 
 namespace arcana {
 namespace storage {
 
-// Demo encryption key (256-bit).
-// In production, derive from device-unique ID or use secure provisioning.
-const uint8_t StorageServiceImpl::sKey[crypto::ChaCha20::KEY_SIZE] = {
-    0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF,
-    0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10,
-    0xA5, 0x5A, 0x0F, 0xF0, 0x12, 0x34, 0x56, 0x78,
-    0x9A, 0xBC, 0xDE, 0xF0, 0x11, 0x22, 0x33, 0x44
-};
+// Per-device encryption key (derived from master secret + hardware UID)
+uint8_t StorageServiceImpl::sKey[crypto::ChaCha20::KEY_SIZE] = {};
 
 const char* StorageServiceImpl::FILENAME = "sensor.dat";
 
@@ -52,7 +48,8 @@ StorageService& StorageServiceImpl::getInstance() {
 }
 
 ServiceStatus StorageServiceImpl::initHAL() {
-    // Flash HAL is already initialized by HAL_Init()
+    // Derive per-device encryption key from hardware UID
+    crypto::DeviceKey::deriveKey(sKey);
     return ServiceStatus::OK;
 }
 
@@ -137,11 +134,17 @@ void StorageServiceImpl::onSensorData(SensorDataModel* model, void* context) {
 
 void StorageServiceImpl::storageTask(void* param) {
     StorageServiceImpl* self = static_cast<StorageServiceImpl*>(param);
+
+    // Benchmark mode: write as fast as possible with fake sensor data
+    SensorDataModel fakeData;
+    fakeData.temperature = 25.5f;
+    fakeData.humidity = 60.0f;
+    fakeData.quality = 1;
+
     while (self->mRunning) {
-        if (xSemaphoreTake(self->mWriteSem, pdMS_TO_TICKS(500)) == pdTRUE) {
-            if (!self->mRunning) break;
-            self->writeRecord(&self->mPendingData);
-        }
+        fakeData.updateTimestamp();
+        self->writeRecord(&fakeData);
+        taskYIELD();  // Let other tasks run briefly
     }
     vTaskDelete(0);
 }
@@ -190,13 +193,16 @@ void StorageServiceImpl::writeRecord(const SensorDataModel* model) {
         mRecordCount = newCount;
         mWritesInWindow++;
 
-        // Update rate every 1 second
-        uint32_t now = xTaskGetTickCount();
+        // Update rate every 1 second using DWT cycle counter
+        // (xTaskGetTickCount is unreliable when __disable_irq is used by SD writes)
+        static volatile uint32_t* const DWT_CYCCNT_PTR = (volatile uint32_t*)0xE0001004;
+        uint32_t now = *DWT_CYCCNT_PTR;
         if (mWindowStartTick == 0) {
             mWindowStartTick = now;
         }
-        uint32_t elapsed = now - mWindowStartTick;
-        if (elapsed >= pdMS_TO_TICKS(1000)) {
+        uint32_t elapsedCycles = now - mWindowStartTick;
+        uint32_t elapsedMs = elapsedCycles / (SystemCoreClock / 1000);
+        if (elapsedMs >= 1000) {
             mLastRate = mWritesInWindow;
             mWritesInWindow = 0;
             mWindowStartTick = now;

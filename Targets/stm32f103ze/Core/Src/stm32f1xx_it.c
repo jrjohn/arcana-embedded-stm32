@@ -59,7 +59,7 @@ extern UART_HandleTypeDef huart1;
 extern TIM_HandleTypeDef htim4;
 
 /* USER CODE BEGIN EV */
-
+extern SD_HandleTypeDef g_hsd;
 /* USER CODE END EV */
 
 /******************************************************************************/
@@ -189,5 +189,21 @@ void USART1_IRQHandler(void)
 }
 
 /* USER CODE BEGIN 1 */
+
+/**
+  * @brief This function handles SDIO global interrupt (DMA mode).
+  */
+void SDIO_IRQHandler(void)
+{
+  HAL_SD_IRQHandler(&g_hsd);
+}
+
+/**
+  * @brief This function handles DMA2 Channel 4 and 5 global interrupt (SDIO DMA).
+  */
+void DMA2_Channel4_5_IRQHandler(void)
+{
+  HAL_DMA_IRQHandler(g_hsd.hdmatx);
+}
 
 /* USER CODE END 1 */

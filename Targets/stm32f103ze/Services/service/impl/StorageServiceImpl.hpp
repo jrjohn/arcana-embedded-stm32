@@ -67,8 +67,8 @@ private:
     uint8_t mFileBuf[FlashBlockDevice::CACHE_SIZE];
     struct lfs_file_config mFileConfig;
 
-    // Encryption key (hardcoded for demo; in production use secure key storage)
-    static const uint8_t sKey[crypto::ChaCha20::KEY_SIZE];
+    // Per-device encryption key (derived from master secret + hardware UID)
+    static uint8_t sKey[crypto::ChaCha20::KEY_SIZE];
 
     // Dedicated write task (large stack for ChaCha20 + littlefs + HAL_FLASH)
     static const uint16_t TASK_STACK_SIZE = 512;  // 2KB stack
