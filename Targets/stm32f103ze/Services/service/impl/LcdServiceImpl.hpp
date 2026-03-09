@@ -36,11 +36,13 @@ private:
 
     Ili9341Lcd mLcd;
 
-    static const uint16_t TEMP_VALUE_Y = 80;
-    static const uint16_t SD_SPEED_Y = 145;
-    static const uint16_t SD_TOTAL_Y = 195;
-    static const uint16_t SD_RECORDS_Y = 225;
-    static const uint16_t STORAGE_VALUE_Y = 280;
+    static const uint16_t TEMP_VALUE_Y = 42;
+    static const uint16_t SD_SPEED_Y = 80;
+    static const uint16_t SD_TOTAL_Y = 100;
+    static const uint16_t SD_RECORDS_Y = 112;
+    static const uint16_t SD_RATE_Y = 124;
+    static const uint16_t MQTT_LABEL_Y = 142;
+    static const uint16_t MQTT_STATUS_Y = 154;
     static const uint16_t VALUE_X = 20;
 };
 

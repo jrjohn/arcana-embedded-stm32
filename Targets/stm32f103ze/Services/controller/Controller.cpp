@@ -6,6 +6,7 @@
 #include "LightServiceImpl.hpp"
 #include "StorageServiceImpl.hpp"
 #include "SdBenchmarkServiceImpl.hpp"
+#include "WifiMqttServiceImpl.hpp"
 
 namespace arcana {
 
@@ -17,6 +18,7 @@ Controller::Controller()
     , mLight(0)
     , mStorage(0)
     , mSdBench(0)
+    , mMqtt(0)
 {
 }
 
@@ -42,6 +44,7 @@ void Controller::wireServices() {
     mLight   = &light::LightServiceImpl::getInstance();
     mStorage = &storage::StorageServiceImpl::getInstance();
     mSdBench = &sdbench::SdBenchmarkServiceImpl::getInstance();
+    mMqtt    = &mqtt::WifiMqttServiceImpl::getInstance();
 
     // Wire LED <- Timer (base tick for 1-second color cycling)
     mLed->input.TimerEvents = mTimer->output.BaseTimer;
@@ -58,6 +61,10 @@ void Controller::wireServices() {
 
     // Wire LCD <- SD Benchmark (display write speed)
     mLcd->input.SdBenchmark = mSdBench->output.StatsEvents;
+
+    // Wire MQTT <- Sensor + Light (publish all sensor data to MQTT broker)
+    mMqtt->input.SensorData = mSensor->output.DataEvents;
+    mMqtt->input.LightData  = mLight->output.DataEvents;
 }
 
 void Controller::initHAL() {
@@ -67,7 +74,8 @@ void Controller::initHAL() {
     mLight->initHAL();
     mLcd->initHAL();
     // mStorage->initHAL();
-    mSdBench->initHAL();   // Initializes SDIO + SD card
+    mSdBench->initHAL();  // Initializes SDIO + SD card
+    mMqtt->initHAL();     // Initializes USART3 + ESP8266 GPIO
 }
 
 void Controller::initServices() {
@@ -78,6 +86,7 @@ void Controller::initServices() {
     mLcd->init();
     // mStorage->init();
     mSdBench->init();     // Fills benchmark buffer
+    mMqtt->init();        // Subscribes to sensor observable
 }
 
 void Controller::startServices() {
@@ -87,7 +96,8 @@ void Controller::startServices() {
     mLight->start();
     mLcd->start();
     // mStorage->start();
-    mSdBench->start();    // Starts continuous SD write benchmark
+    mMqtt->start();       // Starts WiFi + MQTT connection task
+    mSdBench->start();    // Start after MQTT (SDIO DMA interferes with UART)
 }
 
 } // namespace arcana

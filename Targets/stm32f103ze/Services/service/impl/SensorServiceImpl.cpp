@@ -67,8 +67,9 @@ void SensorServiceImpl::sensorTask(void* param) {
 
         if (reading.valid) {
             self->mSensorData.temperature = reading.temperature;
-            self->mSensorData.humidity = 0;
-            self->mSensorData.quality = 100;
+            self->mSensorData.accelX = reading.accelX;
+            self->mSensorData.accelY = reading.accelY;
+            self->mSensorData.accelZ = reading.accelZ;
             self->mSensorData.updateTimestamp();
             self->mDataObs.publish(&self->mSensorData);
         }

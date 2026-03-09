@@ -49,18 +49,17 @@ void LcdServiceImpl::drawInitialScreen() {
     mLcd.fillScreen(Ili9341Lcd::BLACK);
 
     // Title
-    mLcd.drawString(30, 10, "Arcana F103", Ili9341Lcd::WHITE, Ili9341Lcd::BLACK, 2);
-    mLcd.drawString(30, 35, "SD Benchmark", Ili9341Lcd::GRAY, Ili9341Lcd::BLACK, 1);
+    mLcd.drawString(30, 4, "Arcana F103", Ili9341Lcd::WHITE, Ili9341Lcd::BLACK, 2);
 
     // === Temperature section ===
-    mLcd.drawHLine(10, 55, 220, Ili9341Lcd::DARKGRAY);
-    mLcd.drawString(VALUE_X, 65, "Temperature", Ili9341Lcd::WHITE, Ili9341Lcd::BLACK, 1);
+    mLcd.drawHLine(10, 24, 220, Ili9341Lcd::DARKGRAY);
+    mLcd.drawString(VALUE_X, 30, "Temperature", Ili9341Lcd::WHITE, Ili9341Lcd::BLACK, 1);
     mLcd.drawString(VALUE_X, TEMP_VALUE_Y, "-- C", Ili9341Lcd::YELLOW, Ili9341Lcd::BLACK, 2);
 
-    // === SDCard (ChaCha20) Benchmark section ===
-    mLcd.drawHLine(10, 110, 220, Ili9341Lcd::DARKGRAY);
-    mLcd.drawString(VALUE_X, 120, "SDCard (ChaCha20)", Ili9341Lcd::WHITE, Ili9341Lcd::BLACK, 1);
-    mLcd.drawString(VALUE_X, SD_SPEED_Y, "-- KB/s", Ili9341Lcd::CYAN, Ili9341Lcd::BLACK, 3);
+    // === SD Benchmark section ===
+    mLcd.drawHLine(10, 62, 220, Ili9341Lcd::DARKGRAY);
+    mLcd.drawString(VALUE_X, 68, "SD Bench (ChaCha20)", Ili9341Lcd::WHITE, Ili9341Lcd::BLACK, 1);
+    mLcd.drawString(VALUE_X, SD_SPEED_Y, "-- KB/s", Ili9341Lcd::CYAN, Ili9341Lcd::BLACK, 2);
 
     mLcd.drawString(VALUE_X, SD_TOTAL_Y, "Written:", Ili9341Lcd::GRAY, Ili9341Lcd::BLACK, 1);
     mLcd.drawString(VALUE_X + 60, SD_TOTAL_Y, "0 KB", Ili9341Lcd::GREEN, Ili9341Lcd::BLACK, 1);
@@ -68,10 +67,13 @@ void LcdServiceImpl::drawInitialScreen() {
     mLcd.drawString(VALUE_X, SD_RECORDS_Y, "Records:", Ili9341Lcd::GRAY, Ili9341Lcd::BLACK, 1);
     mLcd.drawString(VALUE_X + 60, SD_RECORDS_Y, "0", Ili9341Lcd::GREEN, Ili9341Lcd::BLACK, 1);
 
-    // === Records/sec section ===
-    mLcd.drawHLine(10, 255, 220, Ili9341Lcd::DARKGRAY);
-    mLcd.drawString(VALUE_X, 265, "Record Write Rate", Ili9341Lcd::WHITE, Ili9341Lcd::BLACK, 1);
-    mLcd.drawString(VALUE_X, STORAGE_VALUE_Y, "-- /s", Ili9341Lcd::GREEN, Ili9341Lcd::BLACK, 2);
+    mLcd.drawString(VALUE_X, SD_RATE_Y, "Rate:", Ili9341Lcd::GRAY, Ili9341Lcd::BLACK, 1);
+    mLcd.drawString(VALUE_X + 40, SD_RATE_Y, "-- /s", Ili9341Lcd::GREEN, Ili9341Lcd::BLACK, 1);
+
+    // === MQTT section ===
+    mLcd.drawHLine(10, 136, 220, Ili9341Lcd::DARKGRAY);
+    mLcd.drawString(VALUE_X, MQTT_LABEL_Y, "WiFi / MQTT", Ili9341Lcd::WHITE, Ili9341Lcd::BLACK, 1);
+    mLcd.drawString(VALUE_X, MQTT_STATUS_Y, "Idle", Ili9341Lcd::GRAY, Ili9341Lcd::BLACK, 1);
 }
 
 void LcdServiceImpl::onSensorData(SensorDataModel* model, void* ctx) {
@@ -119,8 +121,8 @@ void LcdServiceImpl::updateSdBenchmarkDisplay(const SdBenchmarkModel* data) {
         errBuf[1] = '0' + data->errorStep;
         errBuf[2] = ':';
         uint32ToStr(errBuf + 3, data->errorCode);
-        mLcd.fillRect(VALUE_X, SD_SPEED_Y, 200, 24, Ili9341Lcd::BLACK);
-        mLcd.drawString(VALUE_X, SD_SPEED_Y, errBuf, Ili9341Lcd::RED, Ili9341Lcd::BLACK, 3);
+        mLcd.fillRect(VALUE_X, SD_SPEED_Y, 200, 16, Ili9341Lcd::BLACK);
+        mLcd.drawString(VALUE_X, SD_SPEED_Y, errBuf, Ili9341Lcd::RED, Ili9341Lcd::BLACK, 2);
         return;
     }
 
@@ -139,8 +141,8 @@ void LcdServiceImpl::updateSdBenchmarkDisplay(const SdBenchmarkModel* data) {
     *p++ = 's';
     *p = '\0';
 
-    mLcd.fillRect(VALUE_X, SD_SPEED_Y, 200, 24, Ili9341Lcd::BLACK);
-    mLcd.drawString(VALUE_X, SD_SPEED_Y, buf, Ili9341Lcd::CYAN, Ili9341Lcd::BLACK, 3);
+    mLcd.fillRect(VALUE_X, SD_SPEED_Y, 200, 16, Ili9341Lcd::BLACK);
+    mLcd.drawString(VALUE_X, SD_SPEED_Y, buf, Ili9341Lcd::CYAN, Ili9341Lcd::BLACK, 2);
 
     // Total written
     uint32ToStr(buf, data->totalKB);
@@ -156,21 +158,21 @@ void LcdServiceImpl::updateSdBenchmarkDisplay(const SdBenchmarkModel* data) {
     mLcd.fillRect(VALUE_X + 60, SD_RECORDS_Y, 160, 8, Ili9341Lcd::BLACK);
     mLcd.drawString(VALUE_X + 60, SD_RECORDS_Y, buf, Ili9341Lcd::GREEN, Ili9341Lcd::BLACK, 1);
 
-    // Records/sec (bottom section)
+    // Records/sec
     uint32ToStr(buf, data->recordsPerSec);
     p = buf;
     while (*p) p++;
     *p++ = ' '; *p++ = '/'; *p++ = 's'; *p = '\0';
-    mLcd.fillRect(VALUE_X, STORAGE_VALUE_Y, 200, 16, Ili9341Lcd::BLACK);
-    mLcd.drawString(VALUE_X, STORAGE_VALUE_Y, buf, Ili9341Lcd::GREEN, Ili9341Lcd::BLACK, 2);
+    mLcd.fillRect(VALUE_X + 40, SD_RATE_Y, 160, 8, Ili9341Lcd::BLACK);
+    mLcd.drawString(VALUE_X + 40, SD_RATE_Y, buf, Ili9341Lcd::GREEN, Ili9341Lcd::BLACK, 1);
 }
 
 void LcdServiceImpl::updateStorageDisplay(const StorageStatsModel* data) {
     char buf[20];
 
     uint32ToStr(buf, data->recordCount);
-    mLcd.fillRect(VALUE_X, STORAGE_VALUE_Y, 200, 16, Ili9341Lcd::BLACK);
-    mLcd.drawString(VALUE_X, STORAGE_VALUE_Y, buf, Ili9341Lcd::GREEN, Ili9341Lcd::BLACK, 2);
+    mLcd.fillRect(VALUE_X + 60, SD_RECORDS_Y, 160, 8, Ili9341Lcd::BLACK);
+    mLcd.drawString(VALUE_X + 60, SD_RECORDS_Y, buf, Ili9341Lcd::GREEN, Ili9341Lcd::BLACK, 1);
 
     char rateBuf[16];
     uint32ToStr(rateBuf, data->writesPerSec);
@@ -178,8 +180,8 @@ void LcdServiceImpl::updateStorageDisplay(const StorageStatsModel* data) {
     while (*p) p++;
     *p++ = ' '; *p++ = '/'; *p++ = 's'; *p = '\0';
 
-    mLcd.fillRect(VALUE_X + 40, 300, 100, 8, Ili9341Lcd::BLACK);
-    mLcd.drawString(VALUE_X + 40, 300, rateBuf, Ili9341Lcd::GREEN, Ili9341Lcd::BLACK, 1);
+    mLcd.fillRect(VALUE_X + 40, SD_RATE_Y, 160, 8, Ili9341Lcd::BLACK);
+    mLcd.drawString(VALUE_X + 40, SD_RATE_Y, rateBuf, Ili9341Lcd::GREEN, Ili9341Lcd::BLACK, 1);
 }
 
 void LcdServiceImpl::intToStr(char* buf, int value) {

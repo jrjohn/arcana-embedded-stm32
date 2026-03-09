@@ -17,14 +17,14 @@ enum class F103ModelType : uint8_t {
 class SensorDataModel : public Model {
 public:
     float temperature;
-    float humidity;
-    uint8_t quality;
+    int16_t accelX;
+    int16_t accelY;
+    int16_t accelZ;
 
     SensorDataModel()
         : Model(static_cast<uint8_t>(F103ModelType::Sensor))
         , temperature(0.0f)
-        , humidity(0.0f)
-        , quality(0) {}
+        , accelX(0), accelY(0), accelZ(0) {}
 };
 
 class MqttCommandModel : public Model {

@@ -1,0 +1,72 @@
+#pragma once
+
+#include "stm32f1xx_hal.h"
+#include "FreeRTOS.h"
+#include "semphr.h"
+#include <cstdint>
+
+namespace arcana {
+
+class Esp8266 {
+public:
+    static Esp8266& getInstance();
+
+    bool initHAL();
+    void reset();
+
+    // Send AT command and wait for expected response (default "OK")
+    bool sendCmd(const char* cmd, const char* expect = "OK",
+                 uint32_t timeoutMs = 2000);
+
+    // Send raw data bytes
+    bool sendData(const uint8_t* data, uint16_t len, uint32_t timeoutMs = 1000);
+
+    // Get response buffer after sendCmd
+    const char* getResponse() const { return mRxBuf; }
+    uint16_t getResponseLen() const { return mRxLen; }
+
+    // Check if response contains a substring
+    bool responseContains(const char* str) const;
+
+    // Wait for expected string in response (no command sent)
+    bool waitFor(const char* expect, uint32_t timeoutMs);
+
+    // Clear RX buffer (for fresh response after raw data send)
+    void clearRx();
+
+    // Called from USART3 IRQ handler - byte received
+    void isr_onRxByte(uint8_t byte);
+    // Called from USART3 IRQ handler - idle line detected (frame complete)
+    void isr_onIdle();
+
+    // Unsolicited MQTT subscription message buffer
+    bool hasMqttMsg() const { return mMqttReady; }
+    const char* getMqttMsg() const { return mMqttBuf; }
+    uint16_t getMqttMsgLen() const { return mMqttLen; }
+    void clearMqttMsg() { mMqttReady = false; }
+
+    static const uint16_t RX_BUF_SIZE = 512;
+    static const uint16_t MQTT_BUF_SIZE = 256;
+
+private:
+    Esp8266();
+    ~Esp8266();
+
+    void initGpio();
+    void initUsart();
+
+    char mRxBuf[RX_BUF_SIZE];
+    volatile uint16_t mRxPos;    // Current write position in mRxBuf
+    volatile uint16_t mRxLen;    // Length of last complete frame
+
+    char mMqttBuf[MQTT_BUF_SIZE];
+    volatile uint16_t mMqttLen;
+    volatile bool mMqttReady;
+
+    StaticSemaphore_t mFrameSemBuf;
+    SemaphoreHandle_t mFrameSem;  // Signaled when complete frame received
+
+    bool mInitialized;
+};
+
+} // namespace arcana

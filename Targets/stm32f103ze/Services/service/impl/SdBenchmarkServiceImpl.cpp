@@ -119,7 +119,7 @@ void SdBenchmarkServiceImpl::stop() {
 
 void SdBenchmarkServiceImpl::benchmarkTask(void* param) {
     SdBenchmarkServiceImpl* self = static_cast<SdBenchmarkServiceImpl*>(param);
-    vTaskDelay(pdMS_TO_TICKS(500));
+    vTaskDelay(pdMS_TO_TICKS(15000));  // Wait for MQTT to connect first (SDIO DMA interferes with UART)
     self->runBenchmark();
     vTaskDelete(0);
 }
@@ -208,6 +208,9 @@ void SdBenchmarkServiceImpl::runBenchmark() {
             mTotalRecords = nextRecords;
             continue;
         }
+
+        // Yield to let UART/MQTT task process between DMA bursts
+        vTaskDelay(pdMS_TO_TICKS(2));
 
         // Update counters
         mBlockAddr += BLOCKS_PER_WRITE;

@@ -50,7 +50,7 @@ private:
     void makeNonce(uint8_t nonce[crypto::ChaCha20::NONCE_SIZE], uint32_t recordIndex);
 
     // Record serialization
-    static const uint32_t RECORD_SIZE = 13;  // 4+4+4+1
+    static const uint32_t RECORD_SIZE = 14;  // 4+4+2+2+2
     void serializeRecord(const SensorDataModel* model, uint8_t* buf);
     void deserializeRecord(const uint8_t* buf, SensorDataModel* model);
 

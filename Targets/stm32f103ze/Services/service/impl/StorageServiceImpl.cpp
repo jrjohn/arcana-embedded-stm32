@@ -138,8 +138,9 @@ void StorageServiceImpl::storageTask(void* param) {
     // Benchmark mode: write as fast as possible with fake sensor data
     SensorDataModel fakeData;
     fakeData.temperature = 25.5f;
-    fakeData.humidity = 60.0f;
-    fakeData.quality = 1;
+    fakeData.accelX = 100;
+    fakeData.accelY = 200;
+    fakeData.accelZ = 16384;
 
     while (self->mRunning) {
         fakeData.updateTimestamp();
@@ -277,7 +278,7 @@ void StorageServiceImpl::makeNonce(uint8_t nonce[crypto::ChaCha20::NONCE_SIZE],
 }
 
 void StorageServiceImpl::serializeRecord(const SensorDataModel* model, uint8_t* buf) {
-    // [timestamp:4 LE][temperature:4 float][humidity:4 float][quality:1]
+    // [timestamp:4 LE][temperature:4 float][accelX:2][accelY:2][accelZ:2] = 14 bytes
     uint32_t ts = model->timestamp;
     buf[0] = (ts >>  0) & 0xFF;
     buf[1] = (ts >>  8) & 0xFF;
@@ -291,14 +292,12 @@ void StorageServiceImpl::serializeRecord(const SensorDataModel* model, uint8_t* 
     buf[6] = (temp >> 16) & 0xFF;
     buf[7] = (temp >> 24) & 0xFF;
 
-    uint32_t hum;
-    memcpy(&hum, &model->humidity, 4);
-    buf[8]  = (hum >>  0) & 0xFF;
-    buf[9]  = (hum >>  8) & 0xFF;
-    buf[10] = (hum >> 16) & 0xFF;
-    buf[11] = (hum >> 24) & 0xFF;
-
-    buf[12] = model->quality;
+    buf[8]  = (uint8_t)(model->accelX & 0xFF);
+    buf[9]  = (uint8_t)((model->accelX >> 8) & 0xFF);
+    buf[10] = (uint8_t)(model->accelY & 0xFF);
+    buf[11] = (uint8_t)((model->accelY >> 8) & 0xFF);
+    buf[12] = (uint8_t)(model->accelZ & 0xFF);
+    buf[13] = (uint8_t)((model->accelZ >> 8) & 0xFF);
 }
 
 void StorageServiceImpl::deserializeRecord(const uint8_t* buf, SensorDataModel* model) {
@@ -309,11 +308,9 @@ void StorageServiceImpl::deserializeRecord(const uint8_t* buf, SensorDataModel* 
                     ((uint32_t)buf[6] << 16) | ((uint32_t)buf[7] << 24);
     memcpy(&model->temperature, &temp, 4);
 
-    uint32_t hum = (uint32_t)buf[8]        | ((uint32_t)buf[9] << 8) |
-                   ((uint32_t)buf[10] << 16) | ((uint32_t)buf[11] << 24);
-    memcpy(&model->humidity, &hum, 4);
-
-    model->quality = buf[12];
+    model->accelX = (int16_t)((uint16_t)buf[8]  | ((uint16_t)buf[9] << 8));
+    model->accelY = (int16_t)((uint16_t)buf[10] | ((uint16_t)buf[11] << 8));
+    model->accelZ = (int16_t)((uint16_t)buf[12] | ((uint16_t)buf[13] << 8));
 }
 
 void StorageServiceImpl::publishStats() {
