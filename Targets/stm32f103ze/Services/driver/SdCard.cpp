@@ -110,9 +110,9 @@ bool SdCard::initHAL() {
     HAL_SD_ConfigWideBusOperation(&g_hsd, SDIO_BUS_WIDE_4B);
 
     // Switch to transfer clock speed, preserve bus width and other CLKCR bits
-    // 72MHz / (4+2) = 12MHz (matches 野火 SDIO_TRANSFER_CLK_DIV)
-    SDIO->CLKCR = (SDIO->CLKCR & ~0xFFU) | 4U;
-    g_hsd.Init.ClockDiv = 4;
+    // 72MHz / (1+2) = 24MHz (SD Default Speed max = 25MHz)
+    SDIO->CLKCR = (SDIO->CLKCR & ~0xFFU) | 1U;
+    g_hsd.Init.ClockDiv = 1;
 
     // Enable SDIO and DMA2 Channel 4/5 interrupts
     // Priority >= 5 (configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY) for FreeRTOS API safety
