@@ -296,7 +296,7 @@ bool WifiMqttServiceImpl::connectWifi() {
     return false;
 }
 
-// --- MQTT over TCP (raw MQTT 3.1.1 packets) ---
+// --- MQTT over TCP (raw MQTT 5.0 packets) ---
 
 // Ensure ESP is in AT command mode (not stuck in data mode)
 bool WifiMqttServiceImpl::verifyAtReady() {
@@ -333,7 +333,8 @@ bool WifiMqttServiceImpl::tcpSend(const uint8_t* data, uint16_t len) {
 
 uint16_t WifiMqttServiceImpl::mqttBuildConnect(uint8_t* buf, const char* clientId) {
     uint16_t idLen = strlen(clientId);
-    uint16_t remainLen = 10 + 2 + idLen;  // variable header(10) + clientId(2+len)
+    // variable header: 6(proto name) + 1(level) + 1(flags) + 2(keepalive) + 1(props len) = 11
+    uint16_t remainLen = 11 + 2 + idLen;
     uint16_t pos = 0;
 
     buf[pos++] = 0x10;  // CONNECT
@@ -343,14 +344,17 @@ uint16_t WifiMqttServiceImpl::mqttBuildConnect(uint8_t* buf, const char* clientI
     buf[pos++] = 0x00; buf[pos++] = 0x04;
     buf[pos++] = 'M'; buf[pos++] = 'Q'; buf[pos++] = 'T'; buf[pos++] = 'T';
 
-    // Protocol Level (MQTT 3.1.1)
-    buf[pos++] = 0x04;
+    // Protocol Level (MQTT 5.0)
+    buf[pos++] = 0x05;
 
-    // Connect Flags: Clean Session
+    // Connect Flags: Clean Start
     buf[pos++] = 0x02;
 
     // Keep Alive: 60 seconds
     buf[pos++] = 0x00; buf[pos++] = 0x3C;
+
+    // Properties Length: 0 (no properties)
+    buf[pos++] = 0x00;
 
     // Client ID
     buf[pos++] = (uint8_t)(idLen >> 8);
@@ -363,7 +367,8 @@ uint16_t WifiMqttServiceImpl::mqttBuildConnect(uint8_t* buf, const char* clientI
 
 uint16_t WifiMqttServiceImpl::mqttBuildSubscribe(uint8_t* buf, const char* topic, uint16_t packetId) {
     uint16_t topicLen = strlen(topic);
-    uint16_t remainLen = 2 + 2 + topicLen + 1;  // packetId(2) + topic(2+len) + qos(1)
+    // packetId(2) + propsLen(1) + topic(2+len) + subscriptionOptions(1)
+    uint16_t remainLen = 2 + 1 + 2 + topicLen + 1;
     uint16_t pos = 0;
 
     buf[pos++] = 0x82;  // SUBSCRIBE
@@ -373,13 +378,16 @@ uint16_t WifiMqttServiceImpl::mqttBuildSubscribe(uint8_t* buf, const char* topic
     buf[pos++] = (uint8_t)(packetId >> 8);
     buf[pos++] = (uint8_t)(packetId & 0xFF);
 
+    // Properties Length: 0 (no properties)
+    buf[pos++] = 0x00;
+
     // Topic Filter
     buf[pos++] = (uint8_t)(topicLen >> 8);
     buf[pos++] = (uint8_t)(topicLen & 0xFF);
     memcpy(buf + pos, topic, topicLen);
     pos += topicLen;
 
-    // QoS 1
+    // Subscription Options: QoS 1, No Local=0, RAP=0, Retain Handling=0
     buf[pos++] = 0x01;
 
     return pos;
@@ -388,7 +396,8 @@ uint16_t WifiMqttServiceImpl::mqttBuildSubscribe(uint8_t* buf, const char* topic
 uint16_t WifiMqttServiceImpl::mqttBuildPublish(uint8_t* buf, const char* topic, const char* payload) {
     uint16_t topicLen = strlen(topic);
     uint16_t payloadLen = strlen(payload);
-    uint16_t remainLen = 2 + topicLen + payloadLen;
+    // topic(2+len) + propsLen(1) + payload
+    uint16_t remainLen = 2 + topicLen + 1 + payloadLen;
     uint16_t pos = 0;
 
     buf[pos++] = 0x30;  // PUBLISH QoS 0
@@ -400,6 +409,9 @@ uint16_t WifiMqttServiceImpl::mqttBuildPublish(uint8_t* buf, const char* topic, 
     buf[pos++] = (uint8_t)(topicLen & 0xFF);
     memcpy(buf + pos, topic, topicLen);
     pos += topicLen;
+
+    // Properties Length: 0 (no properties)
+    buf[pos++] = 0x00;
 
     // Payload
     memcpy(buf + pos, payload, payloadLen);
@@ -433,7 +445,7 @@ bool WifiMqttServiceImpl::connectMqtt() {
         return false;
     }
 
-    // Wait for CONNACK (0x20 0x02 0x00 0x00)
+    // Wait for CONNACK (0x20 0x03 0x00 0x00 0x00 for MQTT 5.0)
     vTaskDelay(pdMS_TO_TICKS(1000));
     return true;
 }
@@ -488,8 +500,12 @@ void WifiMqttServiceImpl::processIncomingMsg() {
     // Skip topic
     p += topicLen;
 
+    // Skip MQTT 5.0 Properties (variable byte integer length + properties data)
+    uint8_t propsLen = (uint8_t)*p;
+    p += 1 + propsLen;
+
     // Remaining is payload
-    uint16_t payloadLen = remainLen - 2 - topicLen;
+    uint16_t payloadLen = remainLen - 2 - topicLen - 1 - propsLen;
     uint16_t available = bufLen - (uint16_t)(p - buf);
     if (payloadLen > available) payloadLen = available;
 
