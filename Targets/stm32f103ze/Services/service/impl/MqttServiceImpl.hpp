@@ -1,16 +1,15 @@
 #pragma once
 
-#include "WifiMqttService.hpp"
-#include "Esp8266.hpp"
+#include "MqttService.hpp"
 #include "FreeRTOS.h"
 #include "task.h"
 
 namespace arcana {
 namespace mqtt {
 
-class WifiMqttServiceImpl : public WifiMqttService {
+class MqttServiceImpl : public MqttService {
 public:
-    static WifiMqttService& getInstance();
+    static MqttService& getInstance();
 
     ServiceStatus initHAL() override;
     ServiceStatus init() override;
@@ -18,18 +17,17 @@ public:
     void stop() override;
 
 private:
-    WifiMqttServiceImpl();
-    ~WifiMqttServiceImpl();
+    MqttServiceImpl();
+    ~MqttServiceImpl();
 
     // FreeRTOS task
     static void mqttTask(void* param);
     void runTask();
 
-    // AT command sequences
-    bool connectWifi();
+    // MQTT connection
     bool connectMqtt();
     bool subscribeTopic();
-    void reconnect();
+    bool quickReconnect();
 
     // Publish sensor data as JSON to MQTT
     bool publishSensorData(SensorDataModel* model);
@@ -49,8 +47,6 @@ private:
     static void onLightData(LightDataModel* model, void* ctx);
 
     // Configuration
-    static const char* WIFI_SSID;
-    static const char* WIFI_PASS;
     static const char* MQTT_BROKER;
     static const uint16_t MQTT_PORT = 1883;
     static const char* MQTT_CLIENT_ID;
@@ -58,8 +54,6 @@ private:
     static const char* TOPIC_CMD;
 
     static const uint16_t TASK_STACK_SIZE = 512;
-
-    Esp8266& mEsp;
 
     Observable<MqttCommandModel>    mCmdObs;
     Observable<MqttConnectionModel> mConnObs;

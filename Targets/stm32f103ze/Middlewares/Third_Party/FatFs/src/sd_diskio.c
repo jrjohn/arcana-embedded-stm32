@@ -3,7 +3,13 @@
  * @brief FatFS disk I/O layer for SDIO SD card on STM32F103
  *
  * Implements the diskio.h interface required by FatFS.
- * Uses DMA for writes (polling fails at 24MHz SDIO clock due to FIFO underrun).
+ * - Reads: Polling at reduced SDIO clock (~4MHz) to avoid FIFO overflow
+ * - Writes: DMA at full speed (24MHz)
+ *
+ * STM32F103 shares DMA2 Channel 4 between SDIO TX and RX. Mixing DMA reads
+ * and DMA writes causes SDIO DATAEND to not fire for writes (the DMA direction
+ * switch leaves the SDIO data path in a broken state). Using polling for reads
+ * avoids this hardware limitation entirely.
  */
 
 #include "ff.h"
@@ -16,6 +22,51 @@
 extern SD_HandleTypeDef g_hsd;
 extern volatile uint8_t g_sd_ready;
 extern SemaphoreHandle_t g_sd_dma_sem;
+
+/* Reduced SDIO clock divisor for polling reads.
+ * 72MHz / (17+2) ≈ 3.8MHz — slow enough that the CPU can drain the FIFO
+ * via polling even under FreeRTOS interrupt load. */
+#define SDIO_CLKDIV_SLOW 17U
+
+/* Fast SDIO clock divisor for DMA writes.
+ * 72MHz / (1+2) = 24MHz — maximum Default Speed. */
+#define SDIO_CLKDIV_FAST 1U
+
+/* Wait for HAL SD state machine to be READY.
+ * If stuck (from a failed DMA write), force-reset the state. */
+static void ensure_hal_ready(void) {
+    if (g_hsd.State == HAL_SD_STATE_READY) return;
+
+    /* Wait up to 1 second for natural completion */
+    uint32_t t = HAL_GetTick() + 1000;
+    while (g_hsd.State != HAL_SD_STATE_READY) {
+        if (HAL_GetTick() > t) break;
+    }
+    if (g_hsd.State == HAL_SD_STATE_READY) return;
+
+    /* Force-reset: abort DMA, reset SDIO, recover card */
+    extern DMA_HandleTypeDef g_hdma_sdio;
+    __HAL_DMA_DISABLE(&g_hdma_sdio);
+    g_hdma_sdio.State = HAL_DMA_STATE_READY;
+    g_hdma_sdio.Lock = HAL_UNLOCKED;
+
+    g_hsd.Instance->DCTRL = 0;
+    g_hsd.Instance->MASK = 0;
+    __HAL_SD_CLEAR_FLAG(&g_hsd, SDIO_STATIC_FLAGS);
+
+    g_hsd.State = HAL_SD_STATE_READY;
+    g_hsd.Context = SD_CONTEXT_NONE;
+    g_hsd.ErrorCode = HAL_SD_ERROR_NONE;
+
+    /* Send STOP command to recover card from stuck RECEIVE/DATA state */
+    SDMMC_CmdStopTransfer(g_hsd.Instance);
+
+    /* Wait for card to return to TRANSFER state */
+    t = HAL_GetTick() + 1000;
+    while (HAL_SD_GetCardState(&g_hsd) != HAL_SD_CARD_TRANSFER) {
+        if (HAL_GetTick() > t) break;
+    }
+}
 
 /*-----------------------------------------------------------------------*/
 /* Get Drive Status                                                      */
@@ -39,58 +90,77 @@ DSTATUS disk_initialize(BYTE pdrv)
 }
 
 /*-----------------------------------------------------------------------*/
-/* Read Sector(s)                                                        */
+/* Read Sector(s) — Polling at reduced SDIO clock                        */
 /*-----------------------------------------------------------------------*/
 DRESULT disk_read(BYTE pdrv, BYTE *buff, LBA_t sector, UINT count)
 {
     if (pdrv != 0 || !g_sd_ready) return RES_NOTRDY;
 
-    if (HAL_SD_ReadBlocks(&g_hsd, buff, sector, count, 5000) != HAL_OK) {
-        return RES_ERROR;
+    for (int retry = 0; retry < 3; retry++) {
+        ensure_hal_ready();
+
+        /* Slow down SDIO clock for polling (avoid FIFO overflow under IRQ load) */
+        MODIFY_REG(SDIO->CLKCR, 0xFFU, SDIO_CLKDIV_SLOW);
+
+        HAL_StatusTypeDef hal = HAL_SD_ReadBlocks(&g_hsd, buff, sector, count, 5000);
+
+        /* Restore fast clock */
+        MODIFY_REG(SDIO->CLKCR, 0xFFU, SDIO_CLKDIV_FAST);
+
+        if (hal != HAL_OK) {
+            continue;
+        }
+
+        /* Wait for card to return to transfer state */
+        uint32_t timeout = HAL_GetTick() + 5000;
+        while (HAL_SD_GetCardState(&g_hsd) != HAL_SD_CARD_TRANSFER) {
+            if (HAL_GetTick() > timeout) break;
+        }
+
+        return RES_OK;
     }
 
-    /* Wait for card to return to transfer state */
-    uint32_t timeout = HAL_GetTick() + 5000;
-    while (HAL_SD_GetCardState(&g_hsd) != HAL_SD_CARD_TRANSFER) {
-        if (HAL_GetTick() > timeout) return RES_ERROR;
-    }
-
-    return RES_OK;
+    return RES_ERROR;
 }
 
 /*-----------------------------------------------------------------------*/
-/* Write Sector(s)                                                       */
+/* Write Sector(s) — DMA at full SDIO clock speed                        */
 /*-----------------------------------------------------------------------*/
 DRESULT disk_write(BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count)
 {
     if (pdrv != 0 || !g_sd_ready) return RES_NOTRDY;
     if (!g_sd_dma_sem) return RES_ERROR;
 
-    /* Clear any stale semaphore signal */
-    xSemaphoreTake(g_sd_dma_sem, 0);
+    for (int retry = 0; retry < 3; retry++) {
+        ensure_hal_ready();
 
-    /* DMA write (polling fails at 24MHz SDIO clock due to FIFO underrun) */
-    if (HAL_SD_WriteBlocks_DMA(&g_hsd, (uint8_t *)buff, sector, count) != HAL_OK) {
-        return RES_ERROR;
+        /* Clear any stale semaphore signal */
+        xSemaphoreTake(g_sd_dma_sem, 0);
+
+        if (HAL_SD_WriteBlocks_DMA(&g_hsd, (uint8_t *)buff, sector, count) != HAL_OK) {
+            continue;
+        }
+
+        /* Wait for DMA + SDIO completion (HAL_SD_TxCpltCallback gives semaphore) */
+        if (xSemaphoreTake(g_sd_dma_sem, pdMS_TO_TICKS(5000)) != pdTRUE) {
+            continue;
+        }
+
+        /* Check for transfer errors */
+        if (g_hsd.ErrorCode != HAL_SD_ERROR_NONE) {
+            continue;
+        }
+
+        /* Wait for card to finish internal programming */
+        uint32_t timeout = HAL_GetTick() + 5000;
+        while (HAL_SD_GetCardState(&g_hsd) != HAL_SD_CARD_TRANSFER) {
+            if (HAL_GetTick() > timeout) break;
+        }
+
+        return RES_OK;
     }
 
-    /* Wait for DMA + SDIO completion (HAL_SD_TxCpltCallback gives semaphore) */
-    if (xSemaphoreTake(g_sd_dma_sem, pdMS_TO_TICKS(5000)) != pdTRUE) {
-        return RES_ERROR;
-    }
-
-    /* Check for transfer errors */
-    if (g_hsd.ErrorCode != HAL_SD_ERROR_NONE) {
-        return RES_ERROR;
-    }
-
-    /* Wait for card to finish internal programming */
-    uint32_t timeout = HAL_GetTick() + 5000;
-    while (HAL_SD_GetCardState(&g_hsd) != HAL_SD_CARD_TRANSFER) {
-        if (HAL_GetTick() > timeout) return RES_ERROR;
-    }
-
-    return RES_OK;
+    return RES_ERROR;
 }
 
 /*-----------------------------------------------------------------------*/

@@ -1,4 +1,6 @@
 #include "LcdServiceImpl.hpp"
+#include "SystemClock.hpp"
+#include <cstdio>
 
 namespace arcana {
 namespace lcd {
@@ -35,6 +37,9 @@ ServiceStatus LcdServiceImpl::init() {
     if (input.SdBenchmark) {
         input.SdBenchmark->subscribe(onSdBenchmark, this);
     }
+    if (input.BaseTimer) {
+        input.BaseTimer->subscribe(onBaseTimer, this);
+    }
 
     return ServiceStatus::OK;
 }
@@ -60,6 +65,9 @@ void LcdServiceImpl::drawInitialScreen() {
     mLcd.drawHLine(10, 62, 220, Ili9341Lcd::DARKGRAY);
     mLcd.drawString(VALUE_X, 68, "SD Storage (exFAT)", Ili9341Lcd::WHITE, Ili9341Lcd::BLACK, 1);
     mLcd.drawString(VALUE_X, SD_SPEED_Y, "Initializing...", Ili9341Lcd::GRAY, Ili9341Lcd::BLACK, 1);
+    // Labels for TSDB stats (shown after mount)
+    mLcd.drawString(VALUE_X, SD_RECORDS_Y, "Records:", Ili9341Lcd::GRAY, Ili9341Lcd::BLACK, 1);
+    mLcd.drawString(VALUE_X, SD_RATE_Y, "Rate:", Ili9341Lcd::GRAY, Ili9341Lcd::BLACK, 1);
 
     // === MQTT section ===
     mLcd.drawHLine(10, 136, 220, Ili9341Lcd::DARKGRAY);
@@ -159,20 +167,54 @@ void LcdServiceImpl::updateSdBenchmarkDisplay(const SdBenchmarkModel* data) {
 }
 
 void LcdServiceImpl::updateStorageDisplay(const StorageStatsModel* data) {
+    // "Records:" label at VALUE_X, value after label (x=68)
+    static const uint16_t VAL_X = VALUE_X + 54;  // after "Records:" (9 chars × 6px)
+
     char buf[20];
-
     uint32ToStr(buf, data->recordCount);
-    mLcd.fillRect(VALUE_X + 60, SD_RECORDS_Y, 160, 8, Ili9341Lcd::BLACK);
-    mLcd.drawString(VALUE_X + 60, SD_RECORDS_Y, buf, Ili9341Lcd::GREEN, Ili9341Lcd::BLACK, 1);
+    mLcd.fillRect(VAL_X, SD_RECORDS_Y, 160, 8, Ili9341Lcd::BLACK);
+    mLcd.drawString(VAL_X, SD_RECORDS_Y, buf, Ili9341Lcd::GREEN, Ili9341Lcd::BLACK, 1);
 
+    // "Rate:" label at VALUE_X, value after label
+    static const uint16_t RATE_VAL_X = VALUE_X + 36;  // after "Rate:" (6 chars × 6px)
     char rateBuf[16];
     uint32ToStr(rateBuf, data->writesPerSec);
     char* p = rateBuf;
     while (*p) p++;
     *p++ = ' '; *p++ = '/'; *p++ = 's'; *p = '\0';
 
-    mLcd.fillRect(VALUE_X + 40, SD_RATE_Y, 160, 8, Ili9341Lcd::BLACK);
-    mLcd.drawString(VALUE_X + 40, SD_RATE_Y, rateBuf, Ili9341Lcd::GREEN, Ili9341Lcd::BLACK, 1);
+    mLcd.fillRect(RATE_VAL_X, SD_RATE_Y, 160, 8, Ili9341Lcd::BLACK);
+    mLcd.drawString(RATE_VAL_X, SD_RATE_Y, rateBuf, Ili9341Lcd::GREEN, Ili9341Lcd::BLACK, 1);
+}
+
+void LcdServiceImpl::onBaseTimer(TimerModel* model, void* ctx) {
+    (void)model;
+    LcdServiceImpl* self = static_cast<LcdServiceImpl*>(ctx);
+    self->updateTimeDisplay();
+}
+
+void LcdServiceImpl::updateTimeDisplay() {
+    if (!SystemClock::getInstance().isSynced()) return;
+
+    uint32_t epoch = SystemClock::getInstance().now();
+
+    // Date: "2026-03-10" — font2, 10 chars × 12px = 120px, center x=(240-120)/2=60
+    uint32_t date = SystemClock::dateYYYYMMDD(epoch);
+    char dateBuf[12];
+    snprintf(dateBuf, sizeof(dateBuf), "%04lu-%02lu-%02lu",
+        (unsigned long)(date / 10000),
+        (unsigned long)((date / 100) % 100),
+        (unsigned long)(date % 100));
+    mLcd.fillRect(60, CLOCK_DATE_Y, 120, 16, Ili9341Lcd::BLACK);
+    mLcd.drawString(60, CLOCK_DATE_Y, dateBuf, Ili9341Lcd::WHITE, Ili9341Lcd::BLACK, 2);
+
+    // Time: "14:30:05" — font2, 8 chars × 12px = 96px, center x=(240-96)/2=72
+    uint8_t h, m, s;
+    SystemClock::toHMS(epoch, h, m, s);
+    char timeBuf[12];
+    snprintf(timeBuf, sizeof(timeBuf), "%02u:%02u:%02u", h, m, s);
+    mLcd.fillRect(72, CLOCK_TIME_Y, 96, 16, Ili9341Lcd::BLACK);
+    mLcd.drawString(72, CLOCK_TIME_Y, timeBuf, Ili9341Lcd::WHITE, Ili9341Lcd::BLACK, 2);
 }
 
 void LcdServiceImpl::intToStr(char* buf, int value) {

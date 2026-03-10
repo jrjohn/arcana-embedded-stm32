@@ -32,9 +32,8 @@ static FATFS sFatFs;
 SdBenchmarkServiceImpl::SdBenchmarkServiceImpl()
     : mSd(SdCard::getInstance())
     , mRunning(false)
-    , mBlockAddr(0)
     , mBlockCount(0)
-    , mWriteBuf{{}}
+    , mMkfsBuf{}
     , mStatsObs("SdBench Stats")
     , mStats()
     , mWindowStartTick(0)
@@ -118,7 +117,7 @@ void SdBenchmarkServiceImpl::runBenchmark() {
         mkfs_opt.au_size = 0;
 
         sdLcdStatus("[SD] Formatting exFAT...");
-        fr = f_mkfs("", &mkfs_opt, mWriteBuf[0], WRITE_BUF_SIZE);
+        fr = f_mkfs("", &mkfs_opt, mMkfsBuf, MKFS_BUF_SIZE);
         if (fr != FR_OK) {
             snprintf(msg, sizeof(msg), "[SD] mkfs ERR: %d", (int)fr);
             sdLcdStatus(msg);

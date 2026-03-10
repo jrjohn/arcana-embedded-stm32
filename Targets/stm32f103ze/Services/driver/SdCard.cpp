@@ -20,6 +20,15 @@ extern "C" {
         }
     }
 
+    void HAL_SD_RxCpltCallback(SD_HandleTypeDef* hsd) {
+        (void)hsd;
+        BaseType_t woken = pdFALSE;
+        if (g_sd_dma_sem) {
+            xSemaphoreGiveFromISR(g_sd_dma_sem, &woken);
+            portYIELD_FROM_ISR(woken);
+        }
+    }
+
     void HAL_SD_ErrorCallback(SD_HandleTypeDef* hsd) {
         (void)hsd;
         BaseType_t woken = pdFALSE;
@@ -105,6 +114,7 @@ bool SdCard::initHAL() {
     g_hdma_sdio.Init.Priority = DMA_PRIORITY_VERY_HIGH;
     HAL_DMA_Init(&g_hdma_sdio);
     __HAL_LINKDMA(&g_hsd, hdmatx, g_hdma_sdio);
+    __HAL_LINKDMA(&g_hsd, hdmarx, g_hdma_sdio);
 
     // Switch to 4-bit bus at 400kHz (sends ACMD6 to card + configures peripheral)
     HAL_SD_ConfigWideBusOperation(&g_hsd, SDIO_BUS_WIDE_4B);

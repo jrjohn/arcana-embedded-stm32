@@ -31,14 +31,12 @@ private:
     SdCard& mSd;
     bool mRunning;
 
-    // Raw block write position
-    uint32_t mBlockAddr;
-    uint32_t mBlockCount;  // Total blocks on card
+    // Block count (for capacity display)
+    uint32_t mBlockCount;
 
-    // Double buffer: 32 blocks × 2 = 32KB (overlap DMA write + ChaCha20 encrypt)
-    static const uint32_t BLOCKS_PER_WRITE = 32;
-    static const uint32_t WRITE_BUF_SIZE = BLOCKS_PER_WRITE * SdCard::BLOCK_SIZE;
-    uint8_t mWriteBuf[2][WRITE_BUF_SIZE];
+    // Format work buffer (reused only during mkfs, then released)
+    static const uint32_t MKFS_BUF_SIZE = 4096;
+    uint8_t mMkfsBuf[MKFS_BUF_SIZE];
 
     // Stats tracking
     Observable<SdBenchmarkModel> mStatsObs;

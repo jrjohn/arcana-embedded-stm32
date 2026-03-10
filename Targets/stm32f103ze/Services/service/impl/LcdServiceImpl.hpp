@@ -25,10 +25,12 @@ private:
     static void onLightData(LightDataModel* model, void* ctx);
     static void onStorageStats(StorageStatsModel* model, void* ctx);
     static void onSdBenchmark(SdBenchmarkModel* model, void* ctx);
+    static void onBaseTimer(TimerModel* model, void* ctx);
     void updateSensorDisplay(const SensorDataModel* data);
     void updateLightDisplay(const LightDataModel* data);
     void updateStorageDisplay(const StorageStatsModel* data);
     void updateSdBenchmarkDisplay(const SdBenchmarkModel* data);
+    void updateTimeDisplay();
     void drawInitialScreen();
 
     static void intToStr(char* buf, int value);
@@ -43,6 +45,8 @@ private:
     static const uint16_t SD_RATE_Y = 124;
     static const uint16_t MQTT_LABEL_Y = 142;
     static const uint16_t MQTT_STATUS_Y = 154;
+    static const uint16_t CLOCK_DATE_Y = 286;
+    static const uint16_t CLOCK_TIME_Y = 304;
     static const uint16_t VALUE_X = 20;
 };
 

@@ -6,7 +6,9 @@
 #include "LightServiceImpl.hpp"
 #include "StorageServiceImpl.hpp"
 #include "SdBenchmarkServiceImpl.hpp"
-#include "WifiMqttServiceImpl.hpp"
+#include "SdStorageServiceImpl.hpp"
+#include "WifiServiceImpl.hpp"
+#include "MqttServiceImpl.hpp"
 
 namespace arcana {
 
@@ -18,6 +20,8 @@ Controller::Controller()
     , mLight(0)
     , mStorage(0)
     , mSdBench(0)
+    , mSdStorage(0)
+    , mWifi(0)
     , mMqtt(0)
 {
 }
@@ -37,14 +41,16 @@ void Controller::run() {
 }
 
 void Controller::wireServices() {
-    mTimer   = &timer::TimerServiceImpl::getInstance();
-    mLed     = &led::LedServiceImpl::getInstance();
-    mSensor  = &sensor::SensorServiceImpl::getInstance();
-    mLcd     = &lcd::LcdServiceImpl::getInstance();
-    mLight   = &light::LightServiceImpl::getInstance();
-    mStorage = &storage::StorageServiceImpl::getInstance();
-    mSdBench = &sdbench::SdBenchmarkServiceImpl::getInstance();
-    mMqtt    = &mqtt::WifiMqttServiceImpl::getInstance();
+    mTimer     = &timer::TimerServiceImpl::getInstance();
+    mLed       = &led::LedServiceImpl::getInstance();
+    mSensor    = &sensor::SensorServiceImpl::getInstance();
+    mLcd       = &lcd::LcdServiceImpl::getInstance();
+    mLight     = &light::LightServiceImpl::getInstance();
+    mStorage   = &storage::StorageServiceImpl::getInstance();
+    mSdBench   = &sdbench::SdBenchmarkServiceImpl::getInstance();
+    mSdStorage = &sdstorage::SdStorageServiceImpl::getInstance();
+    mWifi      = &wifi::WifiServiceImpl::getInstance();
+    mMqtt      = &mqtt::MqttServiceImpl::getInstance();
 
     // Wire LED <- Timer (base tick for 1-second color cycling)
     mLed->input.TimerEvents = mTimer->output.BaseTimer;
@@ -55,14 +61,23 @@ void Controller::wireServices() {
     // Wire LCD <- Light (display ambient light from AP3216C)
     mLcd->input.LightData = mLight->output.DataEvents;
 
-    // StorageService disabled in benchmark mode (SD card used by SdBenchmarkService)
+    // littlefs StorageService disabled (SD card TSDB replaces it)
     // mStorage->input.SensorData = mSensor->output.DataEvents;
-    // mLcd->input.StorageStats = mStorage->output.StatsEvents;
 
-    // Wire LCD <- SD Benchmark (display write speed)
+    // Wire SdStorage <- Sensor (encrypt + append to TSDB on SD card)
+    mSdStorage->input.SensorData = mSensor->output.DataEvents;
+
+    // Wire LCD <- SdStorage stats (display record count + write rate)
+    mLcd->input.StorageStats = mSdStorage->output.StatsEvents;
+
+    // Wire LCD <- BaseTimer (1-second clock display)
+    mLcd->input.BaseTimer = mTimer->output.BaseTimer;
+
+    // Wire LCD <- SD Benchmark (display write speed — unused now but keep wiring)
     mLcd->input.SdBenchmark = mSdBench->output.StatsEvents;
 
-    // Wire MQTT <- Sensor + Light (publish all sensor data to MQTT broker)
+    // Wire MQTT <- WiFi + Sensor + Light
+    mMqtt->input.Wifi       = mWifi;
     mMqtt->input.SensorData = mSensor->output.DataEvents;
     mMqtt->input.LightData  = mLight->output.DataEvents;
 }
@@ -70,23 +85,27 @@ void Controller::wireServices() {
 void Controller::initHAL() {
     mTimer->initHAL();
     mLed->initHAL();
-    mSensor->initHAL();   // Initializes shared I2C bus
+    mSensor->initHAL();      // Initializes shared I2C bus
     mLight->initHAL();
     mLcd->initHAL();
-    // mStorage->initHAL();
-    mSdBench->initHAL();  // Initializes SDIO + SD card
-    mMqtt->initHAL();     // Initializes USART3 + ESP8266 GPIO
+    // mStorage->initHAL();  // littlefs storage disabled
+    mSdBench->initHAL();     // Initializes SDIO + SD card
+    mSdStorage->initHAL();   // Derives per-device encryption key
+    mWifi->initHAL();        // Initializes USART3 + ESP8266 GPIO
+    mMqtt->initHAL();
 }
 
 void Controller::initServices() {
     mTimer->init();
     mLed->init();
-    mSensor->init();      // Initializes MPU6050
-    mLight->init();       // Initializes AP3216C
+    mSensor->init();          // Initializes MPU6050
+    mLight->init();           // Initializes AP3216C
     mLcd->init();
-    // mStorage->init();
-    mSdBench->init();     // Fills benchmark buffer
-    mMqtt->init();        // Subscribes to sensor observable
+    // mStorage->init();      // littlefs storage disabled
+    mSdBench->init();
+    mSdStorage->init();       // Creates semaphores
+    mWifi->init();
+    mMqtt->init();
 }
 
 void Controller::startServices() {
@@ -95,9 +114,11 @@ void Controller::startServices() {
     mSensor->start();
     mLight->start();
     mLcd->start();
-    // mStorage->start();
-    mSdBench->start();    // Start first: exFAT format+mount must succeed before MQTT
-    mMqtt->start();       // MQTT task waits for g_exfat_ready flag
+    // mStorage->start();     // littlefs storage disabled
+    mSdBench->start();        // exFAT format+mount must succeed first
+    mSdStorage->start();      // Waits for g_exfat_ready, then inits FlashDB
+    mWifi->start();
+    mMqtt->start();           // MQTT task waits for g_exfat_ready flag
 }
 
 } // namespace arcana

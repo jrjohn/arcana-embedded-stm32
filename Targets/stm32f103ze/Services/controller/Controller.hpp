@@ -7,7 +7,9 @@
 #include "LightService.hpp"
 #include "StorageService.hpp"
 #include "SdBenchmarkService.hpp"
-#include "WifiMqttService.hpp"
+#include "SdStorageService.hpp"
+#include "WifiService.hpp"
+#include "MqttService.hpp"
 #include "ServiceTypes.hpp"
 
 // Forward declarations for future services
@@ -42,7 +44,9 @@ private:
     light::LightService*             mLight;
     storage::StorageService*         mStorage;
     sdbench::SdBenchmarkService*     mSdBench;
-    mqtt::WifiMqttService*           mMqtt;
+    sdstorage::SdStorageService*     mSdStorage;
+    wifi::WifiService*               mWifi;
+    mqtt::MqttService*               mMqtt;
     // CommandBridgeService*         mBridge;
     // diagnostic::DiagnosticService* mDiag;
 };

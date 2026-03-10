@@ -14,6 +14,7 @@ public:
         Observable<LightDataModel>*     LightData;
         Observable<StorageStatsModel>*  StorageStats;
         Observable<SdBenchmarkModel>*   SdBenchmark;
+        Observable<TimerModel>*         BaseTimer;
     };
 
     Input input;
@@ -30,6 +31,7 @@ protected:
         input.LightData = 0;
         input.StorageStats = 0;
         input.SdBenchmark = 0;
+        input.BaseTimer = 0;
     }
 };
 

@@ -5,13 +5,16 @@
 #include "ServiceTypes.hpp"
 
 namespace arcana {
+namespace wifi { class WifiService; }
+
 namespace mqtt {
 
-class WifiMqttService {
+class MqttService {
 public:
     struct Input {
         Observable<SensorDataModel>* SensorData;
         Observable<LightDataModel>*  LightData;
+        wifi::WifiService*           Wifi;
     };
 
     struct Output {
@@ -22,16 +25,17 @@ public:
     Input  input;
     Output output;
 
-    virtual ~WifiMqttService() {}
+    virtual ~MqttService() {}
     virtual ServiceStatus initHAL() = 0;
     virtual ServiceStatus init() = 0;
     virtual ServiceStatus start() = 0;
     virtual void stop() = 0;
 
 protected:
-    WifiMqttService() : input(), output() {
+    MqttService() : input(), output() {
         input.SensorData = 0;
         input.LightData = 0;
+        input.Wifi = 0;
         output.CommandEvents = 0;
         output.ConnectionStatus = 0;
     }
