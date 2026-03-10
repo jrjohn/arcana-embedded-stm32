@@ -36,7 +36,7 @@ public:
     static const int PART_KVDB = 1;
 
     // Partition sizes
-    static const uint32_t TSDB_SIZE   = 256 * 1024;        // 256 KB (64 sectors)
+    static const uint32_t TSDB_SIZE   = 256 * 1024;         // 256 KB (64 sectors, ~2h at 1 rec/s)
     static const uint32_t KVDB_SIZE   = 64 * 1024;         // 64 KB
     static const uint32_t SECTOR_SIZE = 4096;              // 4 KB
 

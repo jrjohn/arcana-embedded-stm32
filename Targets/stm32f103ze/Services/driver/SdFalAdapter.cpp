@@ -68,9 +68,10 @@ bool SdFalAdapter::openOrCreate(FIL* fp, const char* path, uint32_t size) {
     for (int attempt = 0; attempt < 3; attempt++) {
         FRESULT fr = f_open(fp, path, FA_READ | FA_WRITE | FA_OPEN_EXISTING);
         if (fr == FR_OK) {
-            if (f_size(fp) >= size) return true;
+            if (f_size(fp) == size) return true;
             f_close(fp);
-            break;  // File exists but wrong size — recreate
+            f_unlink(path);
+            break;  // File exists but wrong size — delete and recreate
         }
         if (fr == FR_NO_FILE) break;  // Doesn't exist — create below
         vTaskDelay(pdMS_TO_TICKS(50));

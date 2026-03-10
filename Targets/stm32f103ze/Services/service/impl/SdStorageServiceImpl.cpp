@@ -1,6 +1,7 @@
 #include "stm32f1xx_hal.h"
 #include "SdStorageServiceImpl.hpp"
 #include "DeviceKey.hpp"
+#include "SystemClock.hpp"
 #include "ff.h"
 #include <cstring>
 #include <cstdio>
@@ -30,11 +31,16 @@ static void fdbUnlock(fdb_db_t db) {
 }
 
 // FlashDB timestamp callback — must be strictly monotonic increasing.
-// Use raw tick count (ms) so consecutive appends always get unique timestamps.
-// Seeded after fdb_tsdb_init to exceed any persisted last_time from previous sessions.
+// Uses epoch seconds when NTP is synced, falls back to tick count otherwise.
+// After NTP sync, timestamps jump from tick (small) to epoch (~1.7B) — monotonicity preserved.
 static fdb_time_t sLastTime = 0;
 static fdb_time_t fdbGetTime(void) {
-    fdb_time_t now = (fdb_time_t)xTaskGetTickCount();
+    fdb_time_t now;
+    if (SystemClock::getInstance().isSynced()) {
+        now = (fdb_time_t)SystemClock::getInstance().now();
+    } else {
+        now = (fdb_time_t)xTaskGetTickCount();
+    }
     if (now <= sLastTime) {
         now = sLastTime + 1;
     }
@@ -180,10 +186,22 @@ void SdStorageServiceImpl::storageTask(void* param) {
 }
 
 void SdStorageServiceImpl::taskLoop() {
+    uint32_t lastDay = 0;
+
     while (mRunning) {
         if (xSemaphoreTake(mWriteSem, pdMS_TO_TICKS(1000)) == pdTRUE) {
             if (!mRunning) break;
             appendRecord(&mPendingData);
+        }
+
+        // Midnight auto-export: detect day change
+        if (SystemClock::getInstance().isSynced()) {
+            uint32_t today = SystemClock::dateYYYYMMDD(
+                SystemClock::getInstance().now());
+            if (lastDay != 0 && today != lastDay) {
+                exportDailyFile(lastDay);
+            }
+            lastDay = today;
         }
     }
 }
@@ -338,25 +356,28 @@ bool SdStorageServiceImpl::writeEncFileHeader(FIL* fp, uint32_t recordCount) {
     return (fr == FR_OK && written == sizeof(header));
 }
 
+// Convert YYYYMMDD to epoch seconds (UTC+8 is baked into NTP sync)
+static uint32_t dateToEpoch(uint32_t dateYYYYMMDD) {
+    uint32_t y = dateYYYYMMDD / 10000;
+    uint32_t m = (dateYYYYMMDD / 100) % 100;
+    uint32_t d = dateYYYYMMDD % 100;
+    // Days from epoch using Howard Hinnant's algorithm (same as SystemClock)
+    if (m <= 2) { y--; m += 9; } else { m -= 3; }
+    uint32_t era = y / 400;
+    uint32_t yoe = y - era * 400;
+    uint32_t doy = (153 * m + 2) / 5 + d - 1;
+    uint32_t doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    int32_t days = (int32_t)(era * 146097 + doe) - 719468;
+    return (uint32_t)days * 86400;
+}
+
 bool SdStorageServiceImpl::exportDailyFile(uint32_t dateYYYYMMDD) {
     if (!mDbReady) return false;
 
-    // Calculate time range for the day
-    uint32_t year  = dateYYYYMMDD / 10000;
-    uint32_t month = (dateYYYYMMDD / 100) % 100;
-    uint32_t day   = dateYYYYMMDD % 100;
-
-    // Simple epoch-like day start: use date as key, iterate all and filter
-    // For TSDB, we use the FlashDB timestamp (seconds since boot).
-    // Since we don't have RTC, we export ALL records and name by dateYYYYMMDD.
-    // In production with RTC, you'd compute start_of_day/end_of_day epoch seconds.
-
     // Build filename: "YYYYMMDD.enc"
     char fname[16];
-    snprintf(fname, sizeof(fname), "%04lu%02lu%02lu.enc",
-             (unsigned long)year, (unsigned long)month, (unsigned long)day);
+    snprintf(fname, sizeof(fname), "%08lu.enc", (unsigned long)dateYYYYMMDD);
 
-    // First pass: count records and write to temp file
     FIL fp;
     FRESULT fr = f_open(&fp, fname, FA_CREATE_ALWAYS | FA_WRITE);
     if (fr != FR_OK) return false;
@@ -367,14 +388,16 @@ bool SdStorageServiceImpl::exportDailyFile(uint32_t dateYYYYMMDD) {
         return false;
     }
 
-    // Iterate TSDB and write records
+    // Iterate TSDB with time-filtered range
     ExportCtx ctx;
     ctx.self = this;
     ctx.fp = &fp;
     ctx.count = 0;
     ctx.ok = true;
 
-    fdb_tsl_iter(&mTsdb, exportIterCb, &ctx);
+    uint32_t dayStart = dateToEpoch(dateYYYYMMDD);
+    uint32_t dayEnd = dayStart + 86400 - 1;
+    fdb_tsl_iter_by_time(&mTsdb, dayStart, dayEnd, exportIterCb, &ctx);
 
     if (!ctx.ok || ctx.count == 0) {
         f_close(&fp);
@@ -386,10 +409,6 @@ bool SdStorageServiceImpl::exportDailyFile(uint32_t dateYYYYMMDD) {
     f_lseek(&fp, 0);
     writeEncFileHeader(&fp, ctx.count);
     f_close(&fp);
-
-    // Mark TSDB records as exported (set USER_STATUS1)
-    // This enables future fdb_tsl_clean() to reclaim space
-    // (Omitted here to avoid double-iteration; can be done in a separate pass)
 
     return true;
 }
@@ -463,9 +482,9 @@ uint16_t SdStorageServiceImpl::queryByDate(uint32_t dateYYYYMMDD,
     ctx.maxCount = maxCount;
     ctx.count = 0;
 
-    // Iterate all records (no RTC → no time filtering)
-    // With RTC, use fdb_tsl_iter_by_time(start_of_day, end_of_day)
-    fdb_tsl_iter(&mTsdb, queryIterCb, &ctx);
+    uint32_t dayStart = dateToEpoch(dateYYYYMMDD);
+    uint32_t dayEnd = dayStart + 86400 - 1;
+    fdb_tsl_iter_by_time(&mTsdb, dayStart, dayEnd, queryIterCb, &ctx);
 
     return ctx.count;
 }

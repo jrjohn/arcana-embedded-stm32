@@ -32,9 +32,15 @@ extern SemaphoreHandle_t g_sd_dma_sem;
  * 72MHz / (1+2) = 24MHz — maximum Default Speed. */
 #define SDIO_CLKDIV_FAST 1U
 
-/* Wait for HAL SD state machine to be READY.
- * If stuck (from a failed DMA write), force-reset the state. */
+/* Ensure SDIO hardware and HAL state machine are both ready.
+ * HAL_SD_ReadBlocks (polling) leaves SDIO->DCTRL.DTEN set after every read.
+ * This blocks subsequent writes. Unconditionally clear the data path. */
 static void ensure_hal_ready(void) {
+    /* ALWAYS clear SDIO data path before any new operation. */
+    g_hsd.Instance->DCTRL = 0;
+    __HAL_SD_CLEAR_FLAG(&g_hsd, SDIO_STATIC_FLAGS);
+    g_hsd.ErrorCode = HAL_SD_ERROR_NONE;
+
     if (g_hsd.State == HAL_SD_STATE_READY) return;
 
     /* Wait up to 1 second for natural completion */
@@ -106,6 +112,12 @@ DRESULT disk_read(BYTE pdrv, BYTE *buff, LBA_t sector, UINT count)
 
         /* Restore fast clock */
         MODIFY_REG(SDIO->CLKCR, 0xFFU, SDIO_CLKDIV_FAST);
+
+        /* Always clear DCTRL after polling read — HAL_SD_ReadBlocks can leave
+         * DTEN set (stuck RXACT) if the transfer partially completes or the
+         * data CRC arrives after the HAL timeout. */
+        SDIO->DCTRL = 0;
+        __HAL_SD_CLEAR_FLAG(&g_hsd, SDIO_STATIC_FLAGS);
 
         if (hal != HAL_OK) {
             continue;
