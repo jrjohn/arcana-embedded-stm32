@@ -22,6 +22,11 @@ namespace sdstorage {
  *
  * Record blob (26 bytes): [nonce:12][encrypted_payload:14]
  * Payload (14 bytes):     [timestamp:4][temperature:4][accelX:2][accelY:2][accelZ:2]
+ *
+ * High-frequency ADC batch mode:
+ * - Buffers N ADC samples into a single FlashDB blob
+ * - Reduces FAL ops/sec for high-rate sensors (ADS1298)
+ * - Configurable samples per batch (default: 10)
  */
 class SdStorageServiceImpl : public SdStorageService {
 public:
@@ -32,11 +37,15 @@ public:
     ServiceStatus start() override;
     void stop() override;
 
+    bool configureBatchWrite(uint16_t samplesPerBatch) override;
+    bool flushBatch() override;
     bool exportDailyFile(uint32_t date) override;
     bool isDateUploaded(uint32_t date) override;
     bool markDateUploaded(uint32_t date) override;
     uint16_t queryByDate(uint32_t dateYYYYMMDD,
                          SensorDataModel* out, uint16_t maxCount) override;
+    uint32_t queryAdcByTimeRange(uint32_t startTime, uint32_t endTime,
+                                  AdcDataModel* out, uint16_t maxBatches) override;
 
 private:
     SdStorageServiceImpl();
@@ -44,13 +53,16 @@ private:
     SdStorageServiceImpl(const SdStorageServiceImpl&);
     SdStorageServiceImpl& operator=(const SdStorageServiceImpl&);
 
-    // Observer callback
+    // Observer callbacks
     static void onSensorData(SensorDataModel* model, void* context);
+    static void onAdcData(AdcDataModel* model, void* context);
 
     // Dedicated task
     static void storageTask(void* param);
     void taskLoop();
     void appendRecord(const SensorDataModel* model);
+    void appendAdcSample(const AdcDataModel* model);
+    void flushAdcBatch();
 
     // Encrypt/decrypt helpers
     static const uint32_t PAYLOAD_SIZE = 14;
@@ -58,6 +70,12 @@ private:
     void serializePayload(const SensorDataModel* model, uint8_t* buf);
     void deserializePayload(const uint8_t* buf, SensorDataModel* model);
     void makeNonce(uint8_t nonce[12], uint32_t counter, uint32_t tick);
+
+    // ADC batch serialization
+    static const uint16_t MAX_BATCH_SAMPLES = 50;  // Max samples per batch blob
+    static const uint32_t MAX_BATCH_BLOB_SIZE = 12 + (MAX_BATCH_SAMPLES * AdcDataModel::SAMPLE_SIZE);
+    void serializeAdcBatch(const uint8_t* samples, uint16_t count, 
+                           uint32_t timestamp, uint8_t* buf, uint32_t& outLen);
 
     // Daily export helpers
     bool writeEncFileHeader(FIL* fp, uint32_t recordCount);
@@ -73,6 +91,7 @@ private:
     static bool queryIterCb(fdb_tsl_t tsl, void* arg);
 
     void publishStats();
+    void updateStats();
 
     // FlashDB instances
     struct fdb_tsdb mTsdb;
@@ -95,10 +114,20 @@ private:
     TaskHandle_t mTaskHandle;
     bool mRunning;
 
-    // Pending write data
-    SensorDataModel mPendingData;
+    // Pending write data (SensorData)
+    SensorDataModel mPendingSensorData;
     StaticSemaphore_t mWriteSemBuffer;
     SemaphoreHandle_t mWriteSem;
+    bool mHasPendingSensorData;
+
+    // ADC batch buffer
+    uint8_t mAdcBatchBuffer[MAX_BATCH_SAMPLES * AdcDataModel::SAMPLE_SIZE];
+    uint16_t mAdcBatchCount;
+    uint16_t mAdcBatchTarget;       // Target samples per batch (configurable)
+    uint32_t mAdcBatchFirstTime;    // Timestamp of first sample in batch
+    StaticSemaphore_t mAdcSemBuffer;
+    SemaphoreHandle_t mAdcSem;
+    bool mHasPendingAdcData;
 
     // Stats
     Observable<StorageStatsModel> mStatsObs;
@@ -106,6 +135,8 @@ private:
     uint32_t mWindowStartTick;
     uint16_t mWritesInWindow;
     uint16_t mLastRate;
+    uint32_t mSamplesInWindow;      // For batch mode rate calculation
+    uint16_t mLastSampleRate;
 };
 
 } // namespace sdstorage

@@ -1,0 +1,9 @@
+{
+  "primary": [
+    "Targets/stm32f103ze/Services/service/impl/SdStorageServiceImpl.cpp"
+  ],
+  "reference": [
+    "Targets/stm32f103ze/Services/service/impl/SdStorageServiceImpl.hpp",
+    "Targets/stm32f103ze/Services/model/F103Models.hpp"
+  ]
+}

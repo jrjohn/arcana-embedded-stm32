@@ -1,0 +1,10 @@
+{
+  "chain": [
+    {
+      "node": "00-init",
+      "result": "PASSED",
+      "timestamp": "2026-03-11T02:47:06+08:00"
+    }
+  ],
+  "last_valid_checkpoint": "00-init"
+}
