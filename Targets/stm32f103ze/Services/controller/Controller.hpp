@@ -10,6 +10,7 @@
 #include "SdStorageService.hpp"
 #include "WifiService.hpp"
 #include "MqttService.hpp"
+#include "AdcSimulatorService.hpp"
 #include "ServiceTypes.hpp"
 
 // Forward declarations for future services
@@ -47,6 +48,7 @@ private:
     sdstorage::SdStorageService*     mSdStorage;
     wifi::WifiService*               mWifi;
     mqtt::MqttService*               mMqtt;
+    AdcSimulatorService*             mAdcSim;
     // CommandBridgeService*         mBridge;
     // diagnostic::DiagnosticService* mDiag;
 };

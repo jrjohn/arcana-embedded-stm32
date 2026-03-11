@@ -13,8 +13,8 @@
     "02-design": "completed",
     "03-impl-lazy-fal": "completed",
     "04-impl-deferred-sync": "completed",
-    "05-debug-records": "in_progress",
-    "06-high-freq-batch": "pending"
+    "05-debug-records": "completed",
+    "06-high-freq-batch": "completed"
   },
   "commits": [
     "3923d7e Implement Lazy Virtual FAL for 2MB TSDB and fix SDIO soft-reset",
