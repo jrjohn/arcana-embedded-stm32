@@ -80,9 +80,18 @@ Targets/stm32f103ze/
 - Write: DMA at 24MHz (CLKDIV=1)
 - `ensure_hal_ready()`: 每次操作前清除 DCTRL + flags
 
-### 高頻寫入規劃 (未開始)
-- Layer 2: Batch write API — buffer N samples into one FlashDB blob
-- 目標: 減少 FAL ops/sec，讓 FlashDB 適合 ADS1298 等高頻感測器
+### ADC Simulator 除錯狀態
+- **最新 Commit**: `211368b` - Debug ADC simulator - fix publish logic and data handling
+- **問題**: ADC 寫入 2 次後死鎖 (Records: 232→234→卡死)
+- **原因**: ObservableDispatcher 與 SdStorage task 競態條件
+- **已嘗試**: 修復 publish 邏輯、實際數據複製、task 處理邏輯
+- **結果**: 仍死鎖，已禁用 ADC simulator
+
+### 未來工作
+若要完整測試 batch write:
+1. 方案 A: 使用現有 SensorData 模擬 ADC (複用穩定 Observable 鏈路)
+2. 方案 B: 簡化 ADC 處理，單樣本直接寫入
+3. 方案 C: 使用真實 ADS1298 硬體測試
 
 ## 如何恢復
 

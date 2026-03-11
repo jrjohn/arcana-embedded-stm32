@@ -6,7 +6,7 @@
   "project_path": "/Users/jrjohn/Documents/projects/arcana-embedded-stm32",
   "branch": "debug-lcd-records",
   "started_at": "2026-03-11T11:00:00+08:00",
-  "updated_at": "2026-03-11T23:00:00+08:00",
+  "updated_at": "2026-03-11T07:40:00+08:00",
   "progress": {
     "00-init": "completed",
     "01-analysis": "completed",
@@ -18,7 +18,11 @@
   },
   "commits": [
     "3923d7e Implement Lazy Virtual FAL for 2MB TSDB and fix SDIO soft-reset",
-    "342ff8a Remove per-write f_sync to reduce SDIO DMA writes, add periodic sync"
+    "342ff8a Remove per-write f_sync to reduce SDIO DMA writes, add periodic sync",
+    "6ac217b Add high-frequency ADC batch write support for ADS1298",
+    "b992e03 Add ADC simulator service for high-frequency batch write testing",
+    "1ecb2ef Fix ADC simulator priority and timing issues (disabled by default)",
+    "211368b Debug ADC simulator - fix publish logic and data handling"
   ],
   "uncommitted_changes": [],
   "test_results": {
@@ -29,14 +33,16 @@
     "deferred_sync": "PASS - records continued from 357",
     "dma_reinit_aggressive": "FAIL - Records 沒有數字",
     "dma_reinit_light": "FAIL - Records 沒有數字",
-    "dma_reinit_removed": "PASS - 完全斷電重啟後 Records 正常顯示"
+    "dma_reinit_removed": "PASS - 完全斷電重啟後 Records 正常顯示",
+    "adc_simulator": "FAIL - Deadlock after 2 writes (Records: 232→234→freeze)"
   },
   "current_issue": {
-    "symptom": "已解決：Records 顯示正常",
-    "root_cause": "DMA reinit 實驗破壞了系統狀態，完全斷電重啟後恢復",
-    "resolution": "重置到 commit 342ff8a 並完全斷電重啟"
+    "symptom": "ADC 寫入 2 次後死鎖",
+    "root_cause": "ObservableDispatcher 與 SdStorage task 競態條件",
+    "resolution": "已禁用 ADC simulator，需重新設計架構"
   },
   "future_work": {
-    "layer2_batch_write": "Buffer N samples into one FlashDB blob for high-freq sensors"
+    "layer2_batch_write": "Buffer N samples into one FlashDB blob for high-freq sensors",
+    "adc_simulator_fix": "Options: A) Use SensorData for ADC simulation, B) Simplify to direct write, C) Test with real ADS1298 hardware"
   }
 }
