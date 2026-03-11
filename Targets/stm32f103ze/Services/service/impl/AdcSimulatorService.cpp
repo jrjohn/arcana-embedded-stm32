@@ -4,6 +4,11 @@
 #include <cstring>
 #include <cmath>
 
+// Wait for exFAT mount from SdBenchmarkService
+extern "C" {
+    extern volatile uint8_t g_exfat_ready;
+}
+
 namespace arcana {
 
 AdcSimulatorService& AdcSimulatorService::getInstance() {
@@ -16,7 +21,7 @@ AdcSimulatorService::AdcSimulatorService()
     , mTaskStack{}
     , mTaskHandle(0)
     , mRunning(false)
-    , mSampleRateHz(1000)
+    , mSampleRateHz(100)  // Default to 100 SPS for safe testing
     , mChannels(8)
     , mBatchTrigger(true)
     , mBatchSize(10)
@@ -45,9 +50,10 @@ void AdcSimulatorService::configure(uint16_t sampleRateHz, uint8_t channels, boo
 
 ServiceStatus AdcSimulatorService::start() {
     mRunning = true;
+    // Use lower priority (same as SdStorage) to avoid blocking
     mTaskHandle = xTaskCreateStatic(
         simulatorTask, "AdcSim", TASK_STACK_SIZE,
-        this, tskIDLE_PRIORITY + 2, mTaskStack, &mTaskBuffer);
+        this, tskIDLE_PRIORITY + 1, mTaskStack, &mTaskBuffer);
     if (!mTaskHandle) return ServiceStatus::Error;
     return ServiceStatus::OK;
 }
@@ -67,13 +73,24 @@ void AdcSimulatorService::simulatorTask(void* param) {
 }
 
 void AdcSimulatorService::taskLoop() {
+    // Wait for exFAT filesystem to be ready (same as SdStorage)
+    int waitCount = 0;
+    const int MAX_WAIT = 300;  // 30 seconds timeout
+    while (!g_exfat_ready && mRunning && waitCount < MAX_WAIT) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+        waitCount++;
+    }
+    if (!mRunning) { vTaskDelete(0); return; }
+    
+    // Additional delay to let SdStorage fully initialize FlashDB
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    
     // Calculate tick interval from sample rate
     // For high rates, we generate multiple samples per tick
-    const uint32_t TICK_MS = 10;  // 10ms task period
+    const uint32_t TICK_MS = 100;  // 100ms task period (slower for safety)
     const uint32_t SAMPLES_PER_TICK = (mSampleRateHz * TICK_MS) / 1000;
     
     mWindowStartTick = xTaskGetTickCount();
-    uint32_t lastPublishTick = mWindowStartTick;
 
     while (mRunning) {
         uint32_t startTick = xTaskGetTickCount();
@@ -106,7 +123,6 @@ void AdcSimulatorService::taskLoop() {
             mCurrentBatch.activeChannels = (1 << mChannels) - 1;
             mCurrentBatch.sampleRateHz = mSampleRateHz;
             mBatchCounter++;
-            lastPublishTick = now;
         }
 
         // Delay to maintain timing

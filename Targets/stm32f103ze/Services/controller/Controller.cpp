@@ -116,8 +116,9 @@ void Controller::initServices() {
     mMqtt->init();
     
     // Configure ADC simulator for batch write testing
-    // Generate 1000 SPS, 8 channels, batch mode
-    mAdcSim->configure(1000, 8, true);
+    // Generate 100 SPS (safe rate), 8 channels, batch mode
+    // 100 SPS with batch size 10 = 10 FlashDB writes/sec
+    mAdcSim->configure(100, 8, true);
     mAdcSim->init();
 }
 
