@@ -100,9 +100,13 @@ void SdBenchmarkServiceImpl::benchmarkTask(void* param) {
 void SdBenchmarkServiceImpl::runBenchmark() {
     char msg[40];
     FRESULT fr;
+    int retryCount = 0;
+    const int MAX_RETRIES = 3;
 
-    // Step 1: Try to mount existing exFAT filesystem
+    // Step 1: Try to mount existing exFAT filesystem (with retries)
     sdLcdStatus("[SD] Mounting...");
+    
+retry_mount:
     fr = f_mount(&sFatFs, "", 1);
 
     if (fr != FR_OK) {
@@ -121,6 +125,16 @@ void SdBenchmarkServiceImpl::runBenchmark() {
         if (fr != FR_OK) {
             snprintf(msg, sizeof(msg), "[SD] mkfs ERR: %d", (int)fr);
             sdLcdStatus(msg);
+            retryCount++;
+            if (retryCount < MAX_RETRIES) {
+                snprintf(msg, sizeof(msg), "[SD] Retry %d/%d...", retryCount, MAX_RETRIES);
+                sdLcdStatus(msg);
+                vTaskDelay(pdMS_TO_TICKS(2000));
+                goto retry_mount;
+            }
+            // Even if failed, signal ready to prevent system hang
+            sdLcdStatus("[SD] Init Failed!");
+            g_exfat_ready = 1;  // Prevent system deadlock
             return;
         }
         sdLcdStatus("[SD] Format OK!");
@@ -131,6 +145,16 @@ void SdBenchmarkServiceImpl::runBenchmark() {
         if (fr != FR_OK) {
             snprintf(msg, sizeof(msg), "[SD] mount ERR: %d", (int)fr);
             sdLcdStatus(msg);
+            retryCount++;
+            if (retryCount < MAX_RETRIES) {
+                snprintf(msg, sizeof(msg), "[SD] Retry %d/%d...", retryCount, MAX_RETRIES);
+                sdLcdStatus(msg);
+                vTaskDelay(pdMS_TO_TICKS(2000));
+                goto retry_mount;
+            }
+            // Even if failed, signal ready to prevent system hang
+            sdLcdStatus("[SD] Mount Failed!");
+            g_exfat_ready = 1;  // Prevent system deadlock
             return;
         }
     }

@@ -194,25 +194,35 @@ void LcdServiceImpl::onBaseTimer(TimerModel* model, void* ctx) {
 }
 
 void LcdServiceImpl::updateTimeDisplay() {
-    if (!SystemClock::getInstance().isSynced()) return;
-
-    uint32_t epoch = SystemClock::getInstance().now();
-
-    // Date: "2026-03-10" — font2, 10 chars × 12px = 120px, center x=(240-120)/2=60
-    uint32_t date = SystemClock::dateYYYYMMDD(epoch);
     char dateBuf[12];
-    snprintf(dateBuf, sizeof(dateBuf), "%04lu-%02lu-%02lu",
-        (unsigned long)(date / 10000),
-        (unsigned long)((date / 100) % 100),
-        (unsigned long)(date % 100));
+    char timeBuf[12];
+
+    if (!SystemClock::getInstance().isSynced()) {
+        // Not synced yet - show placeholder
+        snprintf(dateBuf, sizeof(dateBuf), "----/--/--");
+        snprintf(timeBuf, sizeof(timeBuf), "--:--:--");
+    } else {
+        // Synced - show actual time
+        uint32_t epoch = SystemClock::getInstance().now();
+
+        // Date: "2026-03-10"
+        uint32_t date = SystemClock::dateYYYYMMDD(epoch);
+        snprintf(dateBuf, sizeof(dateBuf), "%04lu-%02lu-%02lu",
+            (unsigned long)(date / 10000),
+            (unsigned long)((date / 100) % 100),
+            (unsigned long)(date % 100));
+
+        // Time: "14:30:05"
+        uint8_t h, m, s;
+        SystemClock::toHMS(epoch, h, m, s);
+        snprintf(timeBuf, sizeof(timeBuf), "%02u:%02u:%02u", h, m, s);
+    }
+
+    // Date display
     mLcd.fillRect(60, CLOCK_DATE_Y, 120, 16, Ili9341Lcd::BLACK);
     mLcd.drawString(60, CLOCK_DATE_Y, dateBuf, Ili9341Lcd::WHITE, Ili9341Lcd::BLACK, 2);
 
-    // Time: "14:30:05" — font2, 8 chars × 12px = 96px, center x=(240-96)/2=72
-    uint8_t h, m, s;
-    SystemClock::toHMS(epoch, h, m, s);
-    char timeBuf[12];
-    snprintf(timeBuf, sizeof(timeBuf), "%02u:%02u:%02u", h, m, s);
+    // Time display
     mLcd.fillRect(72, CLOCK_TIME_Y, 96, 16, Ili9341Lcd::BLACK);
     mLcd.drawString(72, CLOCK_TIME_Y, timeBuf, Ili9341Lcd::WHITE, Ili9341Lcd::BLACK, 2);
 }

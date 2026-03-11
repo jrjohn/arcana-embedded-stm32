@@ -131,11 +131,20 @@ void SdStorageServiceImpl::onSensorData(SensorDataModel* model, void* context) {
 void SdStorageServiceImpl::storageTask(void* param) {
     SdStorageServiceImpl* self = static_cast<SdStorageServiceImpl*>(param);
 
-    // Wait for exFAT filesystem to be ready
-    while (!g_exfat_ready && self->mRunning) {
+    // Wait for exFAT filesystem to be ready (with timeout)
+    int waitCount = 0;
+    const int MAX_WAIT = 300;  // 30 seconds timeout (300 * 100ms)
+    while (!g_exfat_ready && self->mRunning && waitCount < MAX_WAIT) {
         vTaskDelay(pdMS_TO_TICKS(100));
+        waitCount++;
     }
     if (!self->mRunning) { vTaskDelete(0); return; }
+    
+    // If timeout, try to proceed anyway to prevent system hang
+    if (waitCount >= MAX_WAIT) {
+        // Log warning (if debug output available)
+        // System will try to initialize without exFAT ready
+    }
 
     // Initialize FAL adapter (opens/creates partition files)
     if (!self->mFal.init()) {

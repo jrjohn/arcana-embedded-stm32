@@ -80,14 +80,27 @@ void SdCard::initGpio() {
 }
 
 bool SdCard::initHAL() {
+    // Clear stale SDIO + DMA state after MCU soft-reset (e.g. OpenOCD flash).
+    // STM32F1 AHB peripherals have no RCC reset; clear registers manually.
+    __HAL_RCC_SDIO_CLK_ENABLE();
+    __HAL_RCC_DMA2_CLK_ENABLE();
+    SDIO->POWER  = 0;           // Power off SD bus
+    SDIO->CLKCR  = 0;           // Stop clock
+    SDIO->CMD    = 0;
+    SDIO->DTIMER = 0;
+    SDIO->DLEN   = 0;
+    SDIO->DCTRL  = 0;
+    SDIO->ICR    = 0x00C007FF;  // Clear all flags
+    DMA2_Channel4->CCR   = 0;   // Disable DMA channel
+    DMA2_Channel4->CNDTR = 0;
+    DMA2->IFCR = (0xFu << 12); // Clear DMA2 Ch4 flags
+    HAL_Delay(50);              // Let SD card timeout any stuck transfer
+
     initGpio();
 
     // Create DMA completion semaphore (static allocation)
     g_sd_dma_sem = xSemaphoreCreateBinaryStatic(&g_sd_dma_sem_buf);
     if (!g_sd_dma_sem) return false;
-
-    // Enable DMA2 clock
-    __HAL_RCC_DMA2_CLK_ENABLE();
 
     // SDIOCLK = HCLK = 72MHz
     // Init clock: 72MHz / (178+2) = 400kHz (SD spec requires ≤400kHz for init)
