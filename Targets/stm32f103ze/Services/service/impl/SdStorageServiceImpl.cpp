@@ -151,10 +151,27 @@ void SdStorageServiceImpl::onSensorData(SensorDataModel* model, void* context) {
 
 void SdStorageServiceImpl::onAdcData(AdcDataModel* model, void* context) {
     SdStorageServiceImpl* self = static_cast<SdStorageServiceImpl*>(context);
-    // Copy the pending ADC data indicator (actual data is accessed via model pointer)
-    self->mHasPendingAdcData = true;
-    xSemaphoreGive(self->mAdcSem);
-    (void)model;  // Data will be processed in task loop
+    
+    // Process ADC data immediately (we're in ObservableDispatcher task context)
+    // Copy samples from model to batch buffer
+    if (model && model->sampleCount > 0) {
+        for (uint16_t i = 0; i < model->sampleCount && self->mAdcBatchCount < MAX_BATCH_SAMPLES; i++) {
+            uint16_t offset = self->mAdcBatchCount * AdcDataModel::SAMPLE_SIZE;
+            uint16_t srcOffset = i * AdcDataModel::SAMPLE_SIZE;
+            
+            // Copy one sample
+            memcpy(&self->mAdcBatchBuffer[offset], 
+                   &model->sampleBuffer[srcOffset], 
+                   AdcDataModel::SAMPLE_SIZE);
+            
+            self->mAdcBatchCount++;
+            self->mSamplesInWindow++;
+        }
+        
+        // Signal task that ADC data is ready
+        self->mHasPendingAdcData = true;
+        xSemaphoreGive(self->mAdcSem);
+    }
 }
 
 bool SdStorageServiceImpl::configureBatchWrite(uint16_t samplesPerBatch) {
@@ -245,8 +262,7 @@ void SdStorageServiceImpl::taskLoop() {
     static const uint32_t BATCH_FLUSH_INTERVAL = pdMS_TO_TICKS(5000); // 5 seconds max batch hold
 
     while (mRunning) {
-        // Wait for either SensorData or AdcData with timeout
-        SemaphoreHandle_t sems[] = {mWriteSem, mAdcSem};
+        // Wait for SensorData with timeout
         BaseType_t triggered = xSemaphoreTake(mWriteSem, pdMS_TO_TICKS(10));
         
         if (triggered == pdTRUE && mHasPendingSensorData) {
@@ -254,11 +270,14 @@ void SdStorageServiceImpl::taskLoop() {
             appendRecord(&mPendingSensorData);
         }
 
-        // Check for ADC data
-        if (xSemaphoreTake(mAdcSem, 0) == pdTRUE) {
-            // ADC data notification received - process pending batch
-            // In real implementation, ADC driver would have filled the buffer
-            // For now, we simulate by checking if new data is available
+        // Check for ADC data (using flag instead of semaphore to avoid race condition)
+        if (mHasPendingAdcData) {
+            mHasPendingAdcData = false;
+            // Process pending ADC batch if available
+            if (mAdcBatchCount >= mAdcBatchTarget) {
+                flushAdcBatch();
+                lastBatchFlushTick = xTaskGetTickCount();
+            }
         }
 
         // Periodic batch flush (avoid holding samples too long)

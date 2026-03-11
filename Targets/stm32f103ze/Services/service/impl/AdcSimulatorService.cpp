@@ -108,9 +108,11 @@ void AdcSimulatorService::taskLoop() {
             mWindowStartTick = now;
         }
 
-        // If batch mode and we have samples, publish periodically
-        // This simulates ADS1298 DRDY interrupt triggering batch notification
-        if (mBatchTrigger && mCurrentBatch.sampleCount >= mBatchSize) {
+        // Publish samples if:
+        // - Batch mode: buffer is full (mBatchSize samples)
+        // - Single sample mode: we have at least 1 sample
+        uint16_t triggerCount = mBatchTrigger ? mBatchSize : 1;
+        if (mCurrentBatch.sampleCount >= triggerCount) {
             // Set timestamps
             mCurrentBatch.firstTimestamp = mSampleCounter - mCurrentBatch.sampleCount;
             mCurrentBatch.lastTimestamp = mSampleCounter;
