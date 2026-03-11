@@ -115,11 +115,11 @@ void Controller::initServices() {
     mWifi->init();
     mMqtt->init();
     
-    // Configure ADC simulator for batch write testing
-    // Start with ultra-low rate: 10 SPS, 2 channels, NO batch (single sample mode)
-    // 10 SPS = 10 FlashDB writes/sec (very safe)
-    mAdcSim->configure(10, 2, false);  // 10 SPS, 2 channels, no batch
-    mAdcSim->init();
+    // Configure SensorService for ADC simulation mode (high-frequency testing)
+    // This uses existing SensorData flow with stable Observable pattern
+    // 10 SPS = 10 writes/sec to TSDB for testing
+    // Uncomment to enable:
+    mSensor->enableAdcSimulation(true, 10);  // 10 samples/sec
 }
 
 void Controller::startServices() {
