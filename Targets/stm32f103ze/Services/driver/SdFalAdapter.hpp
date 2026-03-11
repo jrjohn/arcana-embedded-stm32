@@ -33,6 +33,9 @@ public:
     int write(int partId, uint32_t offset, const uint8_t* buf, size_t size);
     int erase(int partId, uint32_t offset, size_t size);
 
+    // Flush FatFS buffers to SD card. Call periodically (e.g. every 30-60s).
+    void sync();
+
     // Partition IDs
     static const int PART_TSDB = 0;
     static const int PART_KVDB = 1;

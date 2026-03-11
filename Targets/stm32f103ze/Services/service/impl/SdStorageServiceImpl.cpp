@@ -196,11 +196,20 @@ void SdStorageServiceImpl::storageTask(void* param) {
 
 void SdStorageServiceImpl::taskLoop() {
     uint32_t lastDay = 0;
+    uint32_t lastSyncTick = xTaskGetTickCount();
+    static const uint32_t SYNC_INTERVAL = pdMS_TO_TICKS(30000); // 30 seconds
 
     while (mRunning) {
         if (xSemaphoreTake(mWriteSem, pdMS_TO_TICKS(1000)) == pdTRUE) {
             if (!mRunning) break;
             appendRecord(&mPendingData);
+        }
+
+        // Periodic flush to SD card (reduces DMA burst, avoids SDIO degradation)
+        uint32_t now = xTaskGetTickCount();
+        if ((now - lastSyncTick) >= SYNC_INTERVAL) {
+            mFal.sync();
+            lastSyncTick = now;
         }
 
         // Midnight auto-export: detect day change

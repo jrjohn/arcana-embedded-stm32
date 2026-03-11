@@ -160,7 +160,9 @@ int SdFalAdapter::write(int partId, uint32_t offset, const uint8_t* buf, size_t 
         }
     }
 
-    // Write actual data (sector is now materialized with 0xFF background)
+    // Write actual data (sector is now materialized with 0xFF background).
+    // No f_sync here — FatFS buffers reduce DMA writes dramatically.
+    // Caller should invoke sync() periodically to flush to disk.
     for (int attempt = 0; attempt < 3; attempt++) {
         fp->err = 0;
         FRESULT fr = f_lseek(fp, offset);
@@ -170,8 +172,6 @@ int SdFalAdapter::write(int partId, uint32_t offset, const uint8_t* buf, size_t 
         UINT bytesWritten = 0;
         fr = f_write(fp, buf, size, &bytesWritten);
         if (fr == FR_OK && bytesWritten == size) {
-            fp->err = 0;
-            f_sync(fp);
             xSemaphoreGive(mMutex);
             return 0;
         }
@@ -196,6 +196,16 @@ int SdFalAdapter::erase(int partId, uint32_t offset, size_t size) {
 
     xSemaphoreGive(mMutex);
     return 0;
+}
+
+void SdFalAdapter::sync() {
+    if (!mInitOk) return;
+    if (xSemaphoreTake(mMutex, pdMS_TO_TICKS(1000)) != pdTRUE) return;
+    mTsdbFile.err = 0;
+    f_sync(&mTsdbFile);
+    mKvdbFile.err = 0;
+    f_sync(&mKvdbFile);
+    xSemaphoreGive(mMutex);
 }
 
 // ---- Lazy Virtual FAL bitmap helpers ----
