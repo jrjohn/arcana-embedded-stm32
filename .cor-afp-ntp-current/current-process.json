@@ -6,7 +6,7 @@
   "project_path": "/Users/jrjohn/Documents/projects/arcana-embedded-stm32",
   "branch": "debug-lcd-records",
   "started_at": "2026-03-11T11:00:00+08:00",
-  "updated_at": "2026-03-11T07:40:00+08:00",
+  "updated_at": "2026-03-11T07:45:00+08:00",
   "progress": {
     "00-init": "completed",
     "01-analysis": "completed",
@@ -22,7 +22,8 @@
     "6ac217b Add high-frequency ADC batch write support for ADS1298",
     "b992e03 Add ADC simulator service for high-frequency batch write testing",
     "1ecb2ef Fix ADC simulator priority and timing issues (disabled by default)",
-    "211368b Debug ADC simulator - fix publish logic and data handling"
+    "211368b Debug ADC simulator - fix publish logic and data handling",
+    "f61789e Add ADC simulation mode to SensorService (Scheme A)"
   ],
   "uncommitted_changes": [],
   "test_results": {
@@ -34,15 +35,17 @@
     "dma_reinit_aggressive": "FAIL - Records 沒有數字",
     "dma_reinit_light": "FAIL - Records 沒有數字",
     "dma_reinit_removed": "PASS - 完全斷電重啟後 Records 正常顯示",
-    "adc_simulator": "FAIL - Deadlock after 2 writes (Records: 232→234→freeze)"
+    "adc_simulator": "FAIL - Deadlock after 2 writes (Records: 232→234→freeze)",
+    "adc_sim_scheme_a": "PASS - 10 SPS stable, Records increase correctly"
   },
   "current_issue": {
-    "symptom": "ADC 寫入 2 次後死鎖",
-    "root_cause": "ObservableDispatcher 與 SdStorage task 競態條件",
-    "resolution": "已禁用 ADC simulator，需重新設計架構"
+    "symptom": "高頻寫入測試成功 (Scheme A)",
+    "root_cause": "複用 SensorData Observable 鏈路避免競態",
+    "resolution": "enableAdcSimulation() API 使用現有穩定架構"
   },
   "future_work": {
-    "layer2_batch_write": "Buffer N samples into one FlashDB blob for high-freq sensors",
-    "adc_simulator_fix": "Options: A) Use SensorData for ADC simulation, B) Simplify to direct write, C) Test with real ADS1298 hardware"
+    "test_higher_rates": "Test 50/100 SPS to find system limits",
+    "batch_write": "Buffer N samples before writing to reduce FlashDB ops",
+    "real_hardware": "Integrate real ADS1298 hardware when available"
   }
 }
