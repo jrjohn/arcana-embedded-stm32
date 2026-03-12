@@ -1,6 +1,9 @@
 #include "SdFalAdapter.hpp"
 #include <fal.h>
 #include <cstring>
+#include <cstdio>
+#include "FreeRTOS.h"
+#include "task.h"
 
 // FAL structures at file scope (accessed by extern "C" functions below)
 static struct fal_flash_dev sFalDev;
@@ -33,7 +36,7 @@ SdFalAdapter& SdFalAdapter::getInstance() {
 }
 
 // Uncomment to delete .fdb files on boot (clean start for testing)
-// #define DELETE_FDB_ON_BOOT
+#define DELETE_FDB_ON_BOOT
 
 bool SdFalAdapter::init() {
     if (mInitOk) return true;
@@ -94,16 +97,25 @@ bool SdFalAdapter::openOrCreate(FIL* fp, const char* path, uint32_t size,
 
     // Create file using f_expand() — ZERO DMA writes at startup!
     // Bitmap stays all-zero: all sectors are virtual (reads return 0xFF)
+    printf("[SdFal] Creating %s, size=%lu bytes...\n", path, size);
+    uint32_t tickStart = xTaskGetTickCount();
+    
     FRESULT fr = f_open(fp, path, FA_CREATE_ALWAYS | FA_WRITE | FA_READ);
-    if (fr != FR_OK) return false;
+    if (fr != FR_OK) {
+        printf("[SdFal] f_open failed: %d\n", fr);
+        return false;
+    }
 
     fr = f_expand(fp, size, 1);
+    uint32_t elapsed = xTaskGetTickCount() - tickStart;
     if (fr != FR_OK) {
+        printf("[SdFal] f_expand failed: %d after %lu ms\n", fr, elapsed);
         f_close(fp);
         f_unlink(path);
         return false;
     }
-
+    
+    printf("[SdFal] Created %s OK, took %lu ms\n", path, elapsed);
     return true;
 }
 
@@ -151,8 +163,8 @@ int SdFalAdapter::read(int partId, uint32_t offset, uint8_t* buf, size_t size) {
 }
 
 int SdFalAdapter::write(int partId, uint32_t offset, const uint8_t* buf, size_t size) {
-    if (!mInitOk) return -1;
-    if (xSemaphoreTake(mMutex, pdMS_TO_TICKS(500)) != pdTRUE) return -1;
+    if (!mInitOk) { printf("[FAL] write: not init\n"); return -1; }
+    if (xSemaphoreTake(mMutex, pdMS_TO_TICKS(500)) != pdTRUE) { printf("[FAL] write: mutex timeout\n"); return -1; }
 
     FIL* fp = (partId == PART_TSDB) ? &mTsdbFile : &mKvdbFile;
 
@@ -162,19 +174,18 @@ int SdFalAdapter::write(int partId, uint32_t offset, const uint8_t* buf, size_t 
     for (uint32_t s = startSec; s <= endSec; s++) {
         if (!isMaterialized(partId, s)) {
             if (!materializeSector(fp, s)) {
+                printf("[FAL] write: materialize sec %lu FAILED\n", s);
                 xSemaphoreGive(mMutex);
                 return -1;
             }
         }
     }
 
-    // Write actual data (sector is now materialized with 0xFF background).
-    // No f_sync here — FatFS buffers reduce DMA writes dramatically.
-    // Caller should invoke sync() periodically to flush to disk.
+    // Write actual data
     for (int attempt = 0; attempt < 3; attempt++) {
         fp->err = 0;
         FRESULT fr = f_lseek(fp, offset);
-        if (fr != FR_OK) { vTaskDelay(1); continue; }
+        if (fr != FR_OK) { printf("[FAL] write: seek err %d\n", fr); vTaskDelay(1); continue; }
 
         fp->err = 0;
         UINT bytesWritten = 0;
@@ -183,9 +194,11 @@ int SdFalAdapter::write(int partId, uint32_t offset, const uint8_t* buf, size_t 
             xSemaphoreGive(mMutex);
             return 0;
         }
+        printf("[FAL] write: f_write err %d, wrote %u/%u\n", fr, bytesWritten, (unsigned)size);
         vTaskDelay(1);
     }
 
+    printf("[FAL] write: FAILED after 3 attempts at off=%lu size=%u\n", offset, (unsigned)size);
     xSemaphoreGive(mMutex);
     return -1;
 }
@@ -263,7 +276,12 @@ bool SdFalAdapter::materializeSector(FIL* fp, uint32_t sectorIdx) {
     uint32_t sectorOff = sectorIdx * SECTOR_SIZE;
     fp->err = 0;
     FRESULT fr = f_lseek(fp, sectorOff);
-    if (fr != FR_OK) return false;
+    if (fr != FR_OK) {
+        static uint8_t sCnt = 0;
+        if (++sCnt <= 3) printf("[FAL] materialize: seek sec %lu off=%lu FAILED fr=%d fsize=%lu\n",
+            sectorIdx, sectorOff, fr, (uint32_t)f_size(fp));
+        return false;
+    }
 
     uint8_t fill[256];
     memset(fill, 0xFF, sizeof(fill));
@@ -273,7 +291,12 @@ bool SdFalAdapter::materializeSector(FIL* fp, uint32_t sectorIdx) {
         UINT written;
         fp->err = 0;
         fr = f_write(fp, fill, toWrite, &written);
-        if (fr != FR_OK || written != toWrite) return false;
+        if (fr != FR_OK || written != toWrite) {
+            static uint8_t sCnt2 = 0;
+            if (++sCnt2 <= 3) printf("[FAL] materialize: write sec %lu FAILED fr=%d wrote=%u/%u\n",
+                sectorIdx, fr, written, toWrite);
+            return false;
+        }
         rem -= written;
     }
     fp->err = 0;

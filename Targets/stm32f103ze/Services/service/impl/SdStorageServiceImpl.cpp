@@ -153,23 +153,11 @@ void SdStorageServiceImpl::onSensorData(SensorDataModel* model, void* context) {
 void SdStorageServiceImpl::onAdcData(AdcDataModel* model, void* context) {
     SdStorageServiceImpl* self = static_cast<SdStorageServiceImpl*>(context);
     
-    // Process ADC data immediately (we're in ObservableDispatcher task context)
-    // Copy samples from model to batch buffer
+    // Quick check and signal only - don't process in ISR/dispatcher context
+    // Actual processing happens in taskLoop to avoid blocking
     if (model && model->sampleCount > 0) {
-        for (uint16_t i = 0; i < model->sampleCount && self->mAdcBatchCount < MAX_BATCH_SAMPLES; i++) {
-            uint16_t offset = self->mAdcBatchCount * AdcDataModel::SAMPLE_SIZE;
-            uint16_t srcOffset = i * AdcDataModel::SAMPLE_SIZE;
-            
-            // Copy one sample
-            memcpy(&self->mAdcBatchBuffer[offset], 
-                   &model->sampleBuffer[srcOffset], 
-                   AdcDataModel::SAMPLE_SIZE);
-            
-            self->mAdcBatchCount++;
-            self->mSamplesInWindow++;
-        }
-        
-        // Signal task that ADC data is ready
+        // Store reference to current batch (thread-safe as publisher waits)
+        self->mPendingAdcBatch = *model;
         self->mHasPendingAdcData = true;
         xSemaphoreGive(self->mAdcSem);
     }
@@ -286,7 +274,21 @@ void SdStorageServiceImpl::taskLoop() {
         // Check for ADC data (using flag instead of semaphore to avoid race condition)
         if (mHasPendingAdcData) {
             mHasPendingAdcData = false;
-            // Process pending ADC batch if available
+            
+            // Process the pending ADC batch (copy data in task context, not ISR/dispatcher)
+            if (mPendingAdcBatch.sampleCount > 0) {
+                for (uint16_t i = 0; i < mPendingAdcBatch.sampleCount && mAdcBatchCount < MAX_BATCH_SAMPLES; i++) {
+                    uint16_t offset = mAdcBatchCount * AdcDataModel::SAMPLE_SIZE;
+                    uint16_t srcOffset = i * AdcDataModel::SAMPLE_SIZE;
+                    memcpy(&mAdcBatchBuffer[offset], 
+                           &mPendingAdcBatch.sampleBuffer[srcOffset], 
+                           AdcDataModel::SAMPLE_SIZE);
+                    mAdcBatchCount++;
+                    mSamplesInWindow++;
+                }
+            }
+            
+            // Flush batch if target reached
             if (mAdcBatchCount >= mAdcBatchTarget) {
                 flushAdcBatch();
                 lastBatchFlushTick = xTaskGetTickCount();
@@ -298,17 +300,17 @@ void SdStorageServiceImpl::taskLoop() {
         // Stress test: internal dummy writes at configured rate
         if (mStressTestHz > 0) {
             uint32_t stressInterval = pdMS_TO_TICKS(1000 / mStressTestHz);
-            static uint32_t sDbgCnt = 0;
-            if (++sDbgCnt >= 100) {
-                sDbgCnt = 0;
-                printf("[SdStorage] stress: Hz=%d, interval=%lu, now=%lu, last=%lu, delta=%lu\n",
-                       mStressTestHz, stressInterval, now, lastStressTick, now - lastStressTick);
-            }
             if ((now - lastStressTick) >= stressInterval) {
-                printf("[SdStorage] appendDummyRecord called!\n");
                 appendDummyRecord();
                 lastStressTick = now;
             }
+        }
+
+        // Periodic status print (every 1 second)
+        static uint32_t sLastPrintTick = 0;
+        if ((now - sLastPrintTick) >= pdMS_TO_TICKS(1000)) {
+            sLastPrintTick = now;
+            printf("[SD] Records=%lu Rate=%u/s\n", mNonceCounter, mLastRate);
         }
 
         // Periodic batch flush (avoid holding samples too long)
@@ -733,10 +735,8 @@ void SdStorageServiceImpl::enableStressTest(uint16_t hz) {
 }
 
 void SdStorageServiceImpl::appendDummyRecord() {
-    printf("[SdStorage] appendDummyRecord: mDbReady=%d\n", mDbReady ? 1 : 0);
     if (!mDbReady) return;
 
-    printf("[SdStorage] Creating dummy record #%lu\n", mNonceCounter);
     SensorDataModel dummy;
     dummy.temperature = 25.0f + (float)(mNonceCounter % 100) * 0.01f;
     dummy.accelX = (int16_t)(mNonceCounter & 0x7FFF);
@@ -744,7 +744,6 @@ void SdStorageServiceImpl::appendDummyRecord() {
     dummy.accelZ = 0;
     dummy.updateTimestamp();
     appendRecord(&dummy);
-    printf("[SdStorage] Dummy record appended, new nonce=%lu\n", mNonceCounter);
 }
 
 } // namespace sdstorage

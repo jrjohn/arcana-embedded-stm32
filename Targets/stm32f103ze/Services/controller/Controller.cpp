@@ -9,7 +9,10 @@
 #include "SdStorageServiceImpl.hpp"
 #include "WifiServiceImpl.hpp"
 #include "MqttServiceImpl.hpp"
-#include "AdcSimulatorService.hpp"
+// AdcSimulatorService disabled - using simple direct write instead
+// #include "AdcSimulatorService.hpp"
+#include "FreeRTOS.h"
+#include "task.h"
 
 namespace arcana {
 
@@ -24,7 +27,6 @@ Controller::Controller()
     , mSdStorage(0)
     , mWifi(0)
     , mMqtt(0)
-    , mAdcSim(0)
 {
 }
 
@@ -53,7 +55,7 @@ void Controller::wireServices() {
     mSdStorage = &sdstorage::SdStorageServiceImpl::getInstance();
     mWifi      = &wifi::WifiServiceImpl::getInstance();
     mMqtt      = &mqtt::MqttServiceImpl::getInstance();
-    mAdcSim    = &AdcSimulatorService::getInstance();
+    // mAdcSim disabled - using enableStressTest instead
 
     // Wire LED <- Timer (base tick for 1-second color cycling)
     mLed->input.TimerEvents = mTimer->output.BaseTimer;
@@ -70,9 +72,8 @@ void Controller::wireServices() {
     // Wire SdStorage <- Sensor (encrypt + append to TSDB on SD card)
     mSdStorage->input.SensorData = mSensor->output.DataEvents;
 
-    // Wire SdStorage <- ADC Simulator (high-frequency batch write testing)
-    // Uncomment to enable ADC batch write testing:
-    // mSdStorage->input.AdcData = mAdcSim->output.AdcData;
+    // Wire SdStorage <- ADC Simulator disabled
+    // Using enableStressTest() instead for testing
 
     // Wire LCD <- SdStorage stats (display record count + write rate)
     mLcd->input.StorageStats = mSdStorage->output.StatsEvents;
@@ -100,7 +101,7 @@ void Controller::initHAL() {
     mSdStorage->initHAL();   // Derives per-device encryption key
     mWifi->initHAL();        // Initializes USART3 + ESP8266 GPIO
     mMqtt->initHAL();
-    mAdcSim->initHAL();
+    // mAdcSim->initHAL();  // Disabled
 }
 
 void Controller::initServices() {
@@ -115,9 +116,8 @@ void Controller::initServices() {
     mWifi->init();
     mMqtt->init();
     
-    // SD write stress test: 10 dummy writes/sec inside SdStorageService,
-    // independent of sensor data (LCD/MQTT stay at real sensor 1 SPS).
-    mSdStorage->enableStressTest(80);
+    // Use simple stress test at 10Hz (proven working)
+    mSdStorage->enableStressTest(10);
 }
 
 void Controller::startServices() {
@@ -132,9 +132,7 @@ void Controller::startServices() {
     mWifi->start();
     mMqtt->start();           // MQTT task waits for g_exfat_ready flag
     
-    // Start ADC simulator for high-frequency testing
-    // Uncomment to enable:
-    // mAdcSim->start();
+    // ADC simulator disabled - using enableStressTest(10) instead
 }
 
 } // namespace arcana

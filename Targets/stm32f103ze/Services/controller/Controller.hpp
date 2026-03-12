@@ -10,8 +10,16 @@
 #include "SdStorageService.hpp"
 #include "WifiService.hpp"
 #include "MqttService.hpp"
-#include "AdcSimulatorService.hpp"
+// AdcSimulatorService disabled - using simple direct write instead
+// #include "AdcSimulatorService.hpp"
 #include "ServiceTypes.hpp"
+
+// Forward declaration for simple ADC test task
+namespace arcana {
+namespace sdstorage {
+    class SdStorageServiceImpl;
+}
+}
 
 // Forward declarations for future services
 namespace arcana {
@@ -48,7 +56,7 @@ private:
     sdstorage::SdStorageService*     mSdStorage;
     wifi::WifiService*               mWifi;
     mqtt::MqttService*               mMqtt;
-    AdcSimulatorService*             mAdcSim;
+    // AdcSimulatorService*             mAdcSim;  // Disabled - using simple direct write
     // CommandBridgeService*         mBridge;
     // diagnostic::DiagnosticService* mDiag;
 };

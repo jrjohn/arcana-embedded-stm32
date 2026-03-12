@@ -129,6 +129,7 @@ private:
     StaticSemaphore_t mAdcSemBuffer;
     SemaphoreHandle_t mAdcSem;
     bool mHasPendingAdcData;
+    AdcDataModel mPendingAdcBatch;  // Buffer for incoming ADC batch from ISR/dispatcher
 
     // Stats
     Observable<StorageStatsModel> mStatsObs;
