@@ -74,6 +74,7 @@ SdStorageServiceImpl::SdStorageServiceImpl()
     , mLastRate(0)
     , mSamplesInWindow(0)
     , mLastSampleRate(0)
+    , mStressTestHz(0)
 {
     input.SensorData = 0;
     input.AdcData = 0;
@@ -258,13 +259,14 @@ void SdStorageServiceImpl::taskLoop() {
     uint32_t lastDay = 0;
     uint32_t lastSyncTick = xTaskGetTickCount();
     uint32_t lastBatchFlushTick = xTaskGetTickCount();
+    uint32_t lastStressTick = xTaskGetTickCount();
     static const uint32_t SYNC_INTERVAL = pdMS_TO_TICKS(30000);       // 30 seconds
     static const uint32_t BATCH_FLUSH_INTERVAL = pdMS_TO_TICKS(5000); // 5 seconds max batch hold
 
     while (mRunning) {
         // Wait for SensorData with timeout
         BaseType_t triggered = xSemaphoreTake(mWriteSem, pdMS_TO_TICKS(10));
-        
+
         if (triggered == pdTRUE && mHasPendingSensorData) {
             mHasPendingSensorData = false;
             appendRecord(&mPendingSensorData);
@@ -280,9 +282,19 @@ void SdStorageServiceImpl::taskLoop() {
             }
         }
 
-        // Periodic batch flush (avoid holding samples too long)
         uint32_t now = xTaskGetTickCount();
-        if (mAdcBatchCount > 0 && 
+
+        // Stress test: internal dummy writes at configured rate
+        if (mStressTestHz > 0) {
+            uint32_t stressInterval = pdMS_TO_TICKS(1000 / mStressTestHz);
+            if ((now - lastStressTick) >= stressInterval) {
+                appendDummyRecord();
+                lastStressTick = now;
+            }
+        }
+
+        // Periodic batch flush (avoid holding samples too long)
+        if (mAdcBatchCount > 0 &&
             (now - lastBatchFlushTick) >= BATCH_FLUSH_INTERVAL) {
             flushAdcBatch();
             lastBatchFlushTick = now;
@@ -404,14 +416,14 @@ void SdStorageServiceImpl::flushAdcBatch() {
 void SdStorageServiceImpl::updateStats() {
     static volatile uint32_t* const DWT_CYCCNT_PTR = (volatile uint32_t*)0xE0001004;
     uint32_t now = *DWT_CYCCNT_PTR;
-    
+
     if (mWindowStartTick == 0) {
         mWindowStartTick = now;
     }
-    
+
     uint32_t elapsed = now - mWindowStartTick;
     uint32_t elapsedMs = elapsed / (SystemCoreClock / 1000);
-    
+
     if (elapsedMs >= 1000) {
         mLastRate = mWritesInWindow;
         mLastSampleRate = mSamplesInWindow;
@@ -683,6 +695,22 @@ uint32_t SdStorageServiceImpl::queryAdcByTimeRange(uint32_t startTime, uint32_t 
 void SdStorageServiceImpl::publishStats() {
     mStats.updateTimestamp();
     mStatsObs.publish(&mStats);
+}
+
+void SdStorageServiceImpl::enableStressTest(uint16_t hz) {
+    mStressTestHz = hz;
+}
+
+void SdStorageServiceImpl::appendDummyRecord() {
+    if (!mDbReady) return;
+
+    SensorDataModel dummy;
+    dummy.temperature = 25.0f + (float)(mNonceCounter % 100) * 0.01f;
+    dummy.accelX = (int16_t)(mNonceCounter & 0x7FFF);
+    dummy.accelY = 0;
+    dummy.accelZ = 0;
+    dummy.updateTimestamp();
+    appendRecord(&dummy);
 }
 
 } // namespace sdstorage

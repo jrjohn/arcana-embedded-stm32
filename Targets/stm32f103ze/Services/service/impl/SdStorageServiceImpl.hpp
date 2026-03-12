@@ -46,6 +46,7 @@ public:
                          SensorDataModel* out, uint16_t maxCount) override;
     uint32_t queryAdcByTimeRange(uint32_t startTime, uint32_t endTime,
                                   AdcDataModel* out, uint16_t maxBatches) override;
+    void enableStressTest(uint16_t hz) override;
 
 private:
     SdStorageServiceImpl();
@@ -137,6 +138,10 @@ private:
     uint16_t mLastRate;
     uint32_t mSamplesInWindow;      // For batch mode rate calculation
     uint16_t mLastSampleRate;
+
+    // Stress test (internal dummy writes, independent of sensor)
+    uint16_t mStressTestHz;
+    void appendDummyRecord();
 };
 
 } // namespace sdstorage

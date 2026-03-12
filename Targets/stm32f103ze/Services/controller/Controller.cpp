@@ -115,11 +115,9 @@ void Controller::initServices() {
     mWifi->init();
     mMqtt->init();
     
-    // Configure SensorService for ADC simulation mode (high-frequency testing)
-    // This uses existing SensorData flow with stable Observable pattern
-    // 10 SPS = 10 writes/sec to TSDB for testing
-    // Uncomment to enable:
-    mSensor->enableAdcSimulation(true, 10);  // 10 samples/sec
+    // SD write stress test: 10 dummy writes/sec inside SdStorageService,
+    // independent of sensor data (LCD/MQTT stay at real sensor 1 SPS).
+    mSdStorage->enableStressTest(10);
 }
 
 void Controller::startServices() {

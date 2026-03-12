@@ -57,6 +57,12 @@ public:
     virtual uint32_t queryAdcByTimeRange(uint32_t startTime, uint32_t endTime,
                                          AdcDataModel* out, uint16_t maxBatches) = 0;
 
+    /**
+     * Enable internal stress test: generate dummy writes at the given rate,
+     * independent of sensor data. Set hz=0 to disable.
+     */
+    virtual void enableStressTest(uint16_t hz) { (void)hz; }
+
 protected:
     SdStorageService() : input(), output() {
         input.SensorData = 0;
