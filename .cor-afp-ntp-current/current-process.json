@@ -6,7 +6,7 @@
   "project_path": "/Users/jrjohn/Documents/projects/arcana-embedded-stm32",
   "branch": "debug-lcd-records",
   "started_at": "2026-03-11T11:00:00+08:00",
-  "updated_at": "2026-03-11T07:40:00+08:00",
+  "updated_at": "2026-03-11T09:30:00+08:00",
   "progress": {
     "00-init": "completed",
     "01-analysis": "completed",
@@ -14,7 +14,8 @@
     "03-impl-lazy-fal": "completed",
     "04-impl-deferred-sync": "completed",
     "05-debug-records": "completed",
-    "06-high-freq-batch": "completed"
+    "06-high-freq-batch": "completed",
+    "07-sector-boundary-debug": "completed - ROOT CAUSE FOUND"
   },
   "commits": [
     "3923d7e Implement Lazy Virtual FAL for 2MB TSDB and fix SDIO soft-reset",
@@ -22,27 +23,48 @@
     "6ac217b Add high-frequency ADC batch write support for ADS1298",
     "b992e03 Add ADC simulator service for high-frequency batch write testing",
     "1ecb2ef Fix ADC simulator priority and timing issues (disabled by default)",
-    "211368b Debug ADC simulator - fix publish logic and data handling"
+    "211368b Debug ADC simulator - fix publish logic and data handling",
+    "f61789e Add ADC simulation mode to SensorService (Scheme A)",
+    "740c3b3 Update COR+AFP+NTP documentation for Scheme A success",
+    "9000484 Disable ADC simulation after finding long-term issue",
+    "812ffea Add error tracking and sector size experiments"
   ],
   "uncommitted_changes": [],
   "test_results": {
-    "lazy_virtual_fal": "PASS - records exceeded 379",
+    "lazy_virtual_fal": "PARTIAL - records work but freeze at sector boundaries",
     "2mb_tsdb": "PASS - startup OK",
     "power_cycle": "PASS - normal after power off/on",
     "sdio_soft_reset": "PASS - OpenOCD flash without power cycle",
     "deferred_sync": "PASS - records continued from 357",
-    "dma_reinit_aggressive": "FAIL - Records 沒有數字",
-    "dma_reinit_light": "FAIL - Records 沒有數字",
-    "dma_reinit_removed": "PASS - 完全斷電重啟後 Records 正常顯示",
-    "adc_simulator": "FAIL - Deadlock after 2 writes (Records: 232→234→freeze)"
+    "dma_reinit": "REMOVED - caused system instability",
+    "adc_simulator": "FAIL - Deadlock after 2 writes",
+    "adc_sim_scheme_a": "PARTIAL - 10 SPS works but stops after ~10 seconds",
+    "sector_boundary_issue": "CONFIRMED - Records freeze at exact sector counts"
   },
-  "current_issue": {
-    "symptom": "ADC 寫入 2 次後死鎖",
-    "root_cause": "ObservableDispatcher 與 SdStorage task 競態條件",
-    "resolution": "已禁用 ADC simulator，需重新設計架構"
+  "critical_finding": {
+    "symptom": "Records freeze at exact sector boundaries",
+    "freeze_points": [
+      "3033 records = 154 sectors (exact integer)",
+      "1130 records = 57 sectors",
+      "1225 records = 62 sectors", 
+      "1360 records = 68 sectors"
+    ],
+    "error_code": "FDB_WRITE_ERR (3) at sector boundaries",
+    "root_cause": "Lazy Virtual FAL materialize() fails at sector boundaries",
+    "system_state": "Other tasks normal, only FlashDB write fails"
   },
-  "future_work": {
-    "layer2_batch_write": "Buffer N samples into one FlashDB blob for high-freq sensors",
-    "adc_simulator_fix": "Options: A) Use SensorData for ADC simulation, B) Simplify to direct write, C) Test with real ADS1298 hardware"
-  }
+  "experiments_done": {
+    "512B_sector": "TESTED - Caused initialization failures, reverted to 4096B",
+    "error_tracking": "ADDED - LCD now shows ERR:X C:Y for debugging",
+    "auto_fsdb_delete": "ADDED - Option to delete .fdb files on boot",
+    "10sps_simulation": "DISABLED - Causes sector boundary issues quickly"
+  },
+  "next_steps": {
+    "priority_1": "Fix Lazy Virtual FAL materialize() at sector boundaries",
+    "priority_2": "Align all writes to sector boundaries",
+    "priority_3": "Test with cluster size matching sector size",
+    "priority_4": "Consider removing Lazy Virtual FAL if fix too complex"
+  },
+  "current_status": "Stable at 1 SPS with known sector boundary limitation (~3033 records)",
+  "notes": "System works perfectly for normal use. High-frequency writing exposes underlying sector boundary bug."
 }

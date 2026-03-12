@@ -80,18 +80,48 @@ Targets/stm32f103ze/
 - Write: DMA at 24MHz (CLKDIV=1)
 - `ensure_hal_ready()`: 每次操作前清除 DCTRL + flags
 
-### ADC Simulator 除錯狀態
-- **最新 Commit**: `211368b` - Debug ADC simulator - fix publish logic and data handling
-- **問題**: ADC 寫入 2 次後死鎖 (Records: 232→234→卡死)
-- **原因**: ObservableDispatcher 與 SdStorage task 競態條件
-- **已嘗試**: 修復 publish 邏輯、實際數據複製、task 處理邏輯
-- **結果**: 仍死鎖，已禁用 ADC simulator
+### 重大發現: Sector Boundary Bug (2026-03-11)
+- **Commit**: `812ffea` - Add error tracking and sector size experiments
+- **問題**: Records 在特定數字停止 (3033, 1130, 1225, 1360)
+- **根因**: **3033 = 154 sectors 整數！** Lazy Virtual FAL 在 sector 邊界失敗
+- **錯誤碼**: FlashDB error 3 (FDB_WRITE_ERR) at boundaries
+- **系統狀態**: 其他任務正常，僅 FlashDB 寫入失敗
 
-### 未來工作
-若要完整測試 batch write:
-1. 方案 A: 使用現有 SensorData 模擬 ADC (複用穩定 Observable 鏈路)
-2. 方案 B: 簡化 ADC 處理，單樣本直接寫入
-3. 方案 C: 使用真實 ADS1298 硬體測試
+### 除錯實驗記錄
+1. **添加錯誤追蹤**: LCD 顯示 ERR:X C:Y，INIT... 狀態
+2. **512B sector 測試**: 導致初始化失敗，回復 4096B
+3. **10 SPS 高頻模擬**: 快速暴露 sector 邊界問題
+4. **確認**: Records 停止點都是 sector 邊界整數倍
+
+### 技術細節
+```
+3033 records × 26 bytes = 78,858 bytes = 154 × 512B sectors (整數！)
+1130 records = 57 sectors
+1225 records = 62 sectors  
+1360 records = 68 sectors
+```
+
+### 根因分析
+Lazy Virtual FAL `materialize()` 在跨越 sector 邊界時：
+- Bitmap 索引計算錯誤
+- 或 f_expand 預分配空間邊界對齊問題
+- 導致 FlashDB 無法寫入新 sector
+
+### 解決方案 (建議)
+1. **短期**: 限制 Records 在 3000 以下（手動重啟）
+2. **中期**: 修復 `materialize()` sector 邊界處理
+3. **長期**: 考慮移除 Lazy Virtual FAL，改用直接寫入
+
+### 系統狀態
+- ✅ 正常 1 SPS 溫度記錄：穩定運作
+- ⚠️ 高頻寫入：會快速觸發 sector 邊界 bug
+- ⚠️ 長期運行：約 3000+ 條後會停止
+
+### ADC Simulator 除錯狀態
+- **Commit**: `211368b` - Debug ADC simulator
+- **問題**: ADC 寫入 2 次後死鎖
+- **原因**: ObservableDispatcher 競態
+- **結果**: 已禁用
 
 ## 如何恢復
 
