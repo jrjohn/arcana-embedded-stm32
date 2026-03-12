@@ -80,30 +80,18 @@ Targets/stm32f103ze/
 - Write: DMA at 24MHz (CLKDIV=1)
 - `ensure_hal_ready()`: 每次操作前清除 DCTRL + flags
 
-### 高頻寫入測試結果
-
-#### 方案 A: 使用 SensorData 模擬 ADC ✅ **成功**
-- **Commit**: `f61789e` - Add ADC simulation mode to SensorService (Scheme A)
-- **方法**: 複用現有 SensorData Observable 鏈路，避免新 Observer 競態
-- **測試**: 10 SPS (10 寫入/秒) - **穩定運作**
-- **結果**: Records 正常增長，無死鎖
-
-#### AdcSimulatorService ❌ **失敗**
-- **Commit**: `211368b` - Debug ADC simulator
+### ADC Simulator 除錯狀態
+- **最新 Commit**: `211368b` - Debug ADC simulator - fix publish logic and data handling
 - **問題**: ADC 寫入 2 次後死鎖 (Records: 232→234→卡死)
 - **原因**: ObservableDispatcher 與 SdStorage task 競態條件
-- **狀態**: 已禁用
+- **已嘗試**: 修復 publish 邏輯、實際數據複製、task 處理邏輯
+- **結果**: 仍死鎖，已禁用 ADC simulator
 
-### 如何使用 ADC 模擬模式
-```cpp
-// 在 Controller::initServices() 中啟用
-mSensor->enableAdcSimulation(true, 10);  // 10 samples/sec
-```
-
-### 後續工作
-- [ ] 測試更高採樣率 (50/100 SPS)
-- [ ] 實現 Batch Write (緩存 N 樣本後批次寫入)
-- [ ] 整合真實 ADS1298 硬體
+### 未來工作
+若要完整測試 batch write:
+1. 方案 A: 使用現有 SensorData 模擬 ADC (複用穩定 Observable 鏈路)
+2. 方案 B: 簡化 ADC 處理，單樣本直接寫入
+3. 方案 C: 使用真實 ADS1298 硬體測試
 
 ## 如何恢復
 

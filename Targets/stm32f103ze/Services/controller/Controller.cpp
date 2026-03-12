@@ -119,7 +119,7 @@ void Controller::initServices() {
     // This uses existing SensorData flow with stable Observable pattern
     // 10 SPS = 10 writes/sec to TSDB for testing
     // Uncomment to enable:
-    // mSensor->enableAdcSimulation(true, 10);  // 10 samples/sec
+    mSensor->enableAdcSimulation(true, 10);  // 10 samples/sec
 }
 
 void Controller::startServices() {
