@@ -214,8 +214,10 @@ void SdStorageServiceImpl::storageTask(void* param) {
 
     // Initialize FlashDB TSDB
     uint32_t secSize = storage::SdFalAdapter::SECTOR_SIZE;
+    uint32_t maxSize = storage::SdFalAdapter::TSDB_SIZE;
 
     fdb_tsdb_control(&self->mTsdb, FDB_TSDB_CTRL_SET_SEC_SIZE, &secSize);
+    fdb_tsdb_control(&self->mTsdb, FDB_TSDB_CTRL_SET_MAX_SIZE, &maxSize);
     fdb_tsdb_control(&self->mTsdb, FDB_TSDB_CTRL_SET_LOCK, (void *)fdbLock);
     fdb_tsdb_control(&self->mTsdb, FDB_TSDB_CTRL_SET_UNLOCK, (void *)fdbUnlock);
 
@@ -236,7 +238,9 @@ void SdStorageServiceImpl::storageTask(void* param) {
     }
 
     // Initialize FlashDB KVDB
+    uint32_t kvMaxSize = storage::SdFalAdapter::KVDB_SIZE;
     fdb_kvdb_control(&self->mKvdb, FDB_KVDB_CTRL_SET_SEC_SIZE, &secSize);
+    fdb_kvdb_control(&self->mKvdb, FDB_KVDB_CTRL_SET_MAX_SIZE, &kvMaxSize);
     fdb_kvdb_control(&self->mKvdb, FDB_KVDB_CTRL_SET_LOCK, (void *)fdbLock);
     fdb_kvdb_control(&self->mKvdb, FDB_KVDB_CTRL_SET_UNLOCK, (void *)fdbUnlock);
 

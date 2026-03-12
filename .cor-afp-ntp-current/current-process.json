@@ -18,7 +18,7 @@
     "07-sector-boundary-debug": "completed",
     "08-erase-fix": "completed - commit db5d2d5",
     "09-stress-test-decoupling": "completed - commit dbc7fe3",
-    "10-stress-test-50hz": "in-progress - task priority fix applied, records moving"
+    "10-stress-test-50hz": "completed - 80Hz stable, 100Hz exceeds materialize limit"
   },
   "commits": [
     "3923d7e Implement Lazy Virtual FAL for 2MB TSDB and fix SDIO soft-reset",

@@ -48,11 +48,30 @@ db5d2d5 Fix Lazy Virtual FAL erase: write 0xFF to disk instead of bitmap-only
 - **修復**: `erase()` 改為對已物化 sectors 寫 0xFF 到磁碟 (commit `db5d2d5`)
 - **狀態**: ✅ 已修復已提交
 
-#### Bug 2: Records 在 1026 停止 @ 50/s (修復中)
+#### Bug 2: Records 在 1026 停止 @ 50/s (已解決)
 - **症狀**: stress test 從 10/s 拉到 50/s (實際 ~38/s)，Records 在 1026 停止
 - **根因**: `updateStats()` 每次 `appendRecord()` 都 publish → 38+ publish/sec → ObservableDispatcher 隊列溢出 (8 slots)
 - **修復**: 加入 publish decimation (每 10 次 updateStats 才 publish 一次，約 4/sec)
-- **狀態**: ⏳ 已燒錄，待使用者回報結果
+- **狀態**: ✅ 已解決
+
+#### Bug 3: Records 卡在 15005 @ 50/s (✅ 已解決)
+- **症狀**: stress test 進行中 Records 卡在 15005 不再增加
+- **根因**: FlashDB file mode **必須**設定 `max_size`，但程式碼只設定了 `sec_size`
+  - 參見 `fdb.c:50`: `FDB_ASSERT(db->max_size != 0)`
+  - 未設定時 FlashDB 計算可用 sector 出錯，錯誤判定儲存已滿
+- **修復**: 
+  - TSDB: 新增 `FDB_TSDB_CTRL_SET_MAX_SIZE` (2MB)
+  - KVDB: 新增 `FDB_KVDB_CTRL_SET_MAX_SIZE` (64KB)
+- **狀態**: ✅ 已驗證 - Records 達 18700+ 持續增加
+
+### 高頻測試結果
+| 頻率 | 狀態 | Records |
+|------|------|---------|
+| 50Hz | ✅ 穩定 | 200K+ (歷史) |
+| 80Hz | ✅ 穩定 | 18700+ |
+| 100Hz | ❌ 卡住 | materialize >10ms |
+
+**結論**: 80Hz 是當前架構的穩定極限
 
 #### 實驗: 移除 materializeSector f_sync → 更差
 - 移除 f_sync 後 Records 只到 68 就停止 (vs 有 f_sync 的 1026)
@@ -108,15 +127,45 @@ Targets/stm32f103ze/
 - Write: DMA at 24MHz (CLKDIV=1)
 - `ensure_hal_ready()`: 每次操作前清除 DCTRL + flags
 
+### 串口監看方法 (Python)
+```python
+import os
+import time
+
+fd = os.open('/dev/cu.usbserial-1120', os.O_RDONLY | os.O_NOCTTY)
+os.system('stty -f /dev/cu.usbserial-1120 115200 raw -echo')
+
+data = b''
+start = time.time()
+while time.time() - start < 5:
+    try:
+        chunk = os.read(fd, 256)
+        if chunk:
+            data += chunk
+    except:
+        pass
+    time.sleep(0.05)
+
+os.close(fd)
+
+with open('/tmp/serial_out.txt', 'wb') as f:
+    f.write(data)
+
+print(f"讀取到 {len(data)} bytes")
+```
+
 ## 下一步
 
+### 已完成
+- ✅ 80Hz 穩定運行 (18700+ records)
+- ❌ 100Hz 卡住 (materialize > 10ms)
+
 ### 待驗證
-1. **publish decimation 是否解決 1026 停止問題** ← 當前等待
-2. **50/s 可持續多久** (目標: 超過 50K records 觸發 GC wrap)
-3. **GC wrap 後斷電重啟**: 驗證 erase fix 在 GC 場景正常
+1. **80Hz 長期穩定性** (目標: 超過 50K 觸發 GC wrap)
+2. **GC wrap 後斷電重啟**: 驗證 erase fix 在 GC 場景正常
 
 ### 後續目標
-1. 100/s stress test
+1. 若要 100Hz+: 預先 materialize 所有 sectors
 2. 移除 DELETE_FDB_ON_BOOT (測試完成後)
 3. Commit 現有 uncommitted changes
 
