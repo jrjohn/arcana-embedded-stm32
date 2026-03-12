@@ -167,14 +167,22 @@ int SdFalAdapter::write(int partId, uint32_t offset, const uint8_t* buf, size_t 
     if (xSemaphoreTake(mMutex, pdMS_TO_TICKS(500)) != pdTRUE) { printf("[FAL] write: mutex timeout\n"); return -1; }
 
     FIL* fp = (partId == PART_TSDB) ? &mTsdbFile : &mKvdbFile;
+    
+    // Debug: Check file state
+    if (fp->obj.fs == NULL) {
+        printf("[FAL] write: ERROR file not opened!\n");
+        xSemaphoreGive(mMutex);
+        return -1;
+    }
 
     // Materialize any virtual sectors touched by this write
     uint32_t startSec = offset / SECTOR_SIZE;
     uint32_t endSec   = (offset + size - 1) / SECTOR_SIZE;
+    static uint32_t sMatFailCnt = 0;
     for (uint32_t s = startSec; s <= endSec; s++) {
         if (!isMaterialized(partId, s)) {
             if (!materializeSector(fp, s)) {
-                printf("[FAL] write: materialize sec %lu FAILED\n", s);
+                if (++sMatFailCnt <= 5) printf("[FAL] write: materialize sec %lu FAILED (total failures: %lu)\n", s, sMatFailCnt);
                 xSemaphoreGive(mMutex);
                 return -1;
             }
@@ -211,7 +219,8 @@ int SdFalAdapter::erase(int partId, uint32_t offset, size_t size) {
     uint32_t startSec = offset / SECTOR_SIZE;
     uint32_t endSec   = (offset + size - 1) / SECTOR_SIZE;
 
-    uint8_t fill[256];
+    // DMA requires 4-byte aligned buffer
+    static uint8_t fill[256] __attribute__((aligned(4)));
     memset(fill, 0xFF, sizeof(fill));
 
     for (uint32_t s = startSec; s <= endSec; s++) {
@@ -283,7 +292,8 @@ bool SdFalAdapter::materializeSector(FIL* fp, uint32_t sectorIdx) {
         return false;
     }
 
-    uint8_t fill[256];
+    // DMA requires 4-byte aligned buffer
+    static uint8_t fill[256] __attribute__((aligned(4)));
     memset(fill, 0xFF, sizeof(fill));
     uint32_t rem = SECTOR_SIZE;
     while (rem > 0) {

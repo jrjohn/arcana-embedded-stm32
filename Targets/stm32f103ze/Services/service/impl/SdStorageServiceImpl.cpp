@@ -75,6 +75,7 @@ SdStorageServiceImpl::SdStorageServiceImpl()
     , mSamplesInWindow(0)
     , mLastSampleRate(0)
     , mStressTestHz(0)
+    , mAdcStressTestSps(0)
 {
     input.SensorData = 0;
     input.AdcData = 0;
@@ -306,11 +307,25 @@ void SdStorageServiceImpl::taskLoop() {
             }
         }
 
+        // ADC batch stress test: generate simulated 8ch data at target write rate
+        if (mAdcStressTestSps > 0 && mAdcBatchTarget > 0) {
+            uint32_t adcInterval = pdMS_TO_TICKS(1000 * (uint32_t)mAdcBatchTarget / mAdcStressTestSps);
+            if ((now - lastStressTick) >= adcInterval) {
+                appendDummyAdcBatch();
+                lastStressTick = now;
+            }
+        }
+
         // Periodic status print (every 1 second)
         static uint32_t sLastPrintTick = 0;
         if ((now - sLastPrintTick) >= pdMS_TO_TICKS(1000)) {
             sLastPrintTick = now;
-            printf("[SD] Records=%lu Rate=%u/s\n", mNonceCounter, mLastRate);
+            if (mAdcStressTestSps > 0) {
+                printf("[SD] Records=%lu Rate=%u/s Samples=%u/s Batch=%u\n",
+                       mNonceCounter, mLastRate, mLastSampleRate, mAdcBatchTarget);
+            } else {
+                printf("[SD] Records=%lu Rate=%u/s\n", mNonceCounter, mLastRate);
+            }
         }
 
         // Periodic batch flush (avoid holding samples too long)
@@ -734,6 +749,14 @@ void SdStorageServiceImpl::enableStressTest(uint16_t hz) {
     mStressTestHz = hz;
 }
 
+void SdStorageServiceImpl::enableAdcStressTest(uint16_t sps, uint16_t batchSize) {
+    mAdcStressTestSps = sps;
+    if (batchSize > 0 && batchSize <= MAX_BATCH_SAMPLES) {
+        mAdcBatchTarget = batchSize;
+    }
+    printf("[SdStorage] ADC stress test: %u SPS, batch=%u\n", sps, mAdcBatchTarget);
+}
+
 void SdStorageServiceImpl::appendDummyRecord() {
     if (!mDbReady) return;
 
@@ -744,6 +767,31 @@ void SdStorageServiceImpl::appendDummyRecord() {
     dummy.accelZ = 0;
     dummy.updateTimestamp();
     appendRecord(&dummy);
+}
+
+void SdStorageServiceImpl::appendDummyAdcBatch() {
+    if (!mDbReady) return;
+
+    // Generate dummy 8-channel ADC samples
+    // Each sample: 8 channels × 3 bytes = 24 bytes
+    for (uint16_t i = 0; i < mAdcBatchTarget && mAdcBatchCount < MAX_BATCH_SAMPLES; i++) {
+        uint16_t offset = mAdcBatchCount * AdcDataModel::SAMPLE_SIZE;
+        
+        // Generate 8 channels of 24-bit data (3 bytes each)
+        for (uint8_t ch = 0; ch < 8; ch++) {
+            // Dummy pattern: channel index + sample counter
+            uint32_t value = ((mNonceCounter + mAdcBatchCount) * 8 + ch) & 0xFFFFFF;
+            mAdcBatchBuffer[offset + ch * 3 + 0] = (value >> 0) & 0xFF;
+            mAdcBatchBuffer[offset + ch * 3 + 1] = (value >> 8) & 0xFF;
+            mAdcBatchBuffer[offset + ch * 3 + 2] = (value >> 16) & 0xFF;
+        }
+        
+        mAdcBatchCount++;
+        mSamplesInWindow++;
+    }
+    
+    // Flush batch immediately
+    flushAdcBatch();
 }
 
 } // namespace sdstorage

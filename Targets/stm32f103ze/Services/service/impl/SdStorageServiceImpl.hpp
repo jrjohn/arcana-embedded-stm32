@@ -47,6 +47,7 @@ public:
     uint32_t queryAdcByTimeRange(uint32_t startTime, uint32_t endTime,
                                   AdcDataModel* out, uint16_t maxBatches) override;
     void enableStressTest(uint16_t hz) override;
+    void enableAdcStressTest(uint16_t sps, uint16_t batchSize) override;
 
 private:
     SdStorageServiceImpl();
@@ -73,7 +74,7 @@ private:
     void makeNonce(uint8_t nonce[12], uint32_t counter, uint32_t tick);
 
     // ADC batch serialization
-    static const uint16_t MAX_BATCH_SAMPLES = 50;  // Max samples per batch blob
+    static const uint16_t MAX_BATCH_SAMPLES = 100;  // Max samples per batch blob
     static const uint32_t MAX_BATCH_BLOB_SIZE = 12 + (MAX_BATCH_SAMPLES * AdcDataModel::SAMPLE_SIZE);
     void serializeAdcBatch(const uint8_t* samples, uint16_t count, 
                            uint32_t timestamp, uint8_t* buf, uint32_t& outLen);
@@ -109,7 +110,7 @@ private:
     uint32_t mNonceCounter;
 
     // Dedicated task
-    static const uint16_t TASK_STACK_SIZE = 1024;
+    static const uint16_t TASK_STACK_SIZE = 1536;  // 6KB (ADC batch blob needs ~2.4KB stack)
     StaticTask_t mTaskBuffer;
     StackType_t mTaskStack[TASK_STACK_SIZE];
     TaskHandle_t mTaskHandle;
@@ -143,6 +144,10 @@ private:
     // Stress test (internal dummy writes, independent of sensor)
     uint16_t mStressTestHz;
     void appendDummyRecord();
+
+    // ADC batch stress test (simulates ADS1298 8ch @ configurable SPS)
+    uint16_t mAdcStressTestSps;   // 0 = disabled
+    void appendDummyAdcBatch();
 };
 
 } // namespace sdstorage

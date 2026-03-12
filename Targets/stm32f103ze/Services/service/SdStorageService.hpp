@@ -63,6 +63,15 @@ public:
      */
     virtual void enableStressTest(uint16_t hz) { (void)hz; }
 
+    /**
+     * Enable ADC batch stress test: simulate 8-channel ADC at given sample rate.
+     * Data is batched into batchSize samples per FlashDB blob.
+     * Set sps=0 to disable.
+     */
+    virtual void enableAdcStressTest(uint16_t sps, uint16_t batchSize) {
+        (void)sps; (void)batchSize;
+    }
+
 protected:
     SdStorageService() : input(), output() {
         input.SensorData = 0;

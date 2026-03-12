@@ -143,30 +143,43 @@ DRESULT disk_write(BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count)
     if (pdrv != 0 || !g_sd_ready) return RES_NOTRDY;
     if (!g_sd_dma_sem) return RES_ERROR;
 
+    static uint32_t sWriteFailCnt = 0;
+    static uint32_t sLastErr = 0;
+
     for (int retry = 0; retry < 3; retry++) {
         ensure_hal_ready();
 
         /* Clear any stale semaphore signal */
         xSemaphoreTake(g_sd_dma_sem, 0);
 
-        if (HAL_SD_WriteBlocks_DMA(&g_hsd, (uint8_t *)buff, sector, count) != HAL_OK) {
+        HAL_StatusTypeDef hal_status = HAL_SD_WriteBlocks_DMA(&g_hsd, (uint8_t *)buff, sector, count);
+        if (hal_status != HAL_OK) {
+            if (++sWriteFailCnt <= 3) printf("[SDIO] WriteBlocks_DMA failed: %d\n", hal_status);
             continue;
         }
 
         /* Wait for DMA + SDIO completion (HAL_SD_TxCpltCallback gives semaphore) */
         if (xSemaphoreTake(g_sd_dma_sem, pdMS_TO_TICKS(5000)) != pdTRUE) {
+            if (++sWriteFailCnt <= 3) printf("[SDIO] DMA timeout\n");
             continue;
         }
 
         /* Check for transfer errors */
         if (g_hsd.ErrorCode != HAL_SD_ERROR_NONE) {
+            if (++sWriteFailCnt <= 3) {
+                sLastErr = g_hsd.ErrorCode;
+                printf("[SDIO] SD error: 0x%08lX\n", sLastErr);
+            }
             continue;
         }
 
         /* Wait for card to finish internal programming */
         uint32_t timeout = HAL_GetTick() + 5000;
         while (HAL_SD_GetCardState(&g_hsd) != HAL_SD_CARD_TRANSFER) {
-            if (HAL_GetTick() > timeout) break;
+            if (HAL_GetTick() > timeout) {
+                if (++sWriteFailCnt <= 3) printf("[SDIO] Card state timeout\n");
+                break;
+            }
         }
 
         return RES_OK;
