@@ -185,23 +185,51 @@ bool SdStorageServiceImpl::flushBatch() {
 
 void SdStorageServiceImpl::storageTask(void* param) {
     SdStorageServiceImpl* self = static_cast<SdStorageServiceImpl*>(param);
+    uint32_t startTick = xTaskGetTickCount();
+    printf("[SdStorage] Task started at tick %lu\n", startTick);
 
     // Wait for exFAT filesystem to be ready
     int waitCount = 0;
     const int MAX_WAIT = 300;
+    printf("[SdStorage] Waiting for exFAT ready...\n");
     while (!g_exfat_ready && self->mRunning && waitCount < MAX_WAIT) {
         vTaskDelay(pdMS_TO_TICKS(100));
         waitCount++;
+        if (waitCount % 10 == 0) {
+            printf("[SdStorage] Waiting for exFAT... %d/300\n", waitCount);
+        }
     }
+    uint32_t exfatTick = xTaskGetTickCount();
+    printf("[SdStorage] exFAT ready after %lu ms\n", (exfatTick - startTick) * portTICK_PERIOD_MS);
+    
     if (!self->mRunning) { vTaskDelete(0); return; }
 
     // Initialize FAL adapter
+    printf("[SdStorage] Initializing FAL adapter...\n");
+    uint32_t falStartTick = xTaskGetTickCount();
     if (!self->mFal.init()) {
+        printf("[SdStorage] FAL init FAILED!\n");
         vTaskDelete(0);
         return;
     }
+    uint32_t falEndTick = xTaskGetTickCount();
+    printf("[SdStorage] FAL init OK (%lu ms)\n", (falEndTick - falStartTick) * portTICK_PERIOD_MS);
+
+    // Format option: Clear TSDB on startup for stability testing
+    printf("[SdStorage] Erasing TSDB for clean start...\n");
+    uint32_t eraseStartTick = xTaskGetTickCount();
+    FRESULT fr = f_unlink("0:/tsdb.fdb");
+    uint32_t eraseEndTick = xTaskGetTickCount();
+    if (fr == FR_OK) {
+        printf("[SdStorage] TSDB erased OK (%lu ms)\n", (eraseEndTick - eraseStartTick) * portTICK_PERIOD_MS);
+    } else if (fr == FR_NO_FILE) {
+        printf("[SdStorage] TSDB not exist (fresh start, %lu ms)\n", (eraseEndTick - eraseStartTick) * portTICK_PERIOD_MS);
+    } else {
+        printf("[SdStorage] TSDB erase warning: %d (%lu ms)\n", fr, (eraseEndTick - eraseStartTick) * portTICK_PERIOD_MS);
+    }
 
     // Initialize FlashDB TSDB
+    printf("[SdStorage] Initializing TSDB...\n");
     uint32_t secSize = storage::SdFalAdapter::SECTOR_SIZE;
     uint32_t maxSize = storage::SdFalAdapter::TSDB_SIZE;
 
@@ -212,14 +240,17 @@ void SdStorageServiceImpl::storageTask(void* param) {
 
     // Use larger blob size for batch mode (up to MAX_BATCH_SAMPLES * SAMPLE_SIZE + metadata)
     uint32_t maxBlobSize = 12 + (MAX_BATCH_SAMPLES * AdcDataModel::SAMPLE_SIZE) + 32;
+    uint32_t tsdbStartTick = xTaskGetTickCount();
     fdb_err_t err = fdb_tsdb_init(&self->mTsdb, "sensor", "tsdb", fdbGetTime,
                                    maxBlobSize, NULL);
+    uint32_t tsdbEndTick = xTaskGetTickCount();
     if (err != FDB_NO_ERR) {
         printf("[SdStorage] TSDB init failed: %d\n", err);
         vTaskDelete(0);
         return;
     }
-    printf("[SdStorage] TSDB init OK, last_time=%lu\n", self->mTsdb.last_time);
+    printf("[SdStorage] TSDB init OK (%lu ms), last_time=%lu\n", 
+           (tsdbEndTick - tsdbStartTick) * portTICK_PERIOD_MS, self->mTsdb.last_time);
 
     // Seed timestamp
     if (self->mTsdb.last_time > 0) {
@@ -233,14 +264,22 @@ void SdStorageServiceImpl::storageTask(void* param) {
     fdb_kvdb_control(&self->mKvdb, FDB_KVDB_CTRL_SET_LOCK, (void *)fdbLock);
     fdb_kvdb_control(&self->mKvdb, FDB_KVDB_CTRL_SET_UNLOCK, (void *)fdbUnlock);
 
+    printf("[SdStorage] Initializing KVDB...\n");
+    uint32_t kvdbStartTick = xTaskGetTickCount();
     err = fdb_kvdb_init(&self->mKvdb, "upload", "kvdb", NULL, NULL);
+    uint32_t kvdbEndTick = xTaskGetTickCount();
     if (err != FDB_NO_ERR) {
+        printf("[SdStorage] KVDB init failed: %d\n", err);
         fdb_tsdb_deinit(&self->mTsdb);
         vTaskDelete(0);
         return;
     }
+    printf("[SdStorage] KVDB init OK (%lu ms)\n", (kvdbEndTick - kvdbStartTick) * portTICK_PERIOD_MS);
 
     self->mDbReady = true;
+
+    uint32_t totalTick = xTaskGetTickCount();
+    printf("[SdStorage] ===== Total startup time: %lu ms =====\n", (totalTick - startTick) * portTICK_PERIOD_MS);
 
     // DEBUG: Check stress test config
     printf("[SdStorage] Task started, mStressTestHz=%d\n", self->mStressTestHz);
