@@ -32,11 +32,19 @@ SdFalAdapter& SdFalAdapter::getInstance() {
     return sInstance;
 }
 
+// Uncomment to delete .fdb files on boot (clean start for testing)
+#define DELETE_FDB_ON_BOOT
+
 bool SdFalAdapter::init() {
     if (mInitOk) return true;
 
     mMutex = xSemaphoreCreateMutexStatic(&mMutexBuffer);
     if (!mMutex) return false;
+
+#ifdef DELETE_FDB_ON_BOOT
+    f_unlink(TSDB_PATH);
+    f_unlink(KVDB_PATH);
+#endif
 
     // Open or create partition files (bitmap tracks materialized sectors)
     if (!openOrCreate(&mTsdbFile, TSDB_PATH, TSDB_SIZE, mTsdbBitmap, TSDB_BITMAP_BYTES)) return false;
@@ -186,14 +194,41 @@ int SdFalAdapter::erase(int partId, uint32_t offset, size_t size) {
     if (!mInitOk) return -1;
     if (xSemaphoreTake(mMutex, pdMS_TO_TICKS(1000)) != pdTRUE) return -1;
 
-    // De-materialize: mark sectors as virtual (reads return 0xFF)
-    // No SD I/O needed — next write will materialize on demand
+    FIL* fp = (partId == PART_TSDB) ? &mTsdbFile : &mKvdbFile;
     uint32_t startSec = offset / SECTOR_SIZE;
     uint32_t endSec   = (offset + size - 1) / SECTOR_SIZE;
+
+    uint8_t fill[256];
+    memset(fill, 0xFF, sizeof(fill));
+
     for (uint32_t s = startSec; s <= endSec; s++) {
-        setMaterialized(partId, s, false);
+        if (isMaterialized(partId, s)) {
+            // Sector has data on disk — must write 0xFF so FlashDB sees
+            // it as erased after power cycle (bitmap is RAM-only).
+            uint32_t sectorOff = s * SECTOR_SIZE;
+            fp->err = 0;
+            FRESULT fr = f_lseek(fp, sectorOff);
+            if (fr != FR_OK) { xSemaphoreGive(mMutex); return -1; }
+
+            uint32_t rem = SECTOR_SIZE;
+            while (rem > 0) {
+                UINT toWrite = (rem > sizeof(fill)) ? sizeof(fill) : (UINT)rem;
+                UINT written;
+                fp->err = 0;
+                fr = f_write(fp, fill, toWrite, &written);
+                if (fr != FR_OK || written != toWrite) {
+                    xSemaphoreGive(mMutex);
+                    return -1;
+                }
+                rem -= written;
+            }
+            // Keep materialized — disk now has valid 0xFF content.
+            // No materializeSector() needed on next write.
+        }
+        // Virtual sectors already read as 0xFF — nothing to do.
     }
 
+    // No f_sync here — periodic sync handles flushing to SD card.
     xSemaphoreGive(mMutex);
     return 0;
 }
