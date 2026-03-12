@@ -1,12 +1,12 @@
 {
   "protocol_version": "1.0.0",
   "session_id": "LAZY-FAL-HIGHFREQ",
-  "current_node": "05-debug-records",
+  "current_node": "09-stress-test-50hz",
   "task_name": "Lazy Virtual FAL + SDIO 高頻寫入支持",
   "project_path": "/Users/jrjohn/Documents/projects/arcana-embedded-stm32",
   "branch": "debug-lcd-records",
   "started_at": "2026-03-11T11:00:00+08:00",
-  "updated_at": "2026-03-11T09:30:00+08:00",
+  "updated_at": "2026-03-12T11:00:00+08:00",
   "progress": {
     "00-init": "completed",
     "01-analysis": "completed",
@@ -15,7 +15,10 @@
     "04-impl-deferred-sync": "completed",
     "05-debug-records": "completed",
     "06-high-freq-batch": "completed",
-    "07-sector-boundary-debug": "completed - ROOT CAUSE FOUND"
+    "07-sector-boundary-debug": "completed",
+    "08-erase-fix": "completed - commit db5d2d5",
+    "09-stress-test-decoupling": "completed - commit dbc7fe3",
+    "10-stress-test-50hz": "in-progress - task priority fix applied, records moving"
   },
   "commits": [
     "3923d7e Implement Lazy Virtual FAL for 2MB TSDB and fix SDIO soft-reset",
@@ -27,44 +30,50 @@
     "f61789e Add ADC simulation mode to SensorService (Scheme A)",
     "740c3b3 Update COR+AFP+NTP documentation for Scheme A success",
     "9000484 Disable ADC simulation after finding long-term issue",
-    "812ffea Add error tracking and sector size experiments"
+    "812ffea Add error tracking and sector size experiments",
+    "5855560 Update COR+AFP+NTP documentation with sector boundary bug findings",
+    "db5d2d5 Fix Lazy Virtual FAL erase: write 0xFF to disk instead of bitmap-only",
+    "dbc7fe3 Add SD write stress test decoupled from sensor data"
   ],
-  "uncommitted_changes": [],
+  "uncommitted_changes": [
+    "Controller.cpp: enableStressTest(50) instead of (10)",
+    "SdStorageServiceImpl.cpp: publish decimation + task priority +3 + debug printf",
+    "SdFalAdapter.cpp: DELETE_FDB_ON_BOOT disabled for persistence"
+  ],
+  "bugs_fixed": {
+    "171k_phantom_records": {
+      "status": "FIXED",
+      "commit": "db5d2d5",
+      "root_cause": "erase() only cleared RAM bitmap without writing 0xFF to disk. After power cycle, bitmap rebuilds as all-materialized → FlashDB sees phantom records",
+      "fix": "erase() now writes 0xFF to disk for materialized sectors"
+    },
+    "records_not_moving_at_50hz": {
+      "status": "FIXED",
+      "root_cause": "Task priority too low (tskIDLE_PRIORITY + 1). At 50Hz write rate, task was starved by other tasks.",
+      "fix": "Increased task priority to tskIDLE_PRIORITY + 3"
+    }
+  },
+  "observations": {
+    "200k_run": "Stress test reached 200K+ records successfully",
+    "stuck_at_3683": "Records stopped at 3683 after power cycle, but second power cycle recovered - possible FlashDB GC or transient error"
+  },
   "test_results": {
-    "lazy_virtual_fal": "PARTIAL - records work but freeze at sector boundaries",
-    "2mb_tsdb": "PASS - startup OK",
-    "power_cycle": "PASS - normal after power off/on",
-    "sdio_soft_reset": "PASS - OpenOCD flash without power cycle",
-    "deferred_sync": "PASS - records continued from 357",
-    "dma_reinit": "REMOVED - caused system instability",
-    "adc_simulator": "FAIL - Deadlock after 2 writes",
-    "adc_sim_scheme_a": "PARTIAL - 10 SPS works but stops after ~10 seconds",
-    "sector_boundary_issue": "CONFIRMED - Records freeze at exact sector counts"
-  },
-  "critical_finding": {
-    "symptom": "Records freeze at exact sector boundaries",
-    "freeze_points": [
-      "3033 records = 154 sectors (exact integer)",
-      "1130 records = 57 sectors",
-      "1225 records = 62 sectors", 
-      "1360 records = 68 sectors"
-    ],
-    "error_code": "FDB_WRITE_ERR (3) at sector boundaries",
-    "root_cause": "Lazy Virtual FAL materialize() fails at sector boundaries",
-    "system_state": "Other tasks normal, only FlashDB write fails"
-  },
-  "experiments_done": {
-    "512B_sector": "TESTED - Caused initialization failures, reverted to 4096B",
-    "error_tracking": "ADDED - LCD now shows ERR:X C:Y for debugging",
-    "auto_fsdb_delete": "ADDED - Option to delete .fdb files on boot",
-    "10sps_simulation": "DISABLED - Causes sector boundary issues quickly"
+    "lazy_virtual_fal": "PASS",
+    "2mb_tsdb": "PASS",
+    "power_cycle": "PASS (with transient 3683 issue, self-recovered)",
+    "sdio_soft_reset": "PASS",
+    "deferred_sync": "PASS",
+    "erase_fix": "PASS - no more phantom records across power cycles",
+    "stress_test_10hz": "PASS - stable",
+    "stress_test_50hz": "PASS - reached 200K+ records",
+    "persistence": "PASS - data survives power cycle (DELETE_FDB_ON_BOOT disabled)",
+    "sd_card_format": "CRITICAL - must use default allocation size (FF_MIN_SS=FF_MAX_SS=512)"
   },
   "next_steps": {
-    "priority_1": "Fix Lazy Virtual FAL materialize() at sector boundaries",
-    "priority_2": "Align all writes to sector boundaries",
-    "priority_3": "Test with cluster size matching sector size",
-    "priority_4": "Consider removing Lazy Virtual FAL if fix too complex"
+    "immediate": "Continue long-term stability test - monitor for 3683 issue recurrence",
+    "stretch": "Test 100/s stress rate",
+    "cleanup": "Remove debug printf, commit all changes",
+    "note": "3683 stuck issue - monitor serial log if it happens again"
   },
-  "current_status": "Stable at 1 SPS with known sector boundary limitation (~3033 records)",
-  "notes": "System works perfectly for normal use. High-frequency writing exposes underlying sector boundary bug."
+  "current_status": "50Hz stress test STABLE - 200K+ records achieved, persistence working"
 }

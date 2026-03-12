@@ -117,7 +117,7 @@ void Controller::initServices() {
     
     // SD write stress test: 10 dummy writes/sec inside SdStorageService,
     // independent of sensor data (LCD/MQTT stay at real sensor 1 SPS).
-    mSdStorage->enableStressTest(10);
+    mSdStorage->enableStressTest(50);
 }
 
 void Controller::startServices() {

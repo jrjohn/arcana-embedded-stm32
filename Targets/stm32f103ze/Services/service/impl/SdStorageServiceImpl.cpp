@@ -111,8 +111,8 @@ ServiceStatus SdStorageServiceImpl::init() {
 ServiceStatus SdStorageServiceImpl::start() {
     mRunning = true;
     mTaskHandle = xTaskCreateStatic(
-        storageTask, "SdStore", TASK_STACK_SIZE,
-        this, tskIDLE_PRIORITY + 1, mTaskStack, &mTaskBuffer);
+        storageTask, "SdStorage", TASK_STACK_SIZE,
+        this, tskIDLE_PRIORITY + 3, mTaskStack, &mTaskBuffer);
     if (!mTaskHandle) return ServiceStatus::Error;
 
     if (input.SensorData) {
@@ -224,9 +224,11 @@ void SdStorageServiceImpl::storageTask(void* param) {
     fdb_err_t err = fdb_tsdb_init(&self->mTsdb, "sensor", "tsdb", fdbGetTime,
                                    maxBlobSize, NULL);
     if (err != FDB_NO_ERR) {
+        printf("[SdStorage] TSDB init failed: %d\n", err);
         vTaskDelete(0);
         return;
     }
+    printf("[SdStorage] TSDB init OK, last_time=%lu\n", self->mTsdb.last_time);
 
     // Seed timestamp
     if (self->mTsdb.last_time > 0) {
@@ -247,9 +249,14 @@ void SdStorageServiceImpl::storageTask(void* param) {
 
     self->mDbReady = true;
 
+    // DEBUG: Check stress test config
+    printf("[SdStorage] Task started, mStressTestHz=%d\n", self->mStressTestHz);
+
     // Get initial nonce counter
     self->mNonceCounter = (uint32_t)fdb_tsl_query_count(
         &self->mTsdb, 0, 0x7FFFFFFF, FDB_TSL_WRITE);
+
+    printf("[SdStorage] Initial nonce counter: %lu\n", self->mNonceCounter);
 
     self->taskLoop();
     vTaskDelete(0);
@@ -287,7 +294,14 @@ void SdStorageServiceImpl::taskLoop() {
         // Stress test: internal dummy writes at configured rate
         if (mStressTestHz > 0) {
             uint32_t stressInterval = pdMS_TO_TICKS(1000 / mStressTestHz);
+            static uint32_t sDbgCnt = 0;
+            if (++sDbgCnt >= 100) {
+                sDbgCnt = 0;
+                printf("[SdStorage] stress: Hz=%d, interval=%lu, now=%lu, last=%lu, delta=%lu\n",
+                       mStressTestHz, stressInterval, now, lastStressTick, now - lastStressTick);
+            }
             if ((now - lastStressTick) >= stressInterval) {
+                printf("[SdStorage] appendDummyRecord called!\n");
                 appendDummyRecord();
                 lastStressTick = now;
             }
@@ -319,7 +333,11 @@ void SdStorageServiceImpl::taskLoop() {
 }
 
 void SdStorageServiceImpl::appendRecord(const SensorDataModel* model) {
-    if (!mDbReady) return;
+    static uint32_t sErrCnt = 0;
+    if (!mDbReady) {
+        if (++sErrCnt <= 5) printf("[SdStorage] appendRecord: mDbReady=false\n");
+        return;
+    }
 
     uint8_t blob[BLOB_SIZE];
     uint8_t* nonce = blob;
@@ -337,6 +355,10 @@ void SdStorageServiceImpl::appendRecord(const SensorDataModel* model) {
         mNonceCounter++;
         mWritesInWindow++;
         updateStats();
+    } else {
+        if (++sErrCnt <= 20) {
+            printf("[SdStorage] fdb_tsl_append error: %d at nonce=%lu\n", err, mNonceCounter);
+        }
     }
 }
 
@@ -432,12 +454,17 @@ void SdStorageServiceImpl::updateStats() {
         mWindowStartTick = now;
     }
 
-    mStats.recordCount = mNonceCounter;
-    mStats.writesPerSec = mLastRate;
-    mStats.samplesPerSec = mLastSampleRate;
-    mStats.batchSize = mAdcBatchTarget;
-    mStats.updateTimestamp();
-    mStatsObs.publish(&mStats);
+    // Publish at most ~4/sec to avoid flooding ObservableDispatcher at high write rates
+    static uint8_t sPublishDiv = 0;
+    if (++sPublishDiv >= 10) {
+        sPublishDiv = 0;
+        mStats.recordCount = mNonceCounter;
+        mStats.writesPerSec = mLastRate;
+        mStats.samplesPerSec = mLastSampleRate;
+        mStats.batchSize = mAdcBatchTarget;
+        mStats.updateTimestamp();
+        mStatsObs.publish(&mStats);
+    }
 }
 
 void SdStorageServiceImpl::makeNonce(uint8_t nonce[12],
@@ -702,8 +729,10 @@ void SdStorageServiceImpl::enableStressTest(uint16_t hz) {
 }
 
 void SdStorageServiceImpl::appendDummyRecord() {
+    printf("[SdStorage] appendDummyRecord: mDbReady=%d\n", mDbReady ? 1 : 0);
     if (!mDbReady) return;
 
+    printf("[SdStorage] Creating dummy record #%lu\n", mNonceCounter);
     SensorDataModel dummy;
     dummy.temperature = 25.0f + (float)(mNonceCounter % 100) * 0.01f;
     dummy.accelX = (int16_t)(mNonceCounter & 0x7FFF);
@@ -711,6 +740,7 @@ void SdStorageServiceImpl::appendDummyRecord() {
     dummy.accelZ = 0;
     dummy.updateTimestamp();
     appendRecord(&dummy);
+    printf("[SdStorage] Dummy record appended, new nonce=%lu\n", mNonceCounter);
 }
 
 } // namespace sdstorage

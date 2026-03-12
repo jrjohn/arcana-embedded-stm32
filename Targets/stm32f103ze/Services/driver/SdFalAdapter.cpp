@@ -33,7 +33,7 @@ SdFalAdapter& SdFalAdapter::getInstance() {
 }
 
 // Uncomment to delete .fdb files on boot (clean start for testing)
-#define DELETE_FDB_ON_BOOT
+// #define DELETE_FDB_ON_BOOT
 
 bool SdFalAdapter::init() {
     if (mInitOk) return true;
