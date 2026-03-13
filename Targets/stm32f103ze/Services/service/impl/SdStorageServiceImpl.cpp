@@ -319,7 +319,7 @@ bool SdStorageServiceImpl::exportIterCb(fdb_tsl_t tsl, void* arg) {
     if (tsl->status != FDB_TSL_WRITE) return false;  // skip non-written
 
     // Read blob from TSDB
-    uint8_t blob[BLOB_SIZE];
+    uint8_t blob[BLOB_SIZE] = {};
     struct fdb_blob fblob;
     fdb_blob_make(&fblob, blob, BLOB_SIZE);
     fblob.saved.addr = tsl->addr.log;
@@ -452,7 +452,7 @@ bool SdStorageServiceImpl::queryIterCb(fdb_tsl_t tsl, void* arg) {
     if (ctx->count >= ctx->maxCount) return true;  // stop
     if (tsl->status != FDB_TSL_WRITE) return false;  // skip
 
-    uint8_t blob[BLOB_SIZE];
+    uint8_t blob[BLOB_SIZE] = {};
     struct fdb_blob fblob;
     fdb_blob_make(&fblob, blob, BLOB_SIZE);
     fblob.saved.addr = tsl->addr.log;
