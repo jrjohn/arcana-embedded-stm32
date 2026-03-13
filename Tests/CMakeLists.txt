@@ -89,7 +89,7 @@ add_executable(test_dispatcher
     ${FREERTOS_STUBS}
 )
 target_include_directories(test_dispatcher PRIVATE
-    ${COMMON_INCS} ${F051_CMD} ${F051_SVC})
+    ${COMMON_INCS} ${F051_CMD} ${F051_CMD}/impl ${F051_SVC})
 target_link_libraries(test_dispatcher PRIVATE GTest::gtest_main)
 
 # ── test_commands (PingCommand + GetCounterCommand) ───────────────────────────

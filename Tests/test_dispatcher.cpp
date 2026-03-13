@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "CommandDispatcher.hpp"
 #include "CommandService.hpp"
+#include "CounterService.hpp"
 #include "ICommand.hpp"
 
 using namespace arcana;
