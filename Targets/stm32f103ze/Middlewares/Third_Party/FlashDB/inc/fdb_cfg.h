@@ -12,6 +12,9 @@
 /* using TSDB (Time series database) feature */
 #define FDB_USING_TSDB
 
+/* Use 64-bit timestamps (millisecond epoch) for 1KHz+ sample rates */
+#define FDB_USING_TIMESTAMP_64BIT
+
 /* Using FAL storage mode with custom SD card adapter */
 #define FDB_USING_FAL_MODE
 

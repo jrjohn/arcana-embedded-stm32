@@ -223,6 +223,15 @@ static fdb_err_t read_sector_info(fdb_tsdb_t db, uint32_t addr, tsdb_sec_info_t 
 
     /* check magic word */
     if (sector->magic != SECTOR_MAGIC_WORD) {
+        /* DEBUG: dump raw bytes to diagnose fast-path issue */
+        {
+            static uint32_t sBadMagicCnt = 0;
+            if (++sBadMagicCnt <= 5) {
+                uint8_t *raw = (uint8_t *)&sec_hdr;
+                FDB_INFO("BAD MAGIC sec=0x%08" PRIX32 " magic=0x%08" PRIX32 " raw: %02X %02X %02X %02X %02X %02X %02X %02X\n",
+                    addr, sec_hdr.magic, raw[0], raw[1], raw[2], raw[3], raw[4], raw[5], raw[6], raw[7]);
+            }
+        }
         sector->check_ok = false;
         return FDB_INIT_FAILED;
     }
@@ -798,6 +807,16 @@ static bool check_sec_hdr_cb(tsdb_sec_info_t sector, void *arg1, void *arg2)
 {
     struct check_sec_hdr_cb_args *arg = arg1;
     fdb_tsdb_t db = arg->db;
+
+    /* DEBUG: log first few sectors and any failures */
+    {
+        static uint32_t sCheckCnt = 0;
+        sCheckCnt++;
+        if (sCheckCnt <= 5 || !sector->check_ok || sector->status == FDB_SECTOR_STORE_USING) {
+            FDB_INFO("check_sec[%" PRIu32 "] addr=0x%08" PRIX32 " ok=%d status=%d magic=0x%08" PRIX32 "\n",
+                sCheckCnt, sector->addr, sector->check_ok, (int)sector->status, sector->magic);
+        }
+    }
 
     if (!sector->check_ok) {
         FDB_INFO("Sector (0x%08" PRIX32 ") header info is incorrect.\n", sector->addr);

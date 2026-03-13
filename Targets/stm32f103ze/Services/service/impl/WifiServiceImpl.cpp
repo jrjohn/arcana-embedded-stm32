@@ -1,6 +1,7 @@
 #include "WifiServiceImpl.hpp"
 #include "Credentials.hpp"
 #include "SystemClock.hpp"
+#include "RtcDriver.hpp"
 #include "Ili9341Lcd.hpp"
 #include <cstdio>
 #include <cstring>
@@ -226,6 +227,7 @@ bool WifiServiceImpl::applyNtpEpoch(uint32_t epoch) {
     // Add UTC+8 timezone offset
     epoch += 8UL * 3600UL;
     SystemClock::getInstance().sync(epoch);
+    RtcDriver::getInstance().write(epoch);
     char buf[24];
     uint8_t h, m, s;
     SystemClock::toHMS(epoch, h, m, s);

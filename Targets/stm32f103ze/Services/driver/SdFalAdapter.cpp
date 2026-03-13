@@ -26,7 +26,7 @@ SdFalAdapter::SdFalAdapter()
     : mTsdbFile()
     , mKvdbFile()
     , mInitOk(false)
-    , mTsdbBitmap{}
+    , mInitScanActive(false)
     , mKvdbBitmap{}
     , mMutexBuffer()
     , mMutex(0)
@@ -41,7 +41,7 @@ SdFalAdapter& SdFalAdapter::getInstance() {
 }
 
 // Uncomment to delete .fdb files on boot (clean start for testing)
-#define DELETE_FDB_ON_BOOT
+// #define DELETE_FDB_ON_BOOT
 
 bool SdFalAdapter::init() {
     if (mInitOk) return true;
@@ -52,29 +52,54 @@ bool SdFalAdapter::init() {
 #ifdef DELETE_FDB_ON_BOOT
     f_unlink(TSDB_PATH);
     f_unlink(KVDB_PATH);
+    printf("[SdFal] Deleted FDB files on boot\n");
 #endif
 
     // Open or create partition files
     // TSDB: auto-grow (size=0, no f_expand), KVDB: fixed size (f_expand)
-    if (!openOrCreate(&mTsdbFile, TSDB_PATH, 0, mTsdbBitmap, TSDB_BITMAP_BYTES)) return false;
+    if (!openOrCreate(&mTsdbFile, TSDB_PATH, 0, NULL, 0)) return false;
+
+    // Debug: dump first 8 bytes of TSDB file to verify sector header layout
+    if (f_size(&mTsdbFile) >= 8) {
+        uint8_t hdr[8];
+        UINT br;
+        mTsdbFile.err = 0;
+        f_lseek(&mTsdbFile, 0);
+        f_read(&mTsdbFile, hdr, 8, &br);
+        printf("[SdFal] Sector0 bytes: %02X %02X %02X %02X %02X %02X %02X %02X\n",
+               hdr[0], hdr[1], hdr[2], hdr[3], hdr[4], hdr[5], hdr[6], hdr[7]);
+    }
+
     if (!openOrCreate(&mKvdbFile, KVDB_PATH, KVDB_SIZE, mKvdbBitmap, KVDB_BITMAP_BYTES)) return false;
+
+    // Dynamic TSDB partition size: actual file + 8MB headroom
+    // FlashDB scans all sectors at init, so keep partition tight to minimize scan time
+    uint32_t tsdbFileSize = (uint32_t)f_size(&mTsdbFile);
+    static const uint32_t HEADROOM = 8UL * 1024 * 1024;  // 8 MB
+    uint32_t tsdbPartSize = tsdbFileSize + HEADROOM;
+    // Align up to sector boundary
+    tsdbPartSize = ((tsdbPartSize + SECTOR_SIZE - 1) / SECTOR_SIZE) * SECTOR_SIZE;
+    // Cap at 2GB
+    if (tsdbPartSize > TSDB_MAX_SIZE) tsdbPartSize = TSDB_MAX_SIZE;
+    printf("[SdFal] TSDB partition: fsize=%luKB, part=%luMB\n",
+           tsdbFileSize / 1024, tsdbPartSize / (1024 * 1024));
 
     // Set up FAL flash device
     strncpy(sFalDev.name, "sd_fal", FAL_DEV_NAME_MAX);
     sFalDev.addr = 0;
-    sFalDev.len = TSDB_MAX_SIZE + KVDB_SIZE;
+    sFalDev.len = tsdbPartSize + KVDB_SIZE;
     sFalDev.blk_size = SECTOR_SIZE;
 
-    // TSDB partition (32MB virtual address space, file grows on demand)
+    // TSDB partition (dynamic size, file grows on demand)
     strncpy(sFalParts[PART_TSDB].name, "tsdb", FAL_DEV_NAME_MAX);
     strncpy(sFalParts[PART_TSDB].flash_name, "sd_fal", FAL_DEV_NAME_MAX);
     sFalParts[PART_TSDB].offset = 0;
-    sFalParts[PART_TSDB].len = TSDB_MAX_SIZE;
+    sFalParts[PART_TSDB].len = tsdbPartSize;
 
-    // KVDB partition
+    // KVDB partition (offset follows TSDB)
     strncpy(sFalParts[PART_KVDB].name, "kvdb", FAL_DEV_NAME_MAX);
     strncpy(sFalParts[PART_KVDB].flash_name, "sd_fal", FAL_DEV_NAME_MAX);
-    sFalParts[PART_KVDB].offset = TSDB_MAX_SIZE;
+    sFalParts[PART_KVDB].offset = tsdbPartSize;
     sFalParts[PART_KVDB].len = KVDB_SIZE;
 
     sFalInited = true;
@@ -90,18 +115,36 @@ bool SdFalAdapter::openOrCreate(FIL* fp, const char* path, uint32_t size,
         if (fr == FR_OK) {
             uint32_t fsize = (uint32_t)f_size(fp);
             if (size == 0) {
-                // Auto-grow mode: mark sectors based on actual file size
-                uint32_t fileSectors = fsize / SECTOR_SIZE;
-                for (uint32_t s = 0; s < fileSectors && s < bitmapBytes * 8; s++) {
-                    bitmap[s / 8] |= (1u << (s % 8));
+                // Auto-grow mode: file-size tracking (no bitmap needed)
+                // Pad to sector boundary so isMaterialized works for partial last sector
+                // (power loss can leave file mid-sector)
+                uint32_t aligned = ((fsize + SECTOR_SIZE - 1) / SECTOR_SIZE) * SECTOR_SIZE;
+                if (aligned > fsize && fsize > 0) {
+                    // Fill gap with 0xFF (erased flash state)
+                    static uint8_t pad[256] __attribute__((aligned(4)));
+                    memset(pad, 0xFF, sizeof(pad));
+                    fp->err = 0;
+                    f_lseek(fp, fsize);
+                    uint32_t gap = aligned - fsize;
+                    while (gap > 0) {
+                        UINT toWrite = (gap > sizeof(pad)) ? sizeof(pad) : (UINT)gap;
+                        UINT written;
+                        fp->err = 0;
+                        f_write(fp, pad, toWrite, &written);
+                        if (written == 0) break;
+                        gap -= written;
+                    }
+                    f_sync(fp);
+                    printf("[SdFal] Opened %s (auto-grow), fsize=%lu→%lu (padded)\n",
+                           path, fsize, (uint32_t)f_size(fp));
+                } else {
+                    printf("[SdFal] Opened %s (auto-grow), fsize=%lu\n", path, fsize);
                 }
-                printf("[SdFal] Opened %s (auto-grow), fsize=%lu, %lu sectors materialized\n",
-                       path, fsize, fileSectors);
                 return true;
             }
             // Fixed size mode
             if (fsize == size) {
-                memset(bitmap, 0xFF, bitmapBytes);
+                if (bitmap) memset(bitmap, 0xFF, bitmapBytes);
                 return true;
             }
             f_close(fp);
@@ -142,6 +185,35 @@ bool SdFalAdapter::openOrCreate(FIL* fp, const char* path, uint32_t size,
 
 int SdFalAdapter::read(int partId, uint32_t offset, uint8_t* buf, size_t size) {
     if (!mInitOk) return -1;
+
+    // Auto-grow TSDB partition before FlashDB checks boundary
+    if (partId == PART_TSDB) {
+        growTsdbIfNeeded(offset + (uint32_t)size);
+
+        // Fast path: fake FULL header for known-full sectors (skip SD card I/O).
+        // ONLY during fdb_tsdb_init scan — check_sec_hdr_cb only needs status+magic.
+        // Post-init queries (fdb_tsl_iter_by_time) need full header with end_idx/end_time,
+        // so the fast path must be disabled after init completes.
+        if (mInitScanActive && (offset % SECTOR_SIZE) == 0 && size <= 64) {
+            uint32_t fsize = (uint32_t)f_size(&mTsdbFile);
+            if (fsize >= SECTOR_SIZE * 2 && offset + SECTOR_SIZE * 2 <= fsize) {
+                static uint32_t sFastCnt = 0;
+                sFastCnt++;
+                if (sFastCnt <= 3) {
+                    printf("[SdFal] Fast FULL: sec=%lu size=%u fsize=%lu\n",
+                           offset / SECTOR_SIZE, (unsigned)size, fsize);
+                }
+                memset(buf, 0xFF, size);
+                buf[0] = 0x1F;  // FDB_SECTOR_STORE_FULL
+                if (size >= 8) {
+                    // Magic at offset 4 (ARM struct padding: uint8_t[1] + 3 pad + uint32_t)
+                    buf[4] = 0x54; buf[5] = 0x53; buf[6] = 0x4C; buf[7] = 0x30; // TSL0
+                }
+                return 0;
+            }
+        }
+    }
+
     if (xSemaphoreTake(mMutex, pdMS_TO_TICKS(500)) != pdTRUE) return -1;
 
     FIL* fp = (partId == PART_TSDB) ? &mTsdbFile : &mKvdbFile;
@@ -166,6 +238,13 @@ int SdFalAdapter::read(int partId, uint32_t offset, uint8_t* buf, size_t size) {
             }
         } else {
             // Materialized — read from file
+            if (partId == PART_TSDB && inSector == 0) {
+                static uint32_t sDiskHdrCnt = 0;
+                sDiskHdrCnt++;
+                if (sDiskHdrCnt <= 5) {
+                    printf("[SdFal] Disk sec=%lu chunk=%lu\n", sectorIdx, chunk);
+                }
+            }
             bool ok = false;
             for (int attempt = 0; attempt < 3; attempt++) {
                 fp->err = 0;
@@ -194,12 +273,17 @@ int SdFalAdapter::write(int partId, uint32_t offset, const uint8_t* buf, size_t 
     if (xSemaphoreTake(mMutex, pdMS_TO_TICKS(500)) != pdTRUE) { printf("[FAL] write: mutex timeout\n"); return -1; }
 
     FIL* fp = (partId == PART_TSDB) ? &mTsdbFile : &mKvdbFile;
-    
+
     // Debug: Check file state
     if (fp->obj.fs == NULL) {
         printf("[FAL] write: ERROR file not opened!\n");
         xSemaphoreGive(mMutex);
         return -1;
+    }
+
+    // Auto-grow TSDB partition when approaching limit
+    if (partId == PART_TSDB) {
+        growTsdbIfNeeded(offset + (uint32_t)size);
     }
 
     // Materialize any virtual sectors touched by this write
@@ -294,17 +378,23 @@ void SdFalAdapter::sync() {
 
 // ---- Lazy Virtual FAL bitmap helpers ----
 
-bool SdFalAdapter::isMaterialized(int partId, uint32_t sectorIdx) const {
-    const uint8_t* bm = (partId == PART_TSDB) ? mTsdbBitmap : mKvdbBitmap;
-    return (bm[sectorIdx / 8] >> (sectorIdx % 8)) & 1;
+bool SdFalAdapter::isMaterialized(int partId, uint32_t sectorIdx) {
+    if (partId == PART_TSDB) {
+        // TSDB: file-size tracking — sector is materialized if file covers it
+        uint32_t sectorEnd = (sectorIdx + 1) * SECTOR_SIZE;
+        return f_size(&mTsdbFile) >= sectorEnd;
+    }
+    // KVDB: bitmap tracking
+    return (mKvdbBitmap[sectorIdx / 8] >> (sectorIdx % 8)) & 1;
 }
 
 void SdFalAdapter::setMaterialized(int partId, uint32_t sectorIdx, bool value) {
-    uint8_t* bm = (partId == PART_TSDB) ? mTsdbBitmap : mKvdbBitmap;
+    if (partId == PART_TSDB) return;  // TSDB uses file-size tracking, no-op
+    // KVDB: bitmap tracking
     if (value)
-        bm[sectorIdx / 8] |=  (1u << (sectorIdx % 8));
+        mKvdbBitmap[sectorIdx / 8] |=  (1u << (sectorIdx % 8));
     else
-        bm[sectorIdx / 8] &= ~(1u << (sectorIdx % 8));
+        mKvdbBitmap[sectorIdx / 8] &= ~(1u << (sectorIdx % 8));
 }
 
 bool SdFalAdapter::materializeSector(FIL* fp, uint32_t sectorIdx) {
@@ -374,6 +464,24 @@ bool SdFalAdapter::materializeSector(FIL* fp, uint32_t sectorIdx) {
     return true;
 }
 
+void SdFalAdapter::growTsdbIfNeeded(uint32_t writeEnd) {
+    static const uint32_t GROW_SIZE = 8UL * 1024 * 1024;  // 8 MB per grow
+    uint32_t currentLen = sFalParts[PART_TSDB].len;
+    // Grow when write reaches within 1MB of current partition end
+    if (writeEnd + 1024 * 1024 < currentLen) return;
+    if (currentLen >= TSDB_MAX_SIZE) return;  // already at 2GB cap
+
+    uint32_t newLen = currentLen + GROW_SIZE;
+    if (newLen > TSDB_MAX_SIZE) newLen = TSDB_MAX_SIZE;
+
+    sFalParts[PART_TSDB].len = newLen;
+    sFalParts[PART_KVDB].offset = newLen;
+    sFalDev.len = newLen + KVDB_SIZE;
+
+    printf("[SdFal] TSDB partition grown: %luMB → %luMB\n",
+           currentLen / (1024 * 1024), newLen / (1024 * 1024));
+}
+
 bool SdFalAdapter::reopenTsdb(const char* renameTo) {
     if (xSemaphoreTake(mMutex, pdMS_TO_TICKS(2000)) != pdTRUE) return false;
 
@@ -392,11 +500,14 @@ bool SdFalAdapter::reopenTsdb(const char* renameTo) {
         }
     }
 
-    // Reset TSDB bitmap (all virtual)
-    memset(mTsdbBitmap, 0, TSDB_BITMAP_BYTES);
+    // Reset TSDB partition to initial 8MB (fresh file, fast init)
+    static const uint32_t INITIAL_PART = 8UL * 1024 * 1024;
+    sFalParts[PART_TSDB].len = INITIAL_PART;
+    sFalParts[PART_KVDB].offset = INITIAL_PART;
+    sFalDev.len = INITIAL_PART + KVDB_SIZE;
 
-    // Open fresh TSDB file (auto-grow, no pre-alloc)
-    bool ok = openOrCreate(&mTsdbFile, TSDB_PATH, 0, mTsdbBitmap, TSDB_BITMAP_BYTES);
+    // Open fresh TSDB file (auto-grow, no pre-alloc, file-size tracking)
+    bool ok = openOrCreate(&mTsdbFile, TSDB_PATH, 0, NULL, 0);
 
     xSemaphoreGive(mMutex);
     return ok;

@@ -41,23 +41,24 @@ public:
     // Resets TSDB bitmap (all virtual). Used for daily file rotation.
     bool reopenTsdb(const char* renameTo);
 
+    // Enable/disable fast FULL sector header path (only safe during fdb_tsdb_init)
+    void setInitScanActive(bool active) { mInitScanActive = active; }
+
     // Partition IDs
     static const int PART_TSDB = 0;
     static const int PART_KVDB = 1;
 
-    // TSDB: auto-growing up to 32MB cap (8192 sectors)
+    // TSDB: auto-growing (4GB address space = FlashDB uint32_t max, file grows on demand)
     // KVDB: fixed 64KB
-    static const uint32_t TSDB_MAX_SIZE = 32 * 1024 * 1024;  // 32 MB cap
-    static const uint32_t KVDB_SIZE     = 64 * 1024;          // 64 KB
-    static const uint32_t SECTOR_SIZE   = 4096;               // 4 KB
+    static const uint32_t TSDB_MAX_SIZE = 0xFFFFFFFFUL;  // ~4 GB (uint32_t max)
+    static const uint32_t KVDB_SIZE     = 64 * 1024;                   // 64 KB
+    static const uint32_t SECTOR_SIZE   = 4096;                        // 4 KB
 
     // Fake sector header size (status + padding + magic)
     static const uint32_t FAKE_HDR_SIZE = 8;
 
-    // Lazy Virtual FAL bitmap dimensions
-    static const uint32_t TSDB_SECTORS = TSDB_MAX_SIZE / SECTOR_SIZE;
+    // KVDB bitmap (TSDB uses file-size tracking — no bitmap needed)
     static const uint32_t KVDB_SECTORS = KVDB_SIZE / SECTOR_SIZE;
-    static const uint32_t TSDB_BITMAP_BYTES = (TSDB_SECTORS + 7) / 8;  // 1024 bytes
     static const uint32_t KVDB_BITMAP_BYTES = (KVDB_SECTORS + 7) / 8;
 
 private:
@@ -70,17 +71,19 @@ private:
     bool openOrCreate(FIL* fp, const char* path, uint32_t size,
                       uint8_t* bitmap, uint32_t bitmapBytes);
 
-    // Lazy Virtual FAL: bitmap tracks materialized sectors
-    // 0 = virtual (read returns fake header + 0xFF), 1 = materialized (read from disk)
-    bool isMaterialized(int partId, uint32_t sectorIdx) const;
+    // Lazy Virtual FAL: TSDB uses file-size tracking, KVDB uses bitmap
+    bool isMaterialized(int partId, uint32_t sectorIdx);
     void setMaterialized(int partId, uint32_t sectorIdx, bool value);
     bool materializeSector(FIL* fp, uint32_t sectorIdx);
+
+    // Grow TSDB partition when approaching current limit
+    void growTsdbIfNeeded(uint32_t writeEnd);
 
     FIL mTsdbFile;
     FIL mKvdbFile;
     bool mInitOk;
+    bool mInitScanActive;  // Fast FULL headers only during fdb_tsdb_init scan
 
-    uint8_t mTsdbBitmap[TSDB_BITMAP_BYTES];
     uint8_t mKvdbBitmap[KVDB_BITMAP_BYTES];
 
     StaticSemaphore_t mMutexBuffer;

@@ -27,6 +27,15 @@ public:
         return mEpochAtSync + elapsedSec;
     }
 
+    /** Millisecond-precision epoch (for FlashDB 64-bit timestamps). */
+    int64_t nowMs() const {
+        if (!mSynced) return 0;
+        TickType_t elapsed = xTaskGetTickCount() - mTickAtSync;
+        int64_t ms = (int64_t)mEpochAtSync * 1000LL
+                   + (int64_t)elapsed * (1000LL / configTICK_RATE_HZ);
+        return ms;
+    }
+
     static uint32_t startOfDay(uint32_t epoch) {
         return epoch - (epoch % 86400);
     }

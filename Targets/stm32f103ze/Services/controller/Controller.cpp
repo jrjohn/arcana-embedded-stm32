@@ -11,6 +11,8 @@
 #include "MqttServiceImpl.hpp"
 // AdcSimulatorService disabled - using simple direct write instead
 // #include "AdcSimulatorService.hpp"
+#include "RtcDriver.hpp"
+#include "SystemClock.hpp"
 #include "FreeRTOS.h"
 #include "task.h"
 
@@ -91,6 +93,17 @@ void Controller::wireServices() {
 }
 
 void Controller::initHAL() {
+    // Init RTC first — seed SystemClock from backup battery before anything else
+    RtcDriver& rtc = RtcDriver::getInstance();
+    if (rtc.init()) {
+        uint32_t epoch = rtc.read();
+        if (RtcDriver::isValidEpoch(epoch)) {
+            SystemClock::getInstance().sync(epoch);
+            printf("[Controller] SystemClock seeded from RTC: %lu\n",
+                   (unsigned long)epoch);
+        }
+    }
+
     mTimer->initHAL();
     mLed->initHAL();
     mSensor->initHAL();      // Initializes shared I2C bus

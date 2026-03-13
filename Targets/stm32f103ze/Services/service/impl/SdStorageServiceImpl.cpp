@@ -9,6 +9,7 @@
 // Wait for exFAT mount from SdBenchmarkService
 extern "C" {
     extern volatile uint8_t g_exfat_ready;
+    extern volatile uint8_t g_sdio_reinit_enabled;
 }
 
 namespace arcana {
@@ -31,11 +32,12 @@ static void fdbUnlock(fdb_db_t db) {
 }
 
 // FlashDB timestamp callback — must be strictly monotonic increasing.
+// Returns millisecond epoch (fdb_time_t = int64_t with FDB_USING_TIMESTAMP_64BIT).
 static fdb_time_t sLastTime = 0;
 static fdb_time_t fdbGetTime(void) {
     fdb_time_t now;
     if (SystemClock::getInstance().isSynced()) {
-        now = (fdb_time_t)SystemClock::getInstance().now();
+        now = (fdb_time_t)SystemClock::getInstance().nowMs();
     } else {
         now = (fdb_time_t)xTaskGetTickCount();
     }
@@ -215,19 +217,6 @@ void SdStorageServiceImpl::storageTask(void* param) {
     uint32_t falEndTick = xTaskGetTickCount();
     printf("[SdStorage] FAL init OK (%lu ms)\n", (falEndTick - falStartTick) * portTICK_PERIOD_MS);
 
-    // Format option: Clear TSDB on startup for stability testing
-    printf("[SdStorage] Erasing TSDB for clean start...\n");
-    uint32_t eraseStartTick = xTaskGetTickCount();
-    FRESULT fr = f_unlink("0:/tsdb.fdb");
-    uint32_t eraseEndTick = xTaskGetTickCount();
-    if (fr == FR_OK) {
-        printf("[SdStorage] TSDB erased OK (%lu ms)\n", (eraseEndTick - eraseStartTick) * portTICK_PERIOD_MS);
-    } else if (fr == FR_NO_FILE) {
-        printf("[SdStorage] TSDB not exist (fresh start, %lu ms)\n", (eraseEndTick - eraseStartTick) * portTICK_PERIOD_MS);
-    } else {
-        printf("[SdStorage] TSDB erase warning: %d (%lu ms)\n", fr, (eraseEndTick - eraseStartTick) * portTICK_PERIOD_MS);
-    }
-
     // Initialize FlashDB TSDB (virtual sector headers → near-instant init)
     printf("[SdStorage] Initializing TSDB...\n");
     uint32_t secSize = storage::SdFalAdapter::SECTOR_SIZE;
@@ -241,8 +230,10 @@ void SdStorageServiceImpl::storageTask(void* param) {
     // Use larger blob size for batch mode (up to MAX_BATCH_SAMPLES * SAMPLE_SIZE + metadata)
     uint32_t maxBlobSize = 12 + (MAX_BATCH_SAMPLES * AdcDataModel::SAMPLE_SIZE) + 32;
     uint32_t tsdbStartTick = xTaskGetTickCount();
+    self->mFal.setInitScanActive(true);
     fdb_err_t err = fdb_tsdb_init(&self->mTsdb, "sensor", "tsdb", fdbGetTime,
                                    maxBlobSize, NULL);
+    self->mFal.setInitScanActive(false);
     uint32_t tsdbEndTick = xTaskGetTickCount();
 
     if (err != FDB_NO_ERR) {
@@ -250,9 +241,15 @@ void SdStorageServiceImpl::storageTask(void* param) {
         vTaskDelete(0);
         return;
     }
-    printf("[SdStorage] TSDB init OK (%lu ms), last_time=%lu\n",
+    // nano specs doesn't support %lld — print high:low parts
+    printf("[SdStorage] TSDB init OK (%lu ms), last_time=%lu:%lu ms\n",
            (tsdbEndTick - tsdbStartTick) * portTICK_PERIOD_MS,
-           self->mTsdb.last_time);
+           (uint32_t)(self->mTsdb.last_time >> 32),
+           (uint32_t)(self->mTsdb.last_time & 0xFFFFFFFF));
+
+    // Disable rollover — keep all records, don't overwrite old data
+    bool rollover = false;
+    fdb_tsdb_control(&self->mTsdb, FDB_TSDB_CTRL_SET_ROLLOVER, &rollover);
 
     // Seed timestamp
     if (self->mTsdb.last_time > 0) {
@@ -288,11 +285,14 @@ void SdStorageServiceImpl::storageTask(void* param) {
     // DEBUG: Check stress test config
     printf("[SdStorage] Task started, mStressTestHz=%d\n", self->mStressTestHz);
 
-    // Get initial nonce counter
-    self->mNonceCounter = (uint32_t)fdb_tsl_query_count(
-        &self->mTsdb, 0, 0x7FFFFFFF, FDB_TSL_WRITE);
+    // Nonce counter: use TSDB last_time (ms epoch) / 1000 as base.
+    // Nonce is [counter:4][tick:4][0:4] — only needs uniqueness, not precision.
+    self->mNonceCounter = (uint32_t)(self->mTsdb.last_time / 1000);
+    printf("[SdStorage] Initial nonce counter: %lu (from last_time/1000)\n", self->mNonceCounter);
 
-    printf("[SdStorage] Initial nonce counter: %lu\n", self->mNonceCounter);
+    // Enable SDIO deep reinit now that boot is complete
+    g_sdio_reinit_enabled = 1;
+    printf("[SdStorage] SDIO deep reinit enabled\n");
 
     self->taskLoop();
     vTaskDelete(0);
@@ -410,10 +410,14 @@ void SdStorageServiceImpl::taskLoop() {
                 fdb_tsdb_control(&mTsdb, FDB_TSDB_CTRL_SET_UNLOCK, (void *)fdbUnlock);
 
                 uint32_t blobMax = 12 + (MAX_BATCH_SAMPLES * AdcDataModel::SAMPLE_SIZE) + 32;
+                mFal.setInitScanActive(true);
                 fdb_err_t rerr = fdb_tsdb_init(&mTsdb, "sensor", "tsdb", fdbGetTime, blobMax, NULL);
+                mFal.setInitScanActive(false);
                 if (rerr != FDB_NO_ERR) {
                     printf("[SdStorage] TSDB reinit FAILED: %d\n", rerr);
                 } else {
+                    bool noRollover = false;
+                    fdb_tsdb_control(&mTsdb, FDB_TSDB_CTRL_SET_ROLLOVER, &noRollover);
                     printf("[SdStorage] Daily rotation OK → %s\n", dateName);
                 }
                 sLastTime = 0;
