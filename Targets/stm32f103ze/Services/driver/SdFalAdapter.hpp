@@ -44,6 +44,11 @@ public:
     // Enable/disable fast FULL sector header path (only safe during fdb_tsdb_init)
     void setInitScanActive(bool active) { mInitScanActive = active; }
 
+    // Register FlashDB's cached max_size pointer so growTsdbIfNeeded can update it.
+    // Must be called after fdb_tsdb_init. Immediately syncs the current partition size
+    // (partition may have grown during init scan, but db->max_size was set before scan).
+    void setTsdbMaxSizePtr(uint32_t* ptr);
+
     // Force-grow TSDB partition (call when FlashDB returns FDB_SAVED_FULL)
     bool forceGrowTsdb();
 
@@ -91,6 +96,8 @@ private:
 
     StaticSemaphore_t mMutexBuffer;
     SemaphoreHandle_t mMutex;
+
+    uint32_t* mTsdbMaxSize;  // Points to FlashDB's db->parent.max_size
 
     static const char* TSDB_PATH;
     static const char* KVDB_PATH;

@@ -220,12 +220,12 @@ void SdStorageServiceImpl::storageTask(void* param) {
     printf("[SdStorage] FAL init OK (%lu ms)\n", (falEndTick - falStartTick) * portTICK_PERIOD_MS);
 
     // Initialize FlashDB TSDB (virtual sector headers → near-instant init)
+    // Note: FDB_TSDB_CTRL_SET_MAX_SIZE is NOT used — _fdb_init unconditionally
+    // overwrites db->max_size from partition.len. We update it via setTsdbMaxSizePtr.
     printf("[SdStorage] Initializing TSDB...\n");
     uint32_t secSize = storage::SdFalAdapter::SECTOR_SIZE;
-    uint32_t maxSize = storage::SdFalAdapter::TSDB_MAX_SIZE;
 
     fdb_tsdb_control(&self->mTsdb, FDB_TSDB_CTRL_SET_SEC_SIZE, &secSize);
-    fdb_tsdb_control(&self->mTsdb, FDB_TSDB_CTRL_SET_MAX_SIZE, &maxSize);
     fdb_tsdb_control(&self->mTsdb, FDB_TSDB_CTRL_SET_LOCK, (void *)fdbLock);
     fdb_tsdb_control(&self->mTsdb, FDB_TSDB_CTRL_SET_UNLOCK, (void *)fdbUnlock);
 
@@ -243,6 +243,8 @@ void SdStorageServiceImpl::storageTask(void* param) {
         vTaskDelete(0);
         return;
     }
+    // Register FlashDB's cached max_size so growTsdbIfNeeded can update it
+    self->mFal.setTsdbMaxSizePtr(&self->mTsdb.parent.max_size);
     // nano specs doesn't support %lld — print high:low parts
     printf("[SdStorage] TSDB init OK (%lu ms), last_time=%lu:%lu ms\n",
            (tsdbEndTick - tsdbStartTick) * portTICK_PERIOD_MS,
@@ -405,9 +407,7 @@ void SdStorageServiceImpl::taskLoop() {
 
                 // Reinit FlashDB on fresh TSDB file (virtual headers → fast)
                 uint32_t reinitSec = storage::SdFalAdapter::SECTOR_SIZE;
-                uint32_t reinitMax = storage::SdFalAdapter::TSDB_MAX_SIZE;
                 fdb_tsdb_control(&mTsdb, FDB_TSDB_CTRL_SET_SEC_SIZE, &reinitSec);
-                fdb_tsdb_control(&mTsdb, FDB_TSDB_CTRL_SET_MAX_SIZE, &reinitMax);
                 fdb_tsdb_control(&mTsdb, FDB_TSDB_CTRL_SET_LOCK, (void *)fdbLock);
                 fdb_tsdb_control(&mTsdb, FDB_TSDB_CTRL_SET_UNLOCK, (void *)fdbUnlock);
 
@@ -418,6 +418,7 @@ void SdStorageServiceImpl::taskLoop() {
                 if (rerr != FDB_NO_ERR) {
                     printf("[SdStorage] TSDB reinit FAILED: %d\n", rerr);
                 } else {
+                    mFal.setTsdbMaxSizePtr(&mTsdb.parent.max_size);
                     bool noRollover = false;
                     fdb_tsdb_control(&mTsdb, FDB_TSDB_CTRL_SET_ROLLOVER, &noRollover);
                     printf("[SdStorage] Daily rotation OK → %s\n", dateName);

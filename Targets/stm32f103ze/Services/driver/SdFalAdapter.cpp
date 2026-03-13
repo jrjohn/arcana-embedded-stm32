@@ -30,6 +30,7 @@ SdFalAdapter::SdFalAdapter()
     , mKvdbBitmap{}
     , mMutexBuffer()
     , mMutex(0)
+    , mTsdbMaxSize(0)
 {
 }
 
@@ -467,6 +468,15 @@ bool SdFalAdapter::materializeSector(FIL* fp, uint32_t sectorIdx) {
     return true;
 }
 
+void SdFalAdapter::setTsdbMaxSizePtr(uint32_t* ptr) {
+    mTsdbMaxSize = ptr;
+    // Sync immediately: partition may have grown during fdb_tsdb_init scan,
+    // but _fdb_init set db->max_size from partition.len BEFORE the scan started.
+    if (ptr) {
+        *ptr = sFalParts[PART_TSDB].len;
+    }
+}
+
 void SdFalAdapter::growTsdbIfNeeded(uint32_t writeEnd) {
     uint32_t currentLen = sFalParts[PART_TSDB].len;
     // Grow when file reaches within 25% of partition end.
@@ -486,7 +496,13 @@ void SdFalAdapter::growTsdbIfNeeded(uint32_t writeEnd) {
     sFalParts[PART_KVDB].offset = newLen;
     sFalDev.len = newLen + KVDB_SIZE;
 
-    printf("[SdFal] TSDB grow: %luMB → %luMB\n",
+    // CRITICAL: FlashDB caches partition.len as db->max_size at init time.
+    // Must update the cached value or FlashDB still sees the old boundary.
+    if (mTsdbMaxSize) {
+        *mTsdbMaxSize = newLen;
+    }
+
+    printf("[SdFal] TSDB grow: %luMB→%luMB\n",
            currentLen / (1024 * 1024), newLen / (1024 * 1024));
 }
 
@@ -501,6 +517,7 @@ bool SdFalAdapter::forceGrowTsdb() {
     sFalParts[PART_TSDB].len = newLen;
     sFalParts[PART_KVDB].offset = newLen;
     sFalDev.len = newLen + KVDB_SIZE;
+    if (mTsdbMaxSize) *mTsdbMaxSize = newLen;
 
     printf("[SdFal] Force grow TSDB: %luMB → %luMB\n",
            currentLen / (1024 * 1024), newLen / (1024 * 1024));
