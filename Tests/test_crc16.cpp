@@ -10,14 +10,15 @@ TEST(Crc16Test, EmptyBufferReturnsInit) {
 TEST(Crc16Test, SingleZeroByte) {
     uint8_t data[] = {0x00};
     uint16_t result = crc16(0, data, 1);
-    EXPECT_NE(result, 0);  // CRC of single zero byte is non-zero
+    // poly=0x8408 reflected: byte 0x00 XORed into crc=0 → all iterations keep crc=0
+    EXPECT_EQ(result, 0x0000);
 }
 
 TEST(Crc16Test, KnownValue_CCITT) {
-    // CRC-16/CCITT reflected for "123456789" = 0xB4C8
+    // CRC-16/KERMIT (poly=0x8408 reflected, init=0) for "123456789" = 0x2189
     const uint8_t data[] = {'1','2','3','4','5','6','7','8','9'};
     uint16_t result = crc16(0, data, sizeof(data));
-    EXPECT_EQ(result, 0xB4C8);
+    EXPECT_EQ(result, 0x2189);
 }
 
 TEST(Crc16Test, IncrementalFeedSameAsOnce) {
