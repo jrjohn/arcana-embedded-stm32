@@ -16,3 +16,12 @@ UBaseType_t   uxQueueSpacesAvailable(QueueHandle_t xQueue);
 #ifdef __cplusplus
 }
 #endif
+
+/* Additional queue functions needed by Observable.cpp */
+#ifdef __cplusplus
+extern "C" {
+#endif
+UBaseType_t uxQueueMessagesWaiting(QueueHandle_t xQueue);
+#ifdef __cplusplus
+}
+#endif
