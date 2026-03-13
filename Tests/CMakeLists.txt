@@ -62,9 +62,11 @@ target_include_directories(test_registry PRIVATE
 )
 target_link_libraries(test_registry PRIVATE GTest::gtest_main)
 
-# ── CTest registration ────────────────────────────────────────────────────────
-include(GoogleTest)
-gtest_discover_tests(test_crc16)
-gtest_discover_tests(test_frame_codec)
-gtest_discover_tests(test_command_codec)
-gtest_discover_tests(test_registry)
+# ── CTest registration ─────────────────────────────────────────────────────────
+# Use add_test (not gtest_discover_tests) — discovery mode requires running
+# the binary at configure time which fails inside Docker build layers.
+enable_testing()
+add_test(NAME test_crc16          COMMAND test_crc16)
+add_test(NAME test_frame_codec    COMMAND test_frame_codec)
+add_test(NAME test_command_codec  COMMAND test_command_codec)
+add_test(NAME test_registry       COMMAND test_registry)
