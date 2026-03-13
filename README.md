@@ -1,296 +1,274 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Architecture-Layered_Embedded-gold?style=for-the-badge" alt="Architecture">
-  <img src="https://img.shields.io/badge/MCU-STM32F051C8-03234B?style=for-the-badge&logo=stmicroelectronics" alt="STM32">
+  <img src="https://img.shields.io/badge/Architecture-Multi--Target_Embedded-gold?style=for-the-badge" alt="Architecture">
+  <img src="https://img.shields.io/badge/MCU-STM32F1_/_F0-03234B?style=for-the-badge&logo=stmicroelectronics" alt="STM32">
   <img src="https://img.shields.io/badge/RTOS-FreeRTOS-00A86B?style=for-the-badge" alt="FreeRTOS">
   <img src="https://img.shields.io/badge/Language-C++14-00599C?style=for-the-badge&logo=cplusplus" alt="C++">
-  <img src="https://img.shields.io/badge/RAM-67%25_Used-yellow?style=for-the-badge" alt="RAM">
-  <img src="https://img.shields.io/badge/Flash-34%25_Used-success?style=for-the-badge" alt="Flash">
   <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License">
 </p>
 
 <h1 align="center">Arcana Embedded STM32</h1>
 
 <p align="center">
-  <strong>Layered embedded architecture with Observable Pattern, Command Pattern, and Wire Protocol for resource-constrained STM32 microcontrollers with FreeRTOS</strong>
+  <strong>Multi-target embedded data acquisition platform with encrypted SD storage, WiFi/MQTT telemetry, and layered service architecture on FreeRTOS</strong>
 </p>
 
 <p align="center">
-  <a href="#architecture">Architecture</a> •
-  <a href="#features">Features</a> •
-  <a href="#memory-usage">Memory</a> •
-  <a href="#getting-started">Getting Started</a> •
-  <a href="#api-reference">API</a> •
-  <a href="#examples">Examples</a>
+  <a href="#architecture">Architecture</a> &bull;
+  <a href="#targets">Targets</a> &bull;
+  <a href="#data-pipeline">Data Pipeline</a> &bull;
+  <a href="#features">Features</a> &bull;
+  <a href="#getting-started">Getting Started</a> &bull;
+  <a href="#architecture-evaluation">Evaluation</a>
 </p>
-
----
-
-## Architecture Rating
-
-| Category | Score | Details |
-|----------|-------|---------|
-| **Memory Efficiency** | ⭐⭐⭐⭐⭐ 9.5/10 | Static allocation, zero-copy, 67% RAM / 34% Flash |
-| **Layered Design** | ⭐⭐⭐⭐⭐ 9.5/10 | Observable → Command → Protocol, clear separation |
-| **Wire Compatibility** | ⭐⭐⭐⭐⭐ 9.5/10 | Same frame format as ESP32, CRC-16 integrity |
-| **Error Handling** | ⭐⭐⭐⭐⭐ 9.5/10 | Queue overflow detection, error callbacks, statistics |
-| **Priority System** | ⭐⭐⭐⭐⭐ 9.5/10 | Dual queue (High/Normal), priority-first processing |
-| **Code Quality** | ⭐⭐⭐⭐⭐ 9.0/10 | Type-safe templates, SOLID principles, header-only codecs |
-| **Extensibility** | ⭐⭐⭐⭐⭐ 9.0/10 | ICommand interface, CommandRegistry, transport-agnostic |
-| **Performance** | ⭐⭐⭐⭐⭐ 9.0/10 | ~22μs event latency, non-blocking |
-| **ISR Safety** | ⭐⭐⭐⭐⭐ 9.0/10 | publishFromISR(), ISR-safe queue operations |
-| **Overall** | **⭐⭐⭐⭐⭐ 9.3/10** | Production-ready layered embedded architecture |
-
-### Rank: 🏆 A-Tier Embedded Architecture
-
-```
-S-Tier │ ░░░░░░░░░░░░░░░░░░░░ │ Perfect for all use cases
-A-Tier │ ████████████████████ │ ← This Architecture (Production-Ready)
-B-Tier │ ░░░░░░░░░░░░░░░░░░░░ │ Good with limitations
-C-Tier │ ░░░░░░░░░░░░░░░░░░░░ │ Basic functionality
-```
-
-### Strengths & Weaknesses
-
-| ✅ Strengths | ❌ Weaknesses |
-|-------------|---------------|
-| **3-Layer Architecture** - Observable → Command → Protocol | **Fixed Observer Limit** - Max 4 observers per observable |
-| **Wire-Compatible with ESP32** - Same frame format + CRC-16 | **No Transport Layer Yet** - UART/SPI/BLE pending |
-| **Full Static Allocation** - Predictable memory, no fragmentation | **No Encryption** - By design (Cortex-M0 constraints) |
-| **Transport-Agnostic Protocol** - Ready for UART/SPI/BLE | **Single Dispatcher Task** - Shared processing thread |
-| **ICommand Interface** - Clean command registration + routing | **No Retransmission** - No ARQ / flow control |
-| **Header-Only Codecs** - Zero RAM cost, linker strips unused | **Fixed Queue Sizes** - 8 normal + 4 high priority |
-| **CRC-16 Integrity** - Polynomial 0x8408 matches esp_crc16_le | **No Event Filtering** - All observers get all events |
-| **ISR-Safe API** - publishFromISR() for interrupt contexts | |
-| **Runtime Statistics** - Publish/dispatch counts, high water mark | |
-
-### Risk Mitigation
-
-| Risk | Mitigation | Status |
-|------|------------|--------|
-| Queue Overflow | `hasQueueSpace()` pre-check, error callback | ✅ Implemented |
-| Lost Events | Statistics tracking (`overflowCount`) | ✅ Implemented |
-| ISR Publish Failure | `publishFromISR()` with wake flag | ✅ Implemented |
-| Memory Corruption | Static allocation, no malloc | ✅ By Design |
-| Race Conditions | FreeRTOS queue primitives | ✅ By Design |
-| Frame Corruption | CRC-16 verification on deframe | ✅ Implemented |
-| Invalid Commands | CommandStatus error codes, param length validation | ✅ Implemented |
-| Debug Visibility | `getStats()`, high water mark | ✅ Implemented |
 
 ---
 
 ## Architecture
 
-### System Overview (3-Layer Architecture)
+### System Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     APPLICATION LAYER                            │
-│                                                                  │
-│   ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐ │
-│   │ TimerService │  │CounterService│  │  TimeDisplayService  │ │
-│   │  (publisher) │  │  (observer)  │  │     (observer)       │ │
-│   └──────┬───────┘  └──────▲───────┘  └──────────▲───────────┘ │
-│          │ publish()       │ subscribe()         │              │
-├──────────┼─────────────────┼─────────────────────┼──────────────┤
-│          ▼                 │                     │              │
-│   ┌────────────────────────────────────────────────────────┐   │
-│   │         OBSERVABLE LAYER (Dual Priority Queue)          │   │
-│   │  ┌──────────────┐          ┌────────────────────────┐  │   │
-│   │  │ HIGH (4 slots)│    >>   │ NORMAL (8 slots)       │  │   │
-│   │  └──────┬───────┘          └───────────┬────────────┘  │   │
-│   │         └──────────┬───────────────────┘               │   │
-│   │                    ▼                                    │   │
-│   │          Dispatcher Task (128 words)                    │   │
-│   └────────────────────────────────────────────────────────┘   │
-│                                                                  │
-├──────────────────────────────────────────────────────────────────┤
-│                       COMMAND LAYER                               │
-│                                                                  │
-│   ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐ │
-│   │CommandService│─▶│  Dispatcher  │─▶│  CommandRegistry     │ │
-│   │  execute()   │  │   route()    │  │  lookup() → ICommand │ │
-│   └──────────────┘  └──────────────┘  └──────────────────────┘ │
-│          │                                       │              │
-│          │ CommandResponseModel                   │ execute()    │
-│          ▼ (via Observable)                       ▼              │
-│   ┌──────────────────────────────────────────────────────────┐ │
-│   │  ICommand implementations (PingCommand, GetCounter...)   │ │
-│   └──────────────────────────────────────────────────────────┘ │
-│                                                                  │
-├──────────────────────────────────────────────────────────────────┤
-│                      PROTOCOL LAYER                              │
-│                                                                  │
-│   ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐ │
-│   │ CommandCodec │─▶│  FrameCodec  │─▶│      Crc16           │ │
-│   │ decode/encode│  │ frame/deframe│  │  polynomial 0x8408   │ │
-│   └──────────────┘  └──────────────┘  └──────────────────────┘ │
-│                                                                  │
-├──────────────────────────────────────────────────────────────────┤
-│              TRANSPORT (Future: UART / SPI / BLE)                │
-├──────────────────────────────────────────────────────────────────┤
-│                       FreeRTOS KERNEL                             │
-├──────────────────────────────────────────────────────────────────┤
-│                    STM32F051C8 HARDWARE                           │
-│                   (8KB RAM / 64KB Flash)                         │
-└──────────────────────────────────────────────────────────────────┘
+                          ┌─────────────────────────────────────┐
+                          │          CLOUD / BACKEND            │
+                          │     MQTT Broker  ←  Dashboard      │
+                          └──────────────▲──────────────────────┘
+                                         │ MQTT publish
+                          ┌──────────────┴──────────────────────┐
+                          │        ESP8266 WiFi Module          │
+                          │   AT commands · NTP · MQTT client   │
+                          └──────────────▲──────────────────────┘
+                                         │ UART
+┌────────────────────────────────────────┼────────────────────────────────────┐
+│                        STM32F103ZET6 (Cortex-M3, 72 MHz)                   │
+│                                                                            │
+│  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐  ┌───────────────┐  │
+│  │ Controller  │  │  LCD Service │  │ WiFi Service │  │ MQTT Service  │  │
+│  │  (init/run) │  │  ILI9341 TFT │  │ ESP8266 AT   │  │  pub/sub      │  │
+│  └──────┬──────┘  └──────────────┘  └──────┬───────┘  └───────────────┘  │
+│         │                                   │ NTP epoch                    │
+│         ▼                                   ▼                             │
+│  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐  ┌───────────────┐  │
+│  │   Sensor    │  │  SD Storage  │  │ SystemClock  │  │  RTC Driver   │  │
+│  │   Service   │──▶│  Service     │  │  (ms epoch)  │◀─│  (LSE+VBAT)  │  │
+│  │ DHT11/ADC   │  │ FlashDB TSDB │  └──────────────┘  └───────────────┘  │
+│  └─────────────┘  └──────┬───────┘                                        │
+│                          │ ChaCha20-encrypted records                     │
+│                          ▼                                                │
+│  ┌──────────────────────────────────────────────────────────────────────┐ │
+│  │                    SD Card (exFAT, SDIO DMA)                         │ │
+│  │  tsdb.fdb (auto-grow, daily rotation) │ kvdb.fdb │ tsdb_YYYYMMDD.db │ │
+│  └──────────────────────────────────────────────────────────────────────┘ │
+│                                                                            │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌───────────────┐  │
+│  │ littlefs     │  │ Flash Block  │  │ LED Service  │  │ Light Service │  │
+│  │ (int. flash) │  │  Device      │  │  RGB PWM     │  │  AP3216C I2C  │  │
+│  └──────────────┘  └──────────────┘  └──────────────┘  └───────────────┘  │
+│                                                                            │
+├────────────────────────────────────────────────────────────────────────────┤
+│                           FreeRTOS Kernel                                  │
+├────────────────────────────────────────────────────────────────────────────┤
+│  STM32F103ZET6 · 64KB RAM · 512KB Flash · FSMC · SDIO · I2C · USART      │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Wire Protocol Data Flow
+### Data Pipeline (Sensor → SD → Cloud)
 
 ```
-Transport (UART/SPI/BLE)
-    │ raw bytes
-    ▼
-FrameCodec::deframe()     ← verify magic 0xAC DA, version, CRC-16
-    │ payload bytes
-    ▼
-CommandCodec::decodeRequest()  ← binary deserialize
-    │ CommandRequest {cluster, commandId, params[]}
-    ▼
-CommandService::execute()
-    │ CommandResponseModel (via Observable)
-    ▼
-CommandCodec::encodeResponse()  ← binary serialize
-    │ payload bytes
-    ▼
-FrameCodec::frame()       ← add header + CRC-16
-    │ raw bytes
-    ▼
-Transport (UART/SPI/BLE)
+ADC / DHT11                    SdStorageService                    SD Card
+  │ raw samples                     │                                │
+  ▼                                 ▼                                │
+SensorService ──▶ SensorDataModel ──▶ ChaCha20 encrypt ──▶ FlashDB TSDB append
+                                     │  26-byte record:              │
+                                     │  [nonce:12][ciphertext:14]    │
+                                     │                               │
+                                     │  64-bit ms epoch timestamp    │
+                                     │  (supports 1KHz+ sample rate) │
+                                     ▼                               │
+                              Daily Rotation                         │
+                              (midnight UTC)                         │
+                                     │                               │
+                                     ├── deinit current tsdb.fdb     │
+                                     ├── rename → tsdb_YYYYMMDD.db   │
+                                     └── create fresh tsdb.fdb       │
+                                                                     │
+MqttService ◀── read + decrypt ◀── iterate TSDB ◀───────────────────┘
+     │
+     ▼
+MQTT publish → Cloud
 ```
 
-### Wire Frame Format
+---
+
+## Targets
+
+This is a mono-repo supporting multiple STM32 targets with shared code.
+
+| | STM32F051C8 | STM32F103ZET6 |
+|---|---|---|
+| **Core** | Cortex-M0, 48 MHz | Cortex-M3, 72 MHz |
+| **RAM / Flash** | 8 KB / 64 KB | 64 KB / 512 KB |
+| **Board** | Generic dev board | 野火霸道 V2 |
+| **Role** | Observable + Command demo | Full data acquisition platform |
+| **Storage** | None | SD card (SDIO DMA) + littlefs (internal flash) |
+| **Display** | None | 3.2" ILI9341 TFT (FSMC) |
+| **Connectivity** | None | ESP8266 WiFi (NTP + MQTT) |
+| **Encryption** | None | ChaCha20 (RFC 7539) |
+| **Sensors** | Timer-based demo | DHT11, AP3216C, MPU6050, ADC simulator |
+| **RTC** | None | LSE 32.768 KHz + CR1220 VBAT backup |
+| **Build output** | text ~22 KB, bss ~5.5 KB | text ~111 KB, bss ~49 KB |
+
+### Repository Structure
 
 ```
-┌────────┬────────┬─────┬───────┬─────┬───────────┬───────────┬─────┐
-│ Magic  │ Magic  │ Ver │ Flags │ SID │ Len (LE)  │ Payload   │ CRC │
-│ 0xAC   │ 0xDA   │ 0x01│ bit0  │     │ 2 bytes   │ N bytes   │ (LE)│
-│        │        │     │ =FIN  │     │           │           │ 2B  │
-└────────┴────────┴─────┴───────┴─────┴───────────┴───────────┴─────┘
- ◄──────────── 7-byte header ────────────►         ◄── 2B ──►
-                    Overhead: 9 bytes total
-
-Request payload:  [cluster:1][commandId:1][paramsLen:1][params:0-8]  (max 20B frame)
-Response payload: [cluster:1][commandId:1][status:1][dataLen:1][data:0-16]  (max 29B frame)
-```
-
-### Event Flow
-
-```
-Timer Interrupt (100ms)
-         │
-         ▼
-┌─────────────────┐
-│  TimerService   │──── publish(TimerModel) ────┐
-└─────────────────┘                             │
-                                                ▼
-                                    ┌───────────────────┐
-                                    │  Dispatcher Queue │
-                                    └─────────┬─────────┘
-                                              │
-                                              ▼
-                                    ┌───────────────────┐
-                                    │  Dispatcher Task  │
-                                    └─────────┬─────────┘
-                                              │
-                    ┌─────────────────────────┼─────────────────────────┐
-                    │                         │                         │
-                    ▼                         ▼                         ▼
-          ┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐
-          │ CounterService  │      │TimeDisplayService│     │  Your Service   │
-          │    count++      │      │  update time    │      │     ...         │
-          └─────────────────┘      └─────────────────┘      └─────────────────┘
+arcana-embedded-stm32/
+├── Shared/
+│   ├── Inc/                    # Observable, Models, FrameCodec, Crc16, CommandTypes
+│   └── Src/                    # Observable.cpp
+├── Targets/
+│   ├── stm32f051c8/            # F051 CubeIDE project
+│   │   ├── Core/               # HAL, FreeRTOS config, startup
+│   │   ├── Services/
+│   │   │   ├── controller/     # App.cpp
+│   │   │   ├── service/        # TimerService, CounterService, TimeDisplayService
+│   │   │   └── command/        # CommandService, CommandCodec, CommandDispatcher
+│   │   │       └── impl/       # PingCommand, GetCounterCommand
+│   │   └── Debug/              # Build output
+│   └── stm32f103ze/            # F103 CubeIDE project
+│       ├── Core/               # HAL, FreeRTOS config, startup
+│       ├── Services/
+│       │   ├── controller/     # Controller.hpp/.cpp, F103App.cpp
+│       │   ├── service/        # Interfaces: ITimerService, LcdService, SensorService, ...
+│       │   │   └── impl/       # Implementations: LcdServiceImpl, SdStorageServiceImpl, ...
+│       │   ├── driver/         # HW drivers: Ili9341Lcd, SdCard, SdFalAdapter, Esp8266, ...
+│       │   ├── model/          # F103Models.hpp
+│       │   └── common/         # ChaCha20, DeviceKey, Font5x7, SystemClock
+│       ├── Middlewares/        # FatFs, FlashDB, littlefs
+│       └── Debug/              # Build output
+└── read_serial.py              # Serial monitor (auto-reconnect)
 ```
 
 ---
 
 ## Features
 
-### Core Features
+### F103 Platform Features
 
-| Feature | Description |
-|---------|-------------|
-| 🎯 **Type-Safe Observable** | C++ template-based with compile-time checks |
-| 📦 **Static Allocation** | No `malloc`/`new` - all memory pre-allocated |
-| ⚡ **Zero-Copy** | Model pointers passed directly, no cloning |
-| 🔄 **Async Dispatch** | Non-blocking publish via FreeRTOS queue |
-| 🧵 **Thread-Safe** | FreeRTOS primitives for synchronization |
-| 📊 **Minimal Overhead** | ~22μs event latency, 2% C++ overhead |
-| 🛡️ **Error Handling** | Queue overflow detection, error callbacks, command status codes |
-| 📈 **Runtime Statistics** | Publish/dispatch counts, high water mark |
-| ⚡ **ISR-Safe API** | `publishFromISR()` for interrupt contexts |
-| 🔌 **Command Pattern** | ICommand interface + registry + cluster-based routing |
-| 📡 **Wire Protocol** | CRC-16 framed binary protocol, ESP32-compatible |
-| 🔗 **Transport-Agnostic** | Protocol layer ready for UART/SPI/BLE |
+| Feature | Details |
+|---------|---------|
+| **Encrypted SD Storage** | ChaCha20 per-record encryption, per-device key derived from silicon UID |
+| **FlashDB TSDB** | Time-series database on SD card with 64-bit ms epoch timestamps |
+| **Virtual FAL Adapter** | RAM bitmap + fake sector headers → ~50 ms init (vs 14 s full format) |
+| **Auto-Growing TSDB** | File extends on first write to each sector (no pre-allocation) |
+| **Daily TSDB Rotation** | Midnight UTC: deinit → rename → create fresh file |
+| **KVDB Upload Tracking** | Per-day upload status in FlashDB key-value store |
+| **SDIO DMA Writes** | 24 MHz 4-bit bus, async double-buffered writes |
+| **Polling Reads** | Avoids DMA direction switching bug on STM32F103 shared DMA channel |
+| **WiFi (ESP8266)** | AT command driver, auto-reconnect |
+| **NTP Time Sync** | Raw UDP to pool.ntp.org, seeds SystemClock + hardware RTC |
+| **Hardware RTC** | LSE crystal + CR1220 VBAT backup, time survives power cycles |
+| **MQTT Telemetry** | Publish sensor data to cloud broker |
+| **ILI9341 LCD** | 240x320 TFT via FSMC, real-time sensor display |
+| **littlefs** | Internal flash storage (128 KB partition, 64 blocks x 2 KB) |
+| **Static Allocation** | No malloc/new, all memory pre-allocated, FreeRTOS static tasks |
 
-### Memory Features
+### Shared Framework (F051 + F103)
 
-| Feature | Value |
-|---------|-------|
-| Max Observers per Observable | 4 (configurable) |
-| Normal Priority Queue | 8 items |
-| High Priority Queue | 4 items |
-| Dispatcher Stack | 128 words (512 bytes) |
-| Max Registered Commands | 8 |
-| Max Request Frame | 20 bytes |
-| Max Response Frame | 29 bytes |
-| Total RAM Usage | ~5.5KB / 8KB (67%) |
-| Total Flash Usage | ~22KB / 64KB (34%) |
+| Feature | Details |
+|---------|---------|
+| **Observable Pattern** | Type-safe `Observable<T>` with dual priority queue (high + normal) |
+| **ISR-Safe API** | `publishFromISR()` for interrupt contexts |
+| **Command Pattern** | `ICommand` interface + `CommandRegistry` + cluster-based routing |
+| **Wire Protocol** | CRC-16 framed binary protocol, ESP32-compatible |
+| **Zero-Copy Events** | Model pointers passed directly, no cloning |
 
 ---
 
-## Memory Usage
+## Key Design Decisions
 
-### `arm-none-eabi-size` Output
+### Storage Architecture
+
+**Virtual FAL (Flash Abstraction Layer) on SD Card**
+
+FlashDB expects NOR-flash semantics (erase-before-write, fixed partitions). SD cards don't work that way. `SdFalAdapter` bridges this gap:
+
+- Maps FlashDB `fal_flash_ops` (read/write/erase) to FatFS file operations
+- RAM bitmap tracks which 4 KB sectors have been materialized to disk
+- Unmaterialized sectors return fake FlashDB headers (magic + STORE_EMPTY status)
+- `fdb_tsdb_init` sees a "clean" partition instantly — no `format_all` scan
+- Sectors auto-extend the file on first write via `f_lseek` FSIZE expansion
+
+**Why not just use FatFS files directly?**
+
+FlashDB provides append-only time-series semantics, automatic sector management, and iterator-based queries — reimplementing these on raw files would be more code and more bugs.
+
+### Encryption
+
+**ChaCha20 (not AES)**
+
+- STM32F103 has no AES hardware accelerator
+- ChaCha20 is pure arithmetic (add/xor/rotate) — fast on Cortex-M3 without crypto coprocessor
+- RFC 7539 compliant, header-only implementation
+- Per-device keys derived from silicon UID via `DeviceKey.hpp`
+- 12-byte nonce: `[counter:4 LE][tick:4 LE][0x00:4]`
+
+### Time Management
+
+**Dual clock sources:**
+
+1. **Hardware RTC** (LSE 32.768 KHz + CR1220 battery) — survives power cycles, provides epoch-second accuracy immediately at boot
+2. **NTP sync** — corrects RTC drift, provides network-accurate time, updates hardware RTC
+
+`SystemClock` singleton maintains tick-offset calculation for millisecond precision between NTP syncs.
+
+### SDIO DMA Workaround
+
+STM32F103 shares DMA2 Channel 4 for both SDIO TX and RX. Mixing DMA read + write operations breaks the DATAEND interrupt. Solution:
+
+- **Writes**: DMA at 24 MHz (CLKDIV=1) — high throughput for TSDB appends
+- **Reads**: Polling at ~3.8 MHz (CLKDIV=17) — avoids DMA direction switching entirely
+- `SDIO->DCTRL = 0` required after every polling read (HAL leaves DTEN=1)
+
+---
+
+## Architecture Evaluation
+
+### Strengths
+
+| Strength | Details |
+|----------|---------|
+| **End-to-end encryption** | Every sensor record encrypted at rest with per-device ChaCha20 key; no plaintext on SD card |
+| **Resilient time keeping** | RTC + NTP dual source ensures valid timestamps even without network |
+| **Fast TSDB init** | Virtual sector headers avoid full-disk scan — ~50 ms cold start vs 14+ seconds |
+| **Daily rotation** | Automatic file rotation prevents unbounded growth; old files ready for batch upload |
+| **Layered architecture** | Clear separation: driver → service → controller; interfaces decouple implementation |
+| **Static allocation** | Zero heap fragmentation; deterministic memory usage; suitable for long-running deployments |
+| **Multi-target mono-repo** | Shared Observable/Command/Protocol code across MCU families |
+| **Transport-agnostic protocol** | CRC-16 framed binary protocol works over UART, SPI, or BLE |
+| **SDIO workaround** | Polling reads + DMA writes cleanly solve the shared-channel hardware bug |
+
+### Weaknesses & Risks
+
+| Weakness | Impact | Mitigation |
+|----------|--------|------------|
+| **No authentication on MQTT** | Data in transit is unprotected | TLS would require more RAM; current scope is LAN/demo |
+| **ChaCha20 without MAC** | Encryption without integrity check; tampered ciphertext decrypts to garbage | Add Poly1305 MAC (RFC 7539 AEAD) when record format changes |
+| **Single-threaded storage** | TSDB writes block the sensor task; a slow SD card stalls sampling | Acceptable at 10 writes/sec; for 1 KHz, needs dedicated storage task |
+| **No wear-leveling awareness** | FlashDB erases sectors sequentially; SD card's internal FTL handles wear | SD FTL is sufficient for exFAT; not an issue in practice |
+| **64 KB RAM ceiling** | ~49 KB BSS used (75%); limited room for new features | Optimize buffers or move to STM32F4 for next iteration |
+| **ESP8266 AT command fragility** | AT parser is line-based; long responses or firmware bugs can desync | Watchdog + auto-reconnect implemented; consider ESP32 with native MQTT |
+| **No OTA update** | Firmware update requires physical access | Bootloader + SD card OTA is feasible but not yet implemented |
+| **Fixed observer limit** | Max 4 observers per Observable | Sufficient for current use; increase if needed |
+| **No data upload retry** | If MQTT publish fails, data stays on SD but isn't automatically retried | KVDB tracks upload status; retry logic is planned |
+
+### Resource Usage (F103)
 
 ```
    text    data     bss     dec     hex  filename
-  21932     132    5380   27444    6b34  arcana-embedded-stm32.elf
-```
+ 113824     156   50384  164364   2820c  arcana-embedded-f103.elf
 
-### RAM Distribution (data + bss = 5,512 bytes)
-
+Flash: 113,980 / 524,288 bytes (21.7%)  ██░░░░░░░░  headroom for features
+RAM:    50,540 /  65,536 bytes (77.1%)  ████████░░  monitor if adding buffers
 ```
-┌────────────────────────────────────────────────────────┐
-│                    RAM: 8,192 bytes                    │
-├────────────────────────────────────────────────────────┤
-│ █████████████████████████████████░░░░░░░░░░░░░░░░░░░░ │
-│ ◄──────── 67% Used ────────►◄──── 33% Free ────►      │
-├────────────────────────────────────────────────────────┤
-│                                                        │
-│  FreeRTOS Heap     ████████░░░░░░░░░░  1,536 bytes    │
-│  Dispatcher        ████░░░░░░░░░░░░░░    788 bytes    │
-│  FreeRTOS Core     ██████░░░░░░░░░░░░  1,000 bytes    │
-│  Command System    ███░░░░░░░░░░░░░░░    500 bytes    │
-│  Services          ██░░░░░░░░░░░░░░░░    200 bytes    │
-│  System/HAL        █░░░░░░░░░░░░░░░░░    100 bytes    │
-│  Reserved Stack    ███░░░░░░░░░░░░░░░    512 bytes    │
-│  .data             █░░░░░░░░░░░░░░░░░    132 bytes    │
-│                                                        │
-│  TOTAL USED:       5,512 bytes (67.3%)                │
-│  FREE:             2,680 bytes (32.7%)                │
-└────────────────────────────────────────────────────────┘
-```
-
-### Flash Distribution (text + data = 22,064 bytes)
-
-```
-┌────────────────────────────────────────────────────────┐
-│                   Flash: 65,536 bytes                  │
-├────────────────────────────────────────────────────────┤
-│ █████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │
-│ ◄──── 34% ────►◄────────── 66% Free ──────────►       │
-├────────────────────────────────────────────────────────┤
-│                                                        │
-│  .text (code)      █████████████░░░░░  21,932 bytes   │
-│  .data             ░░░░░░░░░░░░░░░░░░     132 bytes   │
-│                                                        │
-│  TOTAL USED:       22,064 bytes (33.7%)               │
-│  FREE:             43,472 bytes (66.3%)               │
-└────────────────────────────────────────────────────────┘
-```
-
-> **Note:** Protocol layer (Crc16, FrameCodec, CommandCodec) is compiled but currently stripped by `--gc-sections` since no transport calls it yet. Expect ~530 bytes Flash increase when wired to UART/SPI/BLE.
 
 ---
 
@@ -299,493 +277,112 @@ Timer Interrupt (100ms)
 ### Prerequisites
 
 - [STM32CubeIDE](https://www.st.com/en/development-tools/stm32cubeide.html) 1.13+
-- STM32F051C8 development board (or compatible)
+- ARM toolchain (included with CubeIDE)
+- OpenOCD 0.12+ (for command-line flashing)
+- CMSIS-DAP debugger (e.g., fireDAP)
 
-### Installation
+### Build
 
-1. Clone the repository:
 ```bash
-git clone https://github.com/jrjohn/arcana-embedded-stm32.git
+# F103 target
+cd Targets/stm32f103ze/Debug
+make -j8
+
+# F051 target
+cd Targets/stm32f051c8/Debug
+make -j8
 ```
 
-2. Open in STM32CubeIDE:
-   - File → Import → Existing Projects into Workspace
-   - Select the cloned directory
+### Flash
 
-3. Build:
-   - Project → Build Project (Ctrl+B)
-
-4. Flash to device:
-   - Run → Debug (F11)
-
----
-
-## Project Structure
-
+```bash
+# F103 via OpenOCD + CMSIS-DAP
+openocd -f interface/cmsis-dap.cfg \
+        -c "transport select swd" \
+        -f target/stm32f1x.cfg \
+        -c "program arcana-embedded-f103.elf verify reset exit"
 ```
-arcana-embedded-stm32/
-├── Core/
-│   ├── Inc/
-│   │   ├── Observable.hpp          # Observable pattern core (dual priority queue)
-│   │   ├── Models.hpp              # Model definitions (Timer, Counter)
-│   │   ├── CommandTypes.hpp        # Cluster, CommandKey, CommandRequest, CommandResponseModel
-│   │   ├── ICommand.hpp            # ICommand interface
-│   │   ├── CommandRegistry.hpp     # Command lookup registry (max 8 commands)
-│   │   ├── CommandDispatcher.hpp   # Cluster-based command routing
-│   │   ├── CommandService.hpp      # High-level execute() / executeSync()
-│   │   ├── Commands/               # ICommand implementations (Ping, GetCounter)
-│   │   ├── Crc16.hpp              # CRC-16 (header-only, polynomial 0x8408)
-│   │   ├── FrameCodec.hpp         # Frame codec (header-only, magic 0xAC DA)
-│   │   ├── CommandCodec.hpp       # Binary encode/decode for wire protocol
-│   │   ├── TimerService.hpp       # Timer service (publisher)
-│   │   ├── CounterService.hpp     # Counter service (observer)
-│   │   ├── TimeDisplayService.hpp # Time display (observer)
-│   │   ├── App.hpp                # Application interface
-│   │   └── FreeRTOSConfig.h       # RTOS configuration
-│   ├── Src/
-│   │   ├── Observable.cpp         # Dispatcher implementation
-│   │   ├── CommandCodec.cpp       # CommandCodec implementation
-│   │   ├── CommandDispatcher.cpp  # Command routing implementation
-│   │   ├── CommandRegistry.cpp    # Registry implementation
-│   │   ├── CommandService.cpp     # Service implementation
-│   │   ├── TimerService.cpp       # Timer implementation
-│   │   ├── CounterService.cpp     # Counter implementation
-│   │   ├── TimeDisplayService.cpp # Time display implementation
-│   │   ├── App.cpp                # Application entry point
-│   │   └── main.c                 # System initialization
-│   └── Startup/
-│       └── startup_stm32f051c8tx.s
-├── Drivers/                        # STM32 HAL drivers
-├── Middlewares/                    # FreeRTOS
-├── STM32F051C8TX_FLASH.ld         # Linker script
-└── README.md
+
+### Serial Monitor
+
+```bash
+python3 read_serial.py
+# Connects to /dev/tty.usbserial-1120 at 115200 baud
+# Auto-reconnects on USB hiccups (board reset)
 ```
 
 ---
 
-## API Reference
+## F051 Observable + Command Architecture
 
-### Observable<T>
+The F051 target demonstrates the shared framework layers:
 
-```cpp
-namespace arcana {
-
-// Priority levels
-enum class Priority : uint8_t {
-    Normal = 0,   // Regular events
-    High = 1,     // Critical events, processed first
-};
-
-template<typename T>  // T must inherit from Model
-class Observable {
-public:
-    // Subscribe to events
-    bool subscribe(ObserverCallback<T> callback, void* context = nullptr);
-
-    // Unsubscribe from events
-    bool unsubscribe(ObserverCallback<T> callback);
-
-    // Publish event (normal priority, async via dispatcher)
-    bool publish(T* model);
-
-    // Publish event (high priority, processed before normal)
-    bool publishHighPriority(T* model);
-
-    // Publish from ISR context (normal priority)
-    bool publishFromISR(T* model, BaseType_t* pxHigherPriorityTaskWoken);
-
-    // Publish from ISR context (high priority)
-    bool publishHighPriorityFromISR(T* model, BaseType_t* pxHigherPriorityTaskWoken);
-
-    // Notify all observers (sync, immediate)
-    void notify(T* model);
-
-    // Accessors
-    uint8_t getObserverCount() const;
-    const char* getName() const;
-};
-
-}
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                      APPLICATION LAYER                           │
+│  TimerService (publisher) → CounterService / TimeDisplayService  │
+├──────────────────────────────────────────────────────────────────┤
+│               OBSERVABLE LAYER (Dual Priority Queue)             │
+│         HIGH (4 slots)  >>  NORMAL (8 slots)                     │
+│                    Dispatcher Task (128 words)                    │
+├──────────────────────────────────────────────────────────────────┤
+│                        COMMAND LAYER                              │
+│  CommandService → Dispatcher → Registry → ICommand               │
+│  (PingCommand, GetCounterCommand)                                │
+├──────────────────────────────────────────────────────────────────┤
+│                       PROTOCOL LAYER                              │
+│  CommandCodec → FrameCodec → Crc16 (polynomial 0x8408)           │
+│  Wire-compatible with ESP32 (same frame format + CRC)            │
+├──────────────────────────────────────────────────────────────────┤
+│                      FreeRTOS Kernel                              │
+├──────────────────────────────────────────────────────────────────┤
+│              STM32F051C8 (8 KB RAM / 64 KB Flash)                │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-### Model
+### Wire Frame Format
 
-```cpp
-namespace arcana {
-
-class Model {
-public:
-    uint32_t timestamp;  // Auto-set to current tick
-    uint8_t type;        // Model type identifier
-
-    void updateTimestamp();
-};
-
-// Example derived model
-class TimerModel : public Model {
-public:
-    uint32_t tickCount;
-    uint16_t periodMs;
-};
-
-}
 ```
-
-### ObservableDispatcher
-
-```cpp
-namespace arcana {
-
-class ObservableDispatcher {
-public:
-    static void start();
-    static bool enqueue(const DispatchItem& item);
-    static bool enqueueHighPriority(const DispatchItem& item);
-    static bool enqueueFromISR(const DispatchItem& item, BaseType_t* woken);
-    static bool enqueueHighPriorityFromISR(const DispatchItem& item, BaseType_t* woken);
-    static void setErrorCallback(ErrorCallback cb, void* ctx = nullptr);
-    static bool hasQueueSpace();
-    static bool hasHighQueueSpace();
-    static const DispatcherStats& getStats();
-    static void resetStats();
-};
-
-}
-```
-
-### CommandService (Command Layer)
-
-```cpp
-namespace arcana {
-
-// Command clusters
-enum class Cluster : uint8_t { System = 0x00, Sensor = 0x01 };
-enum class CommandStatus : uint8_t { Success, NotFound, InvalidParam, Busy, Error };
-
-struct CommandRequest {
-    CommandKey key;          // {Cluster, commandId}
-    uint8_t params[8];
-    uint8_t paramsLength;
-};
-
-// ICommand interface - implement to add new commands
-class ICommand {
-public:
-    virtual CommandKey getKey() const = 0;
-    virtual CommandStatus execute(const CommandRequest& req,
-                                  CommandResponseModel& rsp) = 0;
-};
-
-// Service API
-class CommandService {
-public:
-    void init();
-    void registerCommand(ICommand* cmd);
-    bool execute(const CommandRequest& request);      // async via Observable
-    bool executeSync(const CommandRequest& request);   // synchronous
-};
-
-}
-```
-
-### CommandCodec / FrameCodec (Protocol Layer)
-
-```cpp
-namespace arcana {
-
-// CRC-16 (matches esp_crc16_le)
-uint16_t crc16(uint16_t init, const uint8_t* data, size_t len);
-
-// Frame codec - header-only static class
-class FrameCodec {
-public:
-    static constexpr size_t kOverhead = 9;   // 7 header + 2 CRC
-    static constexpr uint8_t kFlagFin = 0x01;
-    static constexpr uint8_t kSidNone = 0x00;
-
-    static bool frame(const uint8_t* payload, size_t payloadLen,
-                      uint8_t flags, uint8_t streamId,
-                      uint8_t* outBuf, size_t outBufSize, size_t& outLen);
-
-    static bool deframe(const uint8_t* frameBuf, size_t frameLen,
-                        const uint8_t*& outPayload, size_t& outPayloadLen,
-                        uint8_t& outFlags, uint8_t& outStreamId);
-};
-
-// Command codec - binary encode/decode
-class CommandCodec {
-public:
-    static constexpr size_t MAX_REQUEST_FRAME  = 20;  // 9 + 3 + 8
-    static constexpr size_t MAX_RESPONSE_FRAME = 29;  // 9 + 4 + 16
-
-    static bool decodeRequest(const uint8_t* frame, size_t frameLen,
-                              CommandRequest& out);
-
-    static bool encodeResponse(const CommandResponseModel& rsp,
-                               uint8_t* buf, size_t bufSize, size_t& outLen,
-                               uint8_t flags = FrameCodec::kFlagFin,
-                               uint8_t streamId = FrameCodec::kSidNone);
-};
-
-}
+┌───────┬───────┬─────┬───────┬─────┬──────────┬──────────┬──────┐
+│ 0xAC  │ 0xDA  │ Ver │ Flags │ SID │ Len (LE) │ Payload  │ CRC  │
+│       │       │ 0x01│ FIN   │     │ 2 bytes  │ N bytes  │ (LE) │
+└───────┴───────┴─────┴───────┴─────┴──────────┴──────────┴──────┘
+                    7-byte header              2-byte CRC = 9 bytes overhead
 ```
 
 ---
 
-## Examples
+## Middleware & Third-Party
 
-### Creating a Custom Observer Service
-
-```cpp
-// MyService.hpp
-#include "Observable.hpp"
-#include "Models.hpp"
-
-namespace arcana {
-
-class MyService {
-private:
-    uint32_t eventCount_ = 0;
-
-    static void onTimerEvent(TimerModel* model, void* context) {
-        auto* self = static_cast<MyService*>(context);
-        self->eventCount_++;
-        // Process the timer event...
-    }
-
-public:
-    void init(Observable<TimerModel>* timerObs) {
-        timerObs->subscribe(onTimerEvent, this);
-    }
-
-    uint32_t getEventCount() const { return eventCount_; }
-};
-
-extern MyService myService;
-
-}
-```
-
-### Creating a Custom Publisher Service
-
-```cpp
-// SensorService.hpp
-#include "Observable.hpp"
-#include "Models.hpp"
-
-namespace arcana {
-
-class SensorModel : public Model {
-public:
-    int16_t temperature;
-    uint16_t humidity;
-    bool isAlarm;
-};
-
-class SensorService {
-public:
-    Observable<SensorModel> observable{"Sensor"};
-
-private:
-    SensorModel model_;
-
-public:
-    void readAndPublish() {
-        model_.updateTimestamp();
-        model_.temperature = readTemperature();
-        model_.humidity = readHumidity();
-        model_.isAlarm = (model_.temperature > 80);
-
-        // Use HIGH PRIORITY for alarm conditions
-        if (model_.isAlarm) {
-            if (ObservableDispatcher::hasHighQueueSpace()) {
-                observable.publishHighPriority(&model_);
-            }
-        } else {
-            // Normal priority for regular readings
-            if (ObservableDispatcher::hasQueueSpace()) {
-                observable.publish(&model_);
-            }
-        }
-    }
-
-    // For ISR context (e.g., DMA complete callback)
-    void publishFromISR(BaseType_t* pxHigherPriorityTaskWoken) {
-        model_.updateTimestamp();
-        // Use high priority from ISR for critical events
-        observable.publishHighPriorityFromISR(&model_, pxHigherPriorityTaskWoken);
-    }
-};
-
-}
-```
-
-### Error Handling Setup
-
-```cpp
-// App.cpp - Setup error callback
-static volatile uint32_t overflowCount = 0;
-
-void onObservableError(ObservableError error, const char* name, void* ctx) {
-    if (error == ObservableError::QueueFull) {
-        overflowCount++;
-        // Optional: blink LED, log via UART, etc.
-    }
-}
-
-void App_Init() {
-    // Set error callback BEFORE starting dispatcher
-    ObservableDispatcher::setErrorCallback(onObservableError, nullptr);
-    ObservableDispatcher::start();
-    // ...
-}
-
-// Runtime monitoring
-void checkHealth() {
-    const auto& stats = ObservableDispatcher::getStats();
-
-    // Check for overflow issues
-    if (stats.overflowCount > 0) {
-        // Alert: events were lost
-    }
-
-    // Check queue pressure
-    if (stats.queueHighWaterMark >= 6) {
-        // Warning: queue near capacity (6/8)
-    }
-}
-```
-
----
-
-## Configuration
-
-### Observable Settings (Observable.hpp)
-
-```cpp
-constexpr uint8_t MAX_OBSERVERS = 4;                // Max observers per observable
-constexpr uint8_t DISPATCHER_QUEUE_SIZE_NORMAL = 8; // Normal priority queue size
-constexpr uint8_t DISPATCHER_QUEUE_SIZE_HIGH = 4;   // High priority queue size
-constexpr uint16_t DISPATCHER_STACK_SIZE = 128;     // Stack in words
-```
-
-### FreeRTOS Settings (FreeRTOSConfig.h)
-
-```cpp
-#define configTOTAL_HEAP_SIZE        ((size_t)1536)
-#define configMINIMAL_STACK_SIZE     ((uint16_t)64)
-#define configTIMER_TASK_STACK_DEPTH 64
-#define configMAX_PRIORITIES         7
-```
-
----
-
-## Performance
-
-| Metric | Value |
-|--------|-------|
-| Event Latency (publish → notify) | ~22μs |
-| Context Switch Overhead | ~10μs |
-| Memory Copy | 0 (zero-copy) |
-| C++ Overhead vs C | ~2% Flash |
-
-### Benchmark
-
-```
-Timer Period:     100ms
-Events/Second:    10
-CPU Usage:        < 1%
-Queue Utilization: < 10%
-```
-
----
-
-## Comparison
-
-### vs ESP32 Original Implementation
-
-| Aspect | ESP32 | STM32 (This) |
-|--------|-------|--------------|
-| RAM | ~400KB | 5.5KB |
-| Dynamic Memory | Heavy use | None (static) |
-| Task Pool | 10+ workers | 1 dispatcher |
-| Model Transfer | clone() | Zero-copy |
-| Observer Storage | std::vector | Fixed array |
-| Callback Type | std::function | Function pointer |
-| Serialization | Protobuf | Manual binary |
-| Wire Protocol | Same frame format | Same frame format |
-| CRC | esp_crc16_le() | crc16() (same polynomial) |
-| Encryption | AES-GCM | None (M0 constraints) |
-| Error Handling | Exception-based | Callback + Stats |
-| ISR Safety | Limited | Full support |
-| Language | C++ | C++14 (optimized) |
-
-### Error Handling Comparison
-
-| Feature | Traditional Embedded | This Architecture |
-|---------|---------------------|-------------------|
-| Queue Overflow | Silent failure | ✅ Error callback |
-| Lost Event Count | Unknown | ✅ `stats.overflowCount` |
-| Queue Pressure | Unknown | ✅ `queueHighWaterMark` |
-| Pre-check Available | Manual | ✅ `hasQueueSpace()` |
-| ISR Context | Unsafe | ✅ `publishFromISR()` |
-| Runtime Monitoring | None | ✅ `getStats()` |
-
-### When to Use This Architecture
-
-| ✅ Good For | ❌ Not Ideal For |
-|-------------|-----------------|
-| Event-driven systems | Hard real-time (<10μs) |
-| Sensor data pipelines | Extremely limited RAM (<2KB) |
-| Loosely coupled modules | Single-purpose devices |
-| Team development | One-off prototypes |
-| Scalable projects | Simple GPIO toggle apps |
-| Systems needing observability | Fire-and-forget apps |
+| Library | Version | Usage |
+|---------|---------|-------|
+| FreeRTOS | 10.x | RTOS kernel, static allocation |
+| FlashDB | 2.1.99 | TSDB + KVDB on SD card via FAL adapter |
+| FatFs | R0.15 | exFAT filesystem on SD card |
+| littlefs | 2.9 | Internal flash filesystem (128 KB) |
 
 ---
 
 ## Roadmap
 
-- [x] ~~Queue overflow callback~~ ✅ v1.1
-- [x] ~~Runtime statistics (publish/dispatch counts, queue usage)~~ ✅ v1.1
-- [x] ~~ISR-safe publish API~~ ✅ v1.1
-- [x] ~~Pre-publish queue space check~~ ✅ v1.1
-- [x] ~~Priority-based event dispatch (dual queue)~~ ✅ v1.2
-- [x] ~~Command Pattern (ICommand + Registry + Dispatcher)~~ ✅ v1.3
-- [x] ~~Wire Protocol (CRC-16 + FrameCodec + CommandCodec)~~ ✅ v1.4
-- [ ] UART transport layer (DMA-based)
-- [ ] Event filtering mechanism
-- [ ] Support for more STM32 families (F1, F4, L0)
-- [ ] Optional event persistence (circular buffer fallback)
-
----
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+- [x] Observable pattern with dual priority queue
+- [x] Command pattern with wire protocol (ESP32-compatible)
+- [x] F103 target with FSMC LCD, SDIO SD card
+- [x] ChaCha20 per-record encryption
+- [x] FlashDB TSDB with virtual FAL adapter
+- [x] 64-bit millisecond timestamps (1 KHz+ ADC support)
+- [x] Hardware RTC with VBAT backup
+- [x] WiFi (ESP8266) with NTP time sync
+- [x] MQTT telemetry
+- [x] Daily TSDB rotation
+- [ ] ADS1298 8-channel 24-bit ADC integration (hardware)
+- [ ] Poly1305 MAC for authenticated encryption
+- [ ] MQTT upload retry with KVDB tracking
+- [ ] SD card OTA firmware update
+- [ ] Power management / low-power modes
 
 ---
 
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## Acknowledgments
-
-- Inspired by [Arcana iOS](https://github.com/anthropics/arcana-ios) architecture
-- FreeRTOS by Amazon Web Services
-- STM32 HAL by STMicroelectronics
-
----
-
-<p align="center">
-  Made with ❤️ for embedded systems developers
-</p>
