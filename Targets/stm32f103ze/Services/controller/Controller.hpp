@@ -5,7 +5,6 @@
 #include "SensorService.hpp"
 #include "LcdService.hpp"
 #include "LightService.hpp"
-#include "StorageService.hpp"
 #include "SdBenchmarkService.hpp"
 #include "SdStorageService.hpp"
 #include "WifiService.hpp"
@@ -42,7 +41,6 @@ private:
     sensor::SensorService*           mSensor;
     lcd::LcdService*                 mLcd;
     light::LightService*             mLight;
-    storage::StorageService*         mStorage;
     sdbench::SdBenchmarkService*     mSdBench;
     sdstorage::SdStorageService*     mSdStorage;
     wifi::WifiService*               mWifi;

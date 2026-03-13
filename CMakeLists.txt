@@ -91,7 +91,6 @@ file(GLOB_RECURSE F103_RTOS      "${F103_ROOT}/Middlewares/Third_Party/FreeRTOS/
 file(GLOB         F103_STARTUP   "${F103_ROOT}/Core/Startup/*.s")
 file(GLOB_RECURSE F103_FATFS     "${F103_ROOT}/Middlewares/Third_Party/FatFs/src/*.c")
 file(GLOB_RECURSE F103_FLASHDB   "${F103_ROOT}/Middlewares/Third_Party/FlashDB/src/*.c")
-file(GLOB_RECURSE F103_LITTLEFS  "${F103_ROOT}/Middlewares/Third_Party/littlefs/*.c")
 file(GLOB_RECURSE F103_SERVICES  "${F103_ROOT}/Services/**/*.cpp")
 file(GLOB_RECURSE F103_SHARED    "Shared/Src/*.cpp")
 
@@ -100,12 +99,12 @@ list(FILTER F103_FATFS EXCLUDE REGEX ".*/backup/.*")
 
 add_executable(arcana-f103.elf
     ${F103_CORE} ${F103_HAL} ${F103_RTOS} ${F103_STARTUP}
-    ${F103_FATFS} ${F103_FLASHDB} ${F103_LITTLEFS}
+    ${F103_FATFS} ${F103_FLASHDB}
     ${F103_SERVICES} ${F103_SHARED}
 )
 
 target_compile_definitions(arcana-f103.elf PRIVATE
-    USE_HAL_DRIVER STM32F103xE LFS_NO_MALLOC LFS_NO_ASSERT
+    USE_HAL_DRIVER STM32F103xE
 )
 target_include_directories(arcana-f103.elf PRIVATE
     ${F103_ROOT}/Core/Inc
@@ -118,7 +117,6 @@ target_include_directories(arcana-f103.elf PRIVATE
     ${F103_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM3
     ${F103_ROOT}/Middlewares/Third_Party/FatFs/src
     ${F103_ROOT}/Middlewares/Third_Party/FlashDB/inc
-    ${F103_ROOT}/Middlewares/Third_Party/littlefs
     ${F103_ROOT}/Services/controller
     ${F103_ROOT}/Services/service
     ${F103_ROOT}/Services/service/impl
