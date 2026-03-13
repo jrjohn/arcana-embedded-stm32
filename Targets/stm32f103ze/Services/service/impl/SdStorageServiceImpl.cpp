@@ -228,10 +228,10 @@ void SdStorageServiceImpl::storageTask(void* param) {
         printf("[SdStorage] TSDB erase warning: %d (%lu ms)\n", fr, (eraseEndTick - eraseStartTick) * portTICK_PERIOD_MS);
     }
 
-    // Initialize FlashDB TSDB
+    // Initialize FlashDB TSDB (virtual sector headers → near-instant init)
     printf("[SdStorage] Initializing TSDB...\n");
     uint32_t secSize = storage::SdFalAdapter::SECTOR_SIZE;
-    uint32_t maxSize = storage::SdFalAdapter::TSDB_SIZE;
+    uint32_t maxSize = storage::SdFalAdapter::TSDB_MAX_SIZE;
 
     fdb_tsdb_control(&self->mTsdb, FDB_TSDB_CTRL_SET_SEC_SIZE, &secSize);
     fdb_tsdb_control(&self->mTsdb, FDB_TSDB_CTRL_SET_MAX_SIZE, &maxSize);
@@ -244,20 +244,22 @@ void SdStorageServiceImpl::storageTask(void* param) {
     fdb_err_t err = fdb_tsdb_init(&self->mTsdb, "sensor", "tsdb", fdbGetTime,
                                    maxBlobSize, NULL);
     uint32_t tsdbEndTick = xTaskGetTickCount();
+
     if (err != FDB_NO_ERR) {
         printf("[SdStorage] TSDB init failed: %d\n", err);
         vTaskDelete(0);
         return;
     }
-    printf("[SdStorage] TSDB init OK (%lu ms), last_time=%lu\n", 
-           (tsdbEndTick - tsdbStartTick) * portTICK_PERIOD_MS, self->mTsdb.last_time);
+    printf("[SdStorage] TSDB init OK (%lu ms), last_time=%lu\n",
+           (tsdbEndTick - tsdbStartTick) * portTICK_PERIOD_MS,
+           self->mTsdb.last_time);
 
     // Seed timestamp
     if (self->mTsdb.last_time > 0) {
         sLastTime = self->mTsdb.last_time;
     }
 
-    // Initialize FlashDB KVDB
+    // Initialize FlashDB KVDB (virtual sector headers → near-instant init)
     uint32_t kvMaxSize = storage::SdFalAdapter::KVDB_SIZE;
     fdb_kvdb_control(&self->mKvdb, FDB_KVDB_CTRL_SET_SEC_SIZE, &secSize);
     fdb_kvdb_control(&self->mKvdb, FDB_KVDB_CTRL_SET_MAX_SIZE, &kvMaxSize);
@@ -268,13 +270,15 @@ void SdStorageServiceImpl::storageTask(void* param) {
     uint32_t kvdbStartTick = xTaskGetTickCount();
     err = fdb_kvdb_init(&self->mKvdb, "upload", "kvdb", NULL, NULL);
     uint32_t kvdbEndTick = xTaskGetTickCount();
+
     if (err != FDB_NO_ERR) {
         printf("[SdStorage] KVDB init failed: %d\n", err);
         fdb_tsdb_deinit(&self->mTsdb);
         vTaskDelete(0);
         return;
     }
-    printf("[SdStorage] KVDB init OK (%lu ms)\n", (kvdbEndTick - kvdbStartTick) * portTICK_PERIOD_MS);
+    printf("[SdStorage] KVDB init OK (%lu ms)\n",
+           (kvdbEndTick - kvdbStartTick) * portTICK_PERIOD_MS);
 
     self->mDbReady = true;
 
@@ -380,12 +384,40 @@ void SdStorageServiceImpl::taskLoop() {
             lastSyncTick = now;
         }
 
-        // Midnight auto-export
+        // Midnight TSDB rotation: rename current → tsdb_YYYYMMDD.db, reinit
         if (SystemClock::getInstance().isSynced()) {
             uint32_t today = SystemClock::dateYYYYMMDD(
                 SystemClock::getInstance().now());
             if (lastDay != 0 && today != lastDay) {
-                exportDailyFile(lastDay);
+                // Flush pending ADC batch
+                if (mAdcBatchCount > 0) flushAdcBatch();
+
+                // Deinit current TSDB
+                fdb_tsdb_deinit(&mTsdb);
+                mFal.sync();
+
+                // Rename current file → tsdb_YYYYMMDD.db
+                char dateName[24];
+                snprintf(dateName, sizeof(dateName), "tsdb_%08lu.db", (unsigned long)lastDay);
+                mFal.reopenTsdb(dateName);
+
+                // Reinit FlashDB on fresh TSDB file (virtual headers → fast)
+                uint32_t reinitSec = storage::SdFalAdapter::SECTOR_SIZE;
+                uint32_t reinitMax = storage::SdFalAdapter::TSDB_MAX_SIZE;
+                fdb_tsdb_control(&mTsdb, FDB_TSDB_CTRL_SET_SEC_SIZE, &reinitSec);
+                fdb_tsdb_control(&mTsdb, FDB_TSDB_CTRL_SET_MAX_SIZE, &reinitMax);
+                fdb_tsdb_control(&mTsdb, FDB_TSDB_CTRL_SET_LOCK, (void *)fdbLock);
+                fdb_tsdb_control(&mTsdb, FDB_TSDB_CTRL_SET_UNLOCK, (void *)fdbUnlock);
+
+                uint32_t blobMax = 12 + (MAX_BATCH_SAMPLES * AdcDataModel::SAMPLE_SIZE) + 32;
+                fdb_err_t rerr = fdb_tsdb_init(&mTsdb, "sensor", "tsdb", fdbGetTime, blobMax, NULL);
+                if (rerr != FDB_NO_ERR) {
+                    printf("[SdStorage] TSDB reinit FAILED: %d\n", rerr);
+                } else {
+                    printf("[SdStorage] Daily rotation OK → %s\n", dateName);
+                }
+                sLastTime = 0;
+                mNonceCounter = 0;
             }
             lastDay = today;
         }
@@ -451,8 +483,12 @@ void SdStorageServiceImpl::appendAdcSample(const AdcDataModel* model) {
 void SdStorageServiceImpl::flushAdcBatch() {
     if (!mDbReady || mAdcBatchCount == 0) return;
 
+    printf("[SD] flushAdcBatch: count=%u blobSize=%u\n", mAdcBatchCount,
+           (unsigned)(28 + mAdcBatchCount * AdcDataModel::SAMPLE_SIZE));
+
     // Build batch blob: [nonce:12][metadata:16][encrypted_samples:N]
-    uint8_t blob[MAX_BATCH_BLOB_SIZE];
+    // Static to avoid ~2.4KB stack usage (task stack is 6KB)
+    static uint8_t blob[MAX_BATCH_BLOB_SIZE] __attribute__((aligned(4)));
     uint8_t* nonce = blob;
     uint8_t* metadata = blob + 12;
     uint8_t* samples = blob + 28;
@@ -488,6 +524,7 @@ void SdStorageServiceImpl::flushAdcBatch() {
     if (err == FDB_NO_ERR) {
         mNonceCounter++;
         mWritesInWindow++;
+        updateStats();
     }
 
     // Clear batch buffer
@@ -809,7 +846,8 @@ void SdStorageServiceImpl::appendDummyRecord() {
 }
 
 void SdStorageServiceImpl::appendDummyAdcBatch() {
-    if (!mDbReady) return;
+    if (!mDbReady) { printf("[SD] dummyAdc: not ready\n"); return; }
+    printf("[SD] dummyAdc: target=%u\n", mAdcBatchTarget);
 
     // Generate dummy 8-channel ADC samples
     // Each sample: 8 channels × 3 bytes = 24 bytes

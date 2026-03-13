@@ -13,12 +13,13 @@ namespace storage {
  *
  * Maps FlashDB's FAL (Flash Abstraction Layer) read/write/erase to
  * FatFS file operations on the SD card. Two partitions:
- *   - "tsdb": time-series sensor data
- *   - "kvdb": upload tracking key-value pairs
+ *   - "tsdb": time-series sensor data (auto-growing file)
+ *   - "kvdb": upload tracking key-value pairs (fixed size)
  *
- * Lazy Virtual FAL: files are allocated with f_expand() (zero DMA at startup).
- * A RAM bitmap tracks materialized sectors. Virtual sectors return 0xFF on read;
- * sectors are materialized (written to disk) on first write.
+ * Virtual Sector Headers: virtual sectors return fake "formatted empty"
+ * headers so FlashDB skips format_all during init (~50ms vs 14s).
+ * A RAM bitmap tracks materialized sectors. Sectors auto-extend the
+ * file via f_lseek on first write. KVDB uses f_expand (fixed size).
  * A FreeRTOS mutex protects all FatFS operations.
  */
 class SdFalAdapter {
@@ -36,19 +37,27 @@ public:
     // Flush FatFS buffers to SD card. Call periodically (e.g. every 30-60s).
     void sync();
 
+    // Close current TSDB file, rename to renameTo (if non-null), open fresh tsdb.fdb.
+    // Resets TSDB bitmap (all virtual). Used for daily file rotation.
+    bool reopenTsdb(const char* renameTo);
+
     // Partition IDs
     static const int PART_TSDB = 0;
     static const int PART_KVDB = 1;
 
-    // Partition sizes - reduced for faster startup (can be expanded later)
-    static const uint32_t TSDB_SIZE   = 2 * 1024 * 1024;     // 2 MB (512 sectors)
-    static const uint32_t KVDB_SIZE   = 64 * 1024;           // 64 KB
-    static const uint32_t SECTOR_SIZE = 4096;                // 4 KB
+    // TSDB: auto-growing up to 32MB cap (8192 sectors)
+    // KVDB: fixed 64KB
+    static const uint32_t TSDB_MAX_SIZE = 32 * 1024 * 1024;  // 32 MB cap
+    static const uint32_t KVDB_SIZE     = 64 * 1024;          // 64 KB
+    static const uint32_t SECTOR_SIZE   = 4096;               // 4 KB
+
+    // Fake sector header size (status + padding + magic)
+    static const uint32_t FAKE_HDR_SIZE = 8;
 
     // Lazy Virtual FAL bitmap dimensions
-    static const uint32_t TSDB_SECTORS = TSDB_SIZE / SECTOR_SIZE;
+    static const uint32_t TSDB_SECTORS = TSDB_MAX_SIZE / SECTOR_SIZE;
     static const uint32_t KVDB_SECTORS = KVDB_SIZE / SECTOR_SIZE;
-    static const uint32_t TSDB_BITMAP_BYTES = (TSDB_SECTORS + 7) / 8;
+    static const uint32_t TSDB_BITMAP_BYTES = (TSDB_SECTORS + 7) / 8;  // 1024 bytes
     static const uint32_t KVDB_BITMAP_BYTES = (KVDB_SECTORS + 7) / 8;
 
 private:
@@ -57,11 +66,12 @@ private:
     SdFalAdapter(const SdFalAdapter&);
     SdFalAdapter& operator=(const SdFalAdapter&);
 
+    // size==0: auto-grow (no f_expand), size>0: fixed (f_expand)
     bool openOrCreate(FIL* fp, const char* path, uint32_t size,
                       uint8_t* bitmap, uint32_t bitmapBytes);
 
     // Lazy Virtual FAL: bitmap tracks materialized sectors
-    // 0 = virtual (read returns 0xFF), 1 = materialized (read from disk)
+    // 0 = virtual (read returns fake header + 0xFF), 1 = materialized (read from disk)
     bool isMaterialized(int partId, uint32_t sectorIdx) const;
     void setMaterialized(int partId, uint32_t sectorIdx, bool value);
     bool materializeSector(FIL* fp, uint32_t sectorIdx);

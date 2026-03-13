@@ -170,18 +170,38 @@ void LcdServiceImpl::updateStorageDisplay(const StorageStatsModel* data) {
     // "Records:" label at VALUE_X, value after label (x=68)
     static const uint16_t VAL_X = VALUE_X + 54;  // after "Records:" (9 chars × 6px)
 
-    char buf[20];
+    char buf[32];
     uint32ToStr(buf, data->recordCount);
+    char* p = buf;
+    while (*p) p++;
+    // Estimate file size: records * (28 + batchSize * 24) bytes
+    uint32_t blobBytes = 28 + (uint32_t)data->batchSize * 24;
+    uint32_t totalKB = (data->recordCount * blobBytes) / 1024;
+    *p++ = ' '; *p++ = '(';
+    if (totalKB >= 1024) {
+        uint32ToStr(p, totalKB / 1024);
+        while (*p) p++;
+        *p++ = 'M'; *p++ = 'B';
+    } else {
+        uint32ToStr(p, totalKB);
+        while (*p) p++;
+        *p++ = 'K'; *p++ = 'B';
+    }
+    *p++ = ')'; *p = '\0';
     mLcd.fillRect(VAL_X, SD_RECORDS_Y, 160, 8, Ili9341Lcd::BLACK);
     mLcd.drawString(VAL_X, SD_RECORDS_Y, buf, Ili9341Lcd::GREEN, Ili9341Lcd::BLACK, 1);
 
     // "Rate:" label at VALUE_X, value after label
     static const uint16_t RATE_VAL_X = VALUE_X + 36;  // after "Rate:" (6 chars × 6px)
-    char rateBuf[16];
+    char rateBuf[28];
+    uint32_t sampleRate = data->writesPerSec * data->batchSize;
     uint32ToStr(rateBuf, data->writesPerSec);
-    char* p = rateBuf;
+    p = rateBuf;
     while (*p) p++;
-    *p++ = ' '; *p++ = '/'; *p++ = 's'; *p = '\0';
+    *p++ = ' '; *p++ = '(';
+    uint32ToStr(p, sampleRate);
+    while (*p) p++;
+    *p++ = ')'; *p++ = ' '; *p++ = '/'; *p++ = 's'; *p = '\0';
 
     mLcd.fillRect(RATE_VAL_X, SD_RATE_Y, 160, 8, Ili9341Lcd::BLACK);
     mLcd.drawString(RATE_VAL_X, SD_RATE_Y, rateBuf, Ili9341Lcd::GREEN, Ili9341Lcd::BLACK, 1);

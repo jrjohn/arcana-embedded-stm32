@@ -10,6 +10,11 @@ static struct fal_flash_dev sFalDev;
 static struct fal_partition  sFalParts[2];
 static bool sFalInited = false;
 
+// Fake sector headers: status=STORE_EMPTY(0x7F) + padding(0xFF×3) + magic(4 bytes)
+// FlashDB sees these as "formatted empty" sectors → no format_all during init
+static const uint8_t sTsdbFakeHdr[8] = {0x7F, 0xFF, 0xFF, 0xFF, 0x54, 0x53, 0x4C, 0x30};
+static const uint8_t sKvdbFakeHdr[8] = {0x7F, 0xFF, 0xFF, 0xFF, 0x46, 0x44, 0x42, 0x30};
+
 
 namespace arcana {
 namespace storage {
@@ -49,26 +54,27 @@ bool SdFalAdapter::init() {
     f_unlink(KVDB_PATH);
 #endif
 
-    // Open or create partition files (bitmap tracks materialized sectors)
-    if (!openOrCreate(&mTsdbFile, TSDB_PATH, TSDB_SIZE, mTsdbBitmap, TSDB_BITMAP_BYTES)) return false;
+    // Open or create partition files
+    // TSDB: auto-grow (size=0, no f_expand), KVDB: fixed size (f_expand)
+    if (!openOrCreate(&mTsdbFile, TSDB_PATH, 0, mTsdbBitmap, TSDB_BITMAP_BYTES)) return false;
     if (!openOrCreate(&mKvdbFile, KVDB_PATH, KVDB_SIZE, mKvdbBitmap, KVDB_BITMAP_BYTES)) return false;
 
     // Set up FAL flash device
     strncpy(sFalDev.name, "sd_fal", FAL_DEV_NAME_MAX);
     sFalDev.addr = 0;
-    sFalDev.len = TSDB_SIZE + KVDB_SIZE;
+    sFalDev.len = TSDB_MAX_SIZE + KVDB_SIZE;
     sFalDev.blk_size = SECTOR_SIZE;
 
-    // TSDB partition
+    // TSDB partition (32MB virtual address space, file grows on demand)
     strncpy(sFalParts[PART_TSDB].name, "tsdb", FAL_DEV_NAME_MAX);
     strncpy(sFalParts[PART_TSDB].flash_name, "sd_fal", FAL_DEV_NAME_MAX);
     sFalParts[PART_TSDB].offset = 0;
-    sFalParts[PART_TSDB].len = TSDB_SIZE;
+    sFalParts[PART_TSDB].len = TSDB_MAX_SIZE;
 
     // KVDB partition
     strncpy(sFalParts[PART_KVDB].name, "kvdb", FAL_DEV_NAME_MAX);
     strncpy(sFalParts[PART_KVDB].flash_name, "sd_fal", FAL_DEV_NAME_MAX);
-    sFalParts[PART_KVDB].offset = TSDB_SIZE;
+    sFalParts[PART_KVDB].offset = TSDB_MAX_SIZE;
     sFalParts[PART_KVDB].len = KVDB_SIZE;
 
     sFalInited = true;
@@ -82,8 +88,19 @@ bool SdFalAdapter::openOrCreate(FIL* fp, const char* path, uint32_t size,
     for (int attempt = 0; attempt < 3; attempt++) {
         FRESULT fr = f_open(fp, path, FA_READ | FA_WRITE | FA_OPEN_EXISTING);
         if (fr == FR_OK) {
-            if (f_size(fp) == size) {
-                // Existing file — all sectors contain real data
+            uint32_t fsize = (uint32_t)f_size(fp);
+            if (size == 0) {
+                // Auto-grow mode: mark sectors based on actual file size
+                uint32_t fileSectors = fsize / SECTOR_SIZE;
+                for (uint32_t s = 0; s < fileSectors && s < bitmapBytes * 8; s++) {
+                    bitmap[s / 8] |= (1u << (s % 8));
+                }
+                printf("[SdFal] Opened %s (auto-grow), fsize=%lu, %lu sectors materialized\n",
+                       path, fsize, fileSectors);
+                return true;
+            }
+            // Fixed size mode
+            if (fsize == size) {
                 memset(bitmap, 0xFF, bitmapBytes);
                 return true;
             }
@@ -95,27 +112,31 @@ bool SdFalAdapter::openOrCreate(FIL* fp, const char* path, uint32_t size,
         vTaskDelay(pdMS_TO_TICKS(50));
     }
 
-    // Create file using f_expand() — ZERO DMA writes at startup!
-    // Bitmap stays all-zero: all sectors are virtual (reads return 0xFF)
-    printf("[SdFal] Creating %s, size=%lu bytes...\n", path, size);
     uint32_t tickStart = xTaskGetTickCount();
-    
     FRESULT fr = f_open(fp, path, FA_CREATE_ALWAYS | FA_WRITE | FA_READ);
     if (fr != FR_OK) {
         printf("[SdFal] f_open failed: %d\n", fr);
         return false;
     }
 
-    fr = f_expand(fp, size, 1);
-    uint32_t elapsed = xTaskGetTickCount() - tickStart;
-    if (fr != FR_OK) {
-        printf("[SdFal] f_expand failed: %d after %lu ms\n", fr, elapsed);
-        f_close(fp);
-        f_unlink(path);
-        return false;
+    if (size > 0) {
+        // Fixed size: pre-allocate with f_expand (for KVDB)
+        printf("[SdFal] Creating %s, size=%lu bytes...\n", path, size);
+        fr = f_expand(fp, size, 1);
+        uint32_t elapsed = xTaskGetTickCount() - tickStart;
+        if (fr != FR_OK) {
+            printf("[SdFal] f_expand failed: %d after %lu ms\n", fr, elapsed);
+            f_close(fp);
+            f_unlink(path);
+            return false;
+        }
+        printf("[SdFal] Created %s OK (fixed), took %lu ms\n", path, elapsed);
+    } else {
+        // Auto-grow: empty file, no pre-allocation
+        uint32_t elapsed = xTaskGetTickCount() - tickStart;
+        printf("[SdFal] Created %s OK (auto-grow), took %lu ms\n", path, elapsed);
     }
-    
-    printf("[SdFal] Created %s OK, took %lu ms\n", path, elapsed);
+    // Bitmap stays all-zero: all sectors are virtual
     return true;
 }
 
@@ -135,8 +156,14 @@ int SdFalAdapter::read(int partId, uint32_t offset, uint8_t* buf, size_t size) {
         if (chunk > remaining) chunk = (uint32_t)remaining;
 
         if (!isMaterialized(partId, sectorIdx)) {
-            // Virtual sector — return erased flash (0xFF), no SD I/O
+            // Virtual sector — return erased flash with fake sector header
             memset(dst, 0xFF, chunk);
+            if (inSector < FAKE_HDR_SIZE) {
+                const uint8_t* hdr = (partId == PART_TSDB) ? sTsdbFakeHdr : sKvdbFakeHdr;
+                uint32_t copyLen = FAKE_HDR_SIZE - inSector;
+                if (copyLen > chunk) copyLen = chunk;
+                memcpy(dst, hdr + inSector, copyLen);
+            }
         } else {
             // Materialized — read from file
             bool ok = false;
@@ -281,14 +308,37 @@ void SdFalAdapter::setMaterialized(int partId, uint32_t sectorIdx, bool value) {
 }
 
 bool SdFalAdapter::materializeSector(FIL* fp, uint32_t sectorIdx) {
-    // Write 0xFF to entire sector (simulates erased NOR flash)
     uint32_t sectorOff = sectorIdx * SECTOR_SIZE;
+    uint32_t sectorEnd = sectorOff + SECTOR_SIZE;
+
+    // Auto-extend file if sector is beyond current file size
+    if (sectorEnd > f_size(fp)) {
+        fp->err = 0;
+        FRESULT fr = f_lseek(fp, sectorEnd - 1);
+        if (fr != FR_OK) {
+            static uint8_t sCnt = 0;
+            if (++sCnt <= 3) printf("[FAL] materialize: extend seek sec %lu FAILED fr=%d fsize=%lu\n",
+                sectorIdx, fr, (uint32_t)f_size(fp));
+            return false;
+        }
+        uint8_t zero = 0;
+        UINT bw;
+        fp->err = 0;
+        fr = f_write(fp, &zero, 1, &bw);
+        if (fr != FR_OK || bw != 1) {
+            static uint8_t sCnt2 = 0;
+            if (++sCnt2 <= 3) printf("[FAL] materialize: extend write FAILED fr=%d\n", fr);
+            return false;
+        }
+    }
+
+    // Write 0xFF to entire sector (simulates erased NOR flash)
     fp->err = 0;
     FRESULT fr = f_lseek(fp, sectorOff);
     if (fr != FR_OK) {
-        static uint8_t sCnt = 0;
-        if (++sCnt <= 3) printf("[FAL] materialize: seek sec %lu off=%lu FAILED fr=%d fsize=%lu\n",
-            sectorIdx, sectorOff, fr, (uint32_t)f_size(fp));
+        static uint8_t sCnt3 = 0;
+        if (++sCnt3 <= 3) printf("[FAL] materialize: seek sec %lu off=%lu FAILED fr=%d\n",
+            sectorIdx, sectorOff, fr);
         return false;
     }
 
@@ -302,20 +352,54 @@ bool SdFalAdapter::materializeSector(FIL* fp, uint32_t sectorIdx) {
         fp->err = 0;
         fr = f_write(fp, fill, toWrite, &written);
         if (fr != FR_OK || written != toWrite) {
-            static uint8_t sCnt2 = 0;
-            if (++sCnt2 <= 3) printf("[FAL] materialize: write sec %lu FAILED fr=%d wrote=%u/%u\n",
+            static uint8_t sCnt4 = 0;
+            if (++sCnt4 <= 3) printf("[FAL] materialize: write sec %lu FAILED fr=%d wrote=%u/%u\n",
                 sectorIdx, fr, written, toWrite);
             return false;
         }
         rem -= written;
     }
-    fp->err = 0;
-    f_sync(fp);
 
-    // Find which partition owns this FIL and mark the bit
+    // Overlay fake sector header at sector start (so FlashDB reads
+    // consistent header after materialization)
+    fp->err = 0;
+    f_lseek(fp, sectorOff);
     int partId = (fp == &mTsdbFile) ? PART_TSDB : PART_KVDB;
+    const uint8_t* hdr = (partId == PART_TSDB) ? sTsdbFakeHdr : sKvdbFakeHdr;
+    UINT hdrWritten;
+    fp->err = 0;
+    f_write(fp, hdr, FAKE_HDR_SIZE, &hdrWritten);
+
     setMaterialized(partId, sectorIdx, true);
     return true;
+}
+
+bool SdFalAdapter::reopenTsdb(const char* renameTo) {
+    if (xSemaphoreTake(mMutex, pdMS_TO_TICKS(2000)) != pdTRUE) return false;
+
+    // Sync and close current TSDB file
+    mTsdbFile.err = 0;
+    f_sync(&mTsdbFile);
+    f_close(&mTsdbFile);
+
+    // Rename old file to dated name (e.g. "tsdb_20260312.db")
+    if (renameTo) {
+        FRESULT fr = f_rename(TSDB_PATH, renameTo);
+        if (fr != FR_OK && fr != FR_NO_FILE) {
+            printf("[SdFal] rename %s → %s failed: %d\n", TSDB_PATH, renameTo, fr);
+        } else {
+            printf("[SdFal] Renamed %s → %s\n", TSDB_PATH, renameTo);
+        }
+    }
+
+    // Reset TSDB bitmap (all virtual)
+    memset(mTsdbBitmap, 0, TSDB_BITMAP_BYTES);
+
+    // Open fresh TSDB file (auto-grow, no pre-alloc)
+    bool ok = openOrCreate(&mTsdbFile, TSDB_PATH, 0, mTsdbBitmap, TSDB_BITMAP_BYTES);
+
+    xSemaphoreGive(mMutex);
+    return ok;
 }
 
 } // namespace storage

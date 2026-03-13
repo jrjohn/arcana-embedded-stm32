@@ -116,8 +116,8 @@ void Controller::initServices() {
     mWifi->init();
     mMqtt->init();
     
-    // Use ADC stress test: 500 SPS, 50 samples/batch = 10 writes/sec (reduced load)
-    mSdStorage->enableAdcStressTest(500, 50);
+    // Use ADC stress test: 1000 SPS, 100 samples/batch = 10 writes/sec
+    mSdStorage->enableAdcStressTest(1000, 100);
 }
 
 void Controller::startServices() {
