@@ -1,21 +1,12 @@
 #pragma once
 #include <stdint.h>
 #include <stddef.h>
-
-/* Basic types */
-typedef long          BaseType_t;
-typedef unsigned long UBaseType_t;
-typedef uint32_t      TickType_t;
-
-#define pdTRUE    ((BaseType_t)1)
-#define pdFALSE   ((BaseType_t)0)
-#define pdPASS    pdTRUE
-#define pdFAIL    pdFALSE
-#define portMAX_DELAY ((TickType_t)0xFFFFFFFF)
+#include "portmacro.h"   /* defines StackType_t, BaseType_t, UBaseType_t, TickType_t */
+#include "projdefs.h"    /* defines pdTRUE, pdFALSE, pdPASS, pdFAIL */
 
 #define configASSERT(x) (void)(x)
+#define portMAX_DELAY   ((TickType_t)0xFFFFFFFFUL)
 
-/* TickCount stub */
 #ifdef __cplusplus
 extern "C" {
 #endif
