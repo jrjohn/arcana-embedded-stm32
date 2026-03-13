@@ -29,6 +29,9 @@ RUN lcov --capture \
     python3 -m lcov_cobertura /workspace/coverage.info \
       --base-dir /workspace \
       --output /workspace/coverage.xml && \
+    # Fix: replace <source>/workspace</source> → <source>.</source>
+    # sonar-scanner mounts project at /usr/src, not /workspace
+    sed -i 's|<source>/workspace</source>|<source>.</source>|g' /workspace/coverage.xml && \
     echo "coverage.xml generated:" && wc -l /workspace/coverage.xml
 
 CMD ["echo", "Tests complete. Artifacts: /workspace/coverage.info /workspace/coverage.xml"]
