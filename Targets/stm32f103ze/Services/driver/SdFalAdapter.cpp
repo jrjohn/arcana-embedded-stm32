@@ -75,9 +75,10 @@ bool SdFalAdapter::init() {
     // Dynamic TSDB partition size: actual file + headroom
     // Must be generous — FlashDB checks sector availability internally before
     // calling FAL read/write, so the partition must always exceed actual usage.
+    // Use 4× file size (min 2MB) so growTsdbIfNeeded triggers infrequently.
     uint32_t tsdbFileSize = (uint32_t)f_size(&mTsdbFile);
-    static const uint32_t MIN_PART = 32UL * 1024 * 1024;  // 32 MB minimum
-    uint32_t tsdbPartSize = tsdbFileSize * 2;
+    static const uint32_t MIN_PART = 2UL * 1024 * 1024;  // 2 MB minimum
+    uint32_t tsdbPartSize = tsdbFileSize * 4;
     if (tsdbPartSize < tsdbFileSize + MIN_PART) tsdbPartSize = tsdbFileSize + MIN_PART;
     // Align up to sector boundary
     tsdbPartSize = ((tsdbPartSize + SECTOR_SIZE - 1) / SECTOR_SIZE) * SECTOR_SIZE;
