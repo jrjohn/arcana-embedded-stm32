@@ -54,6 +54,7 @@ SdStorageServiceImpl::SdStorageServiceImpl()
     , mDbReady(false)
     , mFal(storage::SdFalAdapter::getInstance())
     , mNonceCounter(0)
+    , mRecordCount(0)
     , mTaskBuffer()
     , mTaskStack{}
     , mTaskHandle(0)
@@ -76,6 +77,7 @@ SdStorageServiceImpl::SdStorageServiceImpl()
     , mLastRate(0)
     , mSamplesInWindow(0)
     , mLastSampleRate(0)
+    , mConsecErrors(0)
     , mStressTestHz(0)
     , mAdcStressTestSps(0)
 {
@@ -364,10 +366,10 @@ void SdStorageServiceImpl::taskLoop() {
         if ((now - sLastPrintTick) >= pdMS_TO_TICKS(1000)) {
             sLastPrintTick = now;
             if (mAdcStressTestSps > 0) {
-                printf("[SD] Records=%lu Rate=%u/s Samples=%u/s Batch=%u\n",
-                       mNonceCounter, mLastRate, mLastSampleRate, mAdcBatchTarget);
+                printf("[SD] Rec=%lu R=%u/s S=%u/s B=%u E=%lu\n",
+                       mRecordCount, mLastRate, mLastSampleRate, mAdcBatchTarget, mConsecErrors);
             } else {
-                printf("[SD] Records=%lu Rate=%u/s\n", mNonceCounter, mLastRate);
+                printf("[SD] Rec=%lu R=%u/s\n", mRecordCount, mLastRate);
             }
         }
 
@@ -422,6 +424,7 @@ void SdStorageServiceImpl::taskLoop() {
                 }
                 sLastTime = 0;
                 mNonceCounter = 0;
+                mRecordCount = 0;
             }
             lastDay = today;
         }
@@ -449,6 +452,7 @@ void SdStorageServiceImpl::appendRecord(const SensorDataModel* model) {
     fdb_err_t err = fdb_tsl_append(&mTsdb, fdb_blob_make(&fblob, blob, BLOB_SIZE));
     if (err == FDB_NO_ERR) {
         mNonceCounter++;
+        mRecordCount++;
         mWritesInWindow++;
         updateStats();
     } else {
@@ -487,9 +491,6 @@ void SdStorageServiceImpl::appendAdcSample(const AdcDataModel* model) {
 void SdStorageServiceImpl::flushAdcBatch() {
     if (!mDbReady || mAdcBatchCount == 0) return;
 
-    printf("[SD] flushAdcBatch: count=%u blobSize=%u\n", mAdcBatchCount,
-           (unsigned)(28 + mAdcBatchCount * AdcDataModel::SAMPLE_SIZE));
-
     // Build batch blob: [nonce:12][metadata:16][encrypted_samples:N]
     // Static to avoid ~2.4KB stack usage (task stack is 6KB)
     static uint8_t blob[MAX_BATCH_BLOB_SIZE] __attribute__((aligned(4)));
@@ -524,11 +525,19 @@ void SdStorageServiceImpl::flushAdcBatch() {
     struct fdb_blob fblob;
     uint32_t blobLen = 28 + samplesLen;
     fdb_err_t err = fdb_tsl_append(&mTsdb, fdb_blob_make(&fblob, blob, blobLen));
-    
+
     if (err == FDB_NO_ERR) {
         mNonceCounter++;
+        mRecordCount++;
         mWritesInWindow++;
+        mConsecErrors = 0;
         updateStats();
+    } else {
+        mConsecErrors++;
+        if (mConsecErrors <= 3 || (mConsecErrors % 100) == 0) {
+            printf("[SD] flushAdcBatch ERR=%d consec=%lu nonce=%lu blob=%u\n",
+                   err, mConsecErrors, mNonceCounter, (unsigned)blobLen);
+        }
     }
 
     // Clear batch buffer
@@ -559,7 +568,7 @@ void SdStorageServiceImpl::updateStats() {
     static uint8_t sPublishDiv = 0;
     if (++sPublishDiv >= 10) {
         sPublishDiv = 0;
-        mStats.recordCount = mNonceCounter;
+        mStats.recordCount = mRecordCount;
         mStats.writesPerSec = mLastRate;
         mStats.samplesPerSec = mLastSampleRate;
         mStats.batchSize = mAdcBatchTarget;
@@ -850,8 +859,7 @@ void SdStorageServiceImpl::appendDummyRecord() {
 }
 
 void SdStorageServiceImpl::appendDummyAdcBatch() {
-    if (!mDbReady) { printf("[SD] dummyAdc: not ready\n"); return; }
-    printf("[SD] dummyAdc: target=%u\n", mAdcBatchTarget);
+    if (!mDbReady) return;
 
     // Generate dummy 8-channel ADC samples
     // Each sample: 8 channels × 3 bytes = 24 bytes

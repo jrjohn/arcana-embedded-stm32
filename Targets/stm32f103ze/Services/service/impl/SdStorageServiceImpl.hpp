@@ -106,8 +106,10 @@ private:
     // Per-device encryption key
     static uint8_t sKey[crypto::ChaCha20::KEY_SIZE];
 
-    // Nonce counter (monotonic, persisted via record count)
+    // Nonce counter (monotonic, epoch-seeded for uniqueness)
     uint32_t mNonceCounter;
+    // Records written since TSDB init (for display/stats, NOT nonce)
+    uint32_t mRecordCount;
 
     // Dedicated task
     static const uint16_t TASK_STACK_SIZE = 1536;  // 6KB (ADC batch blob needs ~2.4KB stack)
@@ -140,6 +142,7 @@ private:
     uint16_t mLastRate;
     uint32_t mSamplesInWindow;      // For batch mode rate calculation
     uint16_t mLastSampleRate;
+    uint32_t mConsecErrors;         // Consecutive FlashDB write errors
 
     // Stress test (internal dummy writes, independent of sensor)
     uint16_t mStressTestHz;

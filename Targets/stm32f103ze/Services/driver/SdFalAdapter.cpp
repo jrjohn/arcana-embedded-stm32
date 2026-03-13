@@ -41,7 +41,7 @@ SdFalAdapter& SdFalAdapter::getInstance() {
 }
 
 // Uncomment to delete .fdb files on boot (clean start for testing)
-// #define DELETE_FDB_ON_BOOT
+#define DELETE_FDB_ON_BOOT
 
 bool SdFalAdapter::init() {
     if (mInitOk) return true;
@@ -72,11 +72,13 @@ bool SdFalAdapter::init() {
 
     if (!openOrCreate(&mKvdbFile, KVDB_PATH, KVDB_SIZE, mKvdbBitmap, KVDB_BITMAP_BYTES)) return false;
 
-    // Dynamic TSDB partition size: actual file + 8MB headroom
-    // FlashDB scans all sectors at init, so keep partition tight to minimize scan time
+    // Dynamic TSDB partition size: actual file + headroom
+    // Must be generous — FlashDB checks sector availability internally before
+    // calling FAL read/write, so the partition must always exceed actual usage.
     uint32_t tsdbFileSize = (uint32_t)f_size(&mTsdbFile);
-    static const uint32_t HEADROOM = 8UL * 1024 * 1024;  // 8 MB
-    uint32_t tsdbPartSize = tsdbFileSize + HEADROOM;
+    static const uint32_t MIN_PART = 32UL * 1024 * 1024;  // 32 MB minimum
+    uint32_t tsdbPartSize = tsdbFileSize * 2;
+    if (tsdbPartSize < tsdbFileSize + MIN_PART) tsdbPartSize = tsdbFileSize + MIN_PART;
     // Align up to sector boundary
     tsdbPartSize = ((tsdbPartSize + SECTOR_SIZE - 1) / SECTOR_SIZE) * SECTOR_SIZE;
     // Cap at 2GB
@@ -465,12 +467,33 @@ bool SdFalAdapter::materializeSector(FIL* fp, uint32_t sectorIdx) {
 }
 
 void SdFalAdapter::growTsdbIfNeeded(uint32_t writeEnd) {
-    static const uint32_t GROW_SIZE = 8UL * 1024 * 1024;  // 8 MB per grow
     uint32_t currentLen = sFalParts[PART_TSDB].len;
-    // Grow when write reaches within 1MB of current partition end
-    if (writeEnd + 1024 * 1024 < currentLen) return;
-    if (currentLen >= TSDB_MAX_SIZE) return;  // already at 2GB cap
+    // Grow when file reaches within 25% of partition end.
+    // FlashDB checks sector availability internally BEFORE calling FAL read/write,
+    // so we must grow well ahead of the boundary to prevent FDB_SAVED_FULL.
+    uint32_t threshold = currentLen / 4;  // 25% headroom
+    if (threshold < 1024 * 1024) threshold = 1024 * 1024;  // min 1MB
+    if (writeEnd + threshold < currentLen) return;
+    if (currentLen >= TSDB_MAX_SIZE) return;
 
+    // Double the partition (exponential growth) for fewer grow events
+    uint32_t newLen = currentLen * 2;
+    if (newLen < currentLen + 8UL * 1024 * 1024) newLen = currentLen + 8UL * 1024 * 1024;
+    if (newLen > TSDB_MAX_SIZE) newLen = TSDB_MAX_SIZE;
+
+    sFalParts[PART_TSDB].len = newLen;
+    sFalParts[PART_KVDB].offset = newLen;
+    sFalDev.len = newLen + KVDB_SIZE;
+
+    printf("[SdFal] TSDB grow: %luMB → %luMB\n",
+           currentLen / (1024 * 1024), newLen / (1024 * 1024));
+}
+
+bool SdFalAdapter::forceGrowTsdb() {
+    uint32_t currentLen = sFalParts[PART_TSDB].len;
+    if (currentLen >= TSDB_MAX_SIZE) return false;
+
+    static const uint32_t GROW_SIZE = 8UL * 1024 * 1024;
     uint32_t newLen = currentLen + GROW_SIZE;
     if (newLen > TSDB_MAX_SIZE) newLen = TSDB_MAX_SIZE;
 
@@ -478,8 +501,9 @@ void SdFalAdapter::growTsdbIfNeeded(uint32_t writeEnd) {
     sFalParts[PART_KVDB].offset = newLen;
     sFalDev.len = newLen + KVDB_SIZE;
 
-    printf("[SdFal] TSDB partition grown: %luMB → %luMB\n",
+    printf("[SdFal] Force grow TSDB: %luMB → %luMB\n",
            currentLen / (1024 * 1024), newLen / (1024 * 1024));
+    return true;
 }
 
 bool SdFalAdapter::reopenTsdb(const char* renameTo) {

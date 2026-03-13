@@ -3,6 +3,7 @@
 #include "Credentials.hpp"
 #include "Esp8266.hpp"
 #include "Ili9341Lcd.hpp"
+#include "SystemClock.hpp"
 #include <cstdio>
 #include <cstring>
 
@@ -417,9 +418,10 @@ bool MqttServiceImpl::publishSensorData(SensorDataModel* model) {
     int tInt = (int)model->temperature;
     int tFrac = (int)(model->temperature * 10) % 10;
     if (tFrac < 0) tFrac = -tFrac;
+    uint32_t ts = SystemClock::getInstance().now();
     snprintf(payload, sizeof(payload),
-             "{\"t\":%d.%d,\"ax\":%d,\"ay\":%d,\"az\":%d,\"als\":%u,\"ps\":%u}",
-             tInt, tFrac,
+             "{\"ts\":%lu,\"t\":%d.%d,\"ax\":%d,\"ay\":%d,\"az\":%d,\"als\":%u,\"ps\":%u}",
+             ts, tInt, tFrac,
              (int)model->accelX, (int)model->accelY, (int)model->accelZ,
              mLatestLight.ambientLight, mLatestLight.proximity);
 

@@ -44,6 +44,9 @@ public:
     // Enable/disable fast FULL sector header path (only safe during fdb_tsdb_init)
     void setInitScanActive(bool active) { mInitScanActive = active; }
 
+    // Force-grow TSDB partition (call when FlashDB returns FDB_SAVED_FULL)
+    bool forceGrowTsdb();
+
     // Partition IDs
     static const int PART_TSDB = 0;
     static const int PART_KVDB = 1;
