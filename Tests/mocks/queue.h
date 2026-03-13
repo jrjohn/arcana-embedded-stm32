@@ -25,3 +25,9 @@ UBaseType_t uxQueueMessagesWaiting(QueueHandle_t xQueue);
 #ifdef __cplusplus
 }
 #endif
+
+/* FreeRTOS aliases — commonly defined as macros in real headers */
+#define xQueueSend(q, i, t)           xQueueSendToBack((q), (i), (t))
+#define xQueueSendFromISR(q, i, p)    xQueueSendToBackFromISR((q), (i), (p))
+#define xQueueSendToFront(q, i, t)    xQueueSendToBack((q), (i), (t))
+#define xQueueMessagesWaiting(q)      uxQueueMessagesWaiting((q))
