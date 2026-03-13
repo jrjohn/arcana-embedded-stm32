@@ -1,7 +1,8 @@
 FROM gcc:12
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    cmake ninja-build git lcov ca-certificates \
+    cmake ninja-build git lcov ca-certificates python3 python3-pip \
+    && pip3 install lcov_cobertura --break-system-packages \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
@@ -15,7 +16,7 @@ RUN cmake --build Tests/build -- -j$(nproc)
 # Run tests (|| true: coverage still generated even if some tests fail)
 RUN cd Tests/build && ctest --output-on-failure || true
 
-# Generate lcov
+# Generate lcov → filter → convert to Cobertura XML
 RUN lcov --capture \
       --directory Tests/build \
       --output-file /workspace/coverage.info \
@@ -23,6 +24,11 @@ RUN lcov --capture \
     lcov --remove /workspace/coverage.info \
       '*googletest*' '/usr/*' '*/Tests/mocks/*' '*/Tests/test_*' \
       --output-file /workspace/coverage.info && \
-    lcov --summary /workspace/coverage.info
+    lcov --summary /workspace/coverage.info && \
+    # Convert lcov → Cobertura XML (required by sonar-cxx 2.x)
+    python3 -m lcov_cobertura /workspace/coverage.info \
+      --base-dir /workspace \
+      --output /workspace/coverage.xml && \
+    echo "coverage.xml generated:" && wc -l /workspace/coverage.xml
 
-CMD ["echo", "Tests complete. Copy coverage.info from /workspace/coverage.info"]
+CMD ["echo", "Tests complete. Artifacts: /workspace/coverage.info /workspace/coverage.xml"]
