@@ -1,6 +1,6 @@
 # ============================================
-# STM32 Build Environment (CI)
-# arm-none-eabi-gcc / CMake
+# STM32 Multi-Target Build Environment (CI)
+# Builds F051 (Cortex-M0) + F103 (Cortex-M3)
 # ============================================
 FROM ubuntu:24.04 AS builder
 

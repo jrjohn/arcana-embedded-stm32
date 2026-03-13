@@ -1,10 +1,9 @@
 # ============================================
-# STM32F051C8TX CMake Wrapper (CI Build)
-# Generated for CI pipeline — not part of source
+# Arcana Embedded STM32 — Multi-Target CI Build
+# Builds both F051 (Cortex-M0) and F103 (Cortex-M3)
 # ============================================
 cmake_minimum_required(VERSION 3.20)
 
-# Toolchain must be set before project()
 set(CMAKE_SYSTEM_NAME Generic)
 set(CMAKE_SYSTEM_PROCESSOR arm)
 set(CMAKE_C_COMPILER arm-none-eabi-gcc)
@@ -12,61 +11,135 @@ set(CMAKE_CXX_COMPILER arm-none-eabi-g++)
 set(CMAKE_ASM_COMPILER arm-none-eabi-gcc)
 set(CMAKE_OBJCOPY arm-none-eabi-objcopy)
 set(CMAKE_SIZE arm-none-eabi-size)
-
 set(CMAKE_C_COMPILER_WORKS 1)
 set(CMAKE_CXX_COMPILER_WORKS 1)
 
 project(arcana-embedded-stm32 C CXX ASM)
 
-set(MCU_FLAGS "-mcpu=cortex-m0 -mthumb -mfloat-abi=soft")
-set(LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/STM32F051C8TX_FLASH.ld")
+# ============================================
+# Target 1: STM32F051C8 (Cortex-M0)
+# ============================================
+set(F051_ROOT Targets/stm32f051c8)
 
-# Common flags
-set(COMMON_FLAGS "${MCU_FLAGS} -Wall -fdata-sections -ffunction-sections")
-set(CMAKE_C_FLAGS "${COMMON_FLAGS} -std=gnu11")
-set(CMAKE_CXX_FLAGS "${COMMON_FLAGS} -std=gnu++17 -fno-exceptions -fno-rtti")
-set(CMAKE_ASM_FLAGS "${MCU_FLAGS} -x assembler-with-cpp")
-set(CMAKE_EXE_LINKER_FLAGS "-T${LINKER_SCRIPT} ${MCU_FLAGS} -Wl,--gc-sections -specs=nano.specs -specs=nosys.specs -lc -lm -lnosys -Wl,--print-memory-usage")
+set(F051_MCU_FLAGS "-mcpu=cortex-m0 -mthumb -mfloat-abi=soft")
+set(F051_LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/${F051_ROOT}/STM32F051C8TX_FLASH.ld")
 
-# Definitions
-add_definitions(
-    -DUSE_HAL_DRIVER
-    -DSTM32F051x8
+file(GLOB_RECURSE F051_CORE      "${F051_ROOT}/Core/Src/*.c")
+file(GLOB_RECURSE F051_HAL       "${F051_ROOT}/Drivers/STM32F0xx_HAL_Driver/Src/*.c")
+file(GLOB_RECURSE F051_RTOS      "${F051_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/*.c"
+                                  "${F051_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/*.c"
+                                  "${F051_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM0/*.c"
+                                  "${F051_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/portable/MemMang/heap_4.c")
+file(GLOB         F051_STARTUP   "${F051_ROOT}/Core/Startup/*.s")
+file(GLOB_RECURSE F051_SERVICES  "${F051_ROOT}/Services/**/*.cpp")
+file(GLOB_RECURSE F051_SHARED    "Shared/Src/*.cpp")
+
+add_executable(arcana-f051.elf
+    ${F051_CORE} ${F051_HAL} ${F051_RTOS} ${F051_STARTUP}
+    ${F051_SERVICES} ${F051_SHARED}
 )
 
-# Include directories
-include_directories(
-    Core/Inc
-    Drivers/STM32F0xx_HAL_Driver/Inc
-    Drivers/CMSIS/Device/ST/STM32F0xx/Include
-    Drivers/CMSIS/Include
-    Middlewares/Third_Party/FreeRTOS/Source/include
-    Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2
-    Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM0
+target_compile_definitions(arcana-f051.elf PRIVATE USE_HAL_DRIVER STM32F051x8)
+target_include_directories(arcana-f051.elf PRIVATE
+    ${F051_ROOT}/Core/Inc
+    ${F051_ROOT}/Drivers/STM32F0xx_HAL_Driver/Inc
+    ${F051_ROOT}/Drivers/STM32F0xx_HAL_Driver/Inc/Legacy
+    ${F051_ROOT}/Drivers/CMSIS/Device/ST/STM32F0xx/Include
+    ${F051_ROOT}/Drivers/CMSIS/Include
+    ${F051_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/include
+    ${F051_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2
+    ${F051_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM0
+    ${F051_ROOT}/Services/controller
+    ${F051_ROOT}/Services/service
+    ${F051_ROOT}/Services/command
+    ${F051_ROOT}/Services/command/impl
+    Shared/Inc
+)
+target_compile_options(arcana-f051.elf PRIVATE
+    $<$<COMPILE_LANGUAGE:C>:${F051_MCU_FLAGS} -Wall -fdata-sections -ffunction-sections -std=gnu11>
+    $<$<COMPILE_LANGUAGE:CXX>:${F051_MCU_FLAGS} -Wall -fdata-sections -ffunction-sections -std=gnu++14 -fno-exceptions -fno-rtti -fno-use-cxa-atexit>
+    $<$<COMPILE_LANGUAGE:ASM>:${F051_MCU_FLAGS} -x assembler-with-cpp>
+)
+target_link_options(arcana-f051.elf PRIVATE
+    -T${F051_LINKER_SCRIPT} ${F051_MCU_FLAGS}
+    -Wl,--gc-sections --specs=nano.specs --specs=nosys.specs
+    -Wl,--start-group -lc -lm -lstdc++ -lsupc++ -Wl,--end-group
+    -Wl,--print-memory-usage
 )
 
-# Source files
-file(GLOB_RECURSE CORE_SOURCES "Core/Src/*.c" "Core/Src/*.cpp")
-file(GLOB_RECURSE HAL_SOURCES "Drivers/STM32F0xx_HAL_Driver/Src/*.c")
-file(GLOB_RECURSE FREERTOS_SOURCES
-    "Middlewares/Third_Party/FreeRTOS/Source/*.c"
-    "Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/*.c"
-    "Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM0/*.c"
-    "Middlewares/Third_Party/FreeRTOS/Source/portable/MemMang/heap_4.c"
-)
-file(GLOB STARTUP_SOURCES "Core/Startup/*.s")
-
-# Executable
-add_executable(${PROJECT_NAME}.elf
-    ${CORE_SOURCES}
-    ${HAL_SOURCES}
-    ${FREERTOS_SOURCES}
-    ${STARTUP_SOURCES}
+add_custom_command(TARGET arcana-f051.elf POST_BUILD
+    COMMAND ${CMAKE_OBJCOPY} -O binary $<TARGET_FILE:arcana-f051.elf> arcana-f051.bin
+    COMMAND ${CMAKE_OBJCOPY} -O ihex $<TARGET_FILE:arcana-f051.elf> arcana-f051.hex
+    COMMAND ${CMAKE_SIZE} $<TARGET_FILE:arcana-f051.elf>
 )
 
-# Post-build: create .bin and .hex
-add_custom_command(TARGET ${PROJECT_NAME}.elf POST_BUILD
-    COMMAND ${CMAKE_OBJCOPY} -O binary $<TARGET_FILE:${PROJECT_NAME}.elf> ${PROJECT_NAME}.bin
-    COMMAND ${CMAKE_OBJCOPY} -O ihex $<TARGET_FILE:${PROJECT_NAME}.elf> ${PROJECT_NAME}.hex
-    COMMAND ${CMAKE_SIZE} $<TARGET_FILE:${PROJECT_NAME}.elf>
+# ============================================
+# Target 2: STM32F103ZE (Cortex-M3)
+# ============================================
+set(F103_ROOT Targets/stm32f103ze)
+
+set(F103_MCU_FLAGS "-mcpu=cortex-m3 -mthumb -mfloat-abi=soft")
+set(F103_LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/${F103_ROOT}/STM32F103ZETX_FLASH.ld")
+
+file(GLOB_RECURSE F103_CORE      "${F103_ROOT}/Core/Src/*.c")
+file(GLOB_RECURSE F103_HAL       "${F103_ROOT}/Drivers/STM32F1xx_HAL_Driver/Src/*.c")
+file(GLOB_RECURSE F103_RTOS      "${F103_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/*.c"
+                                  "${F103_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/*.c"
+                                  "${F103_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM3/*.c"
+                                  "${F103_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/portable/MemMang/heap_4.c")
+file(GLOB         F103_STARTUP   "${F103_ROOT}/Core/Startup/*.s")
+file(GLOB_RECURSE F103_FATFS     "${F103_ROOT}/Middlewares/Third_Party/FatFs/src/*.c")
+file(GLOB_RECURSE F103_FLASHDB   "${F103_ROOT}/Middlewares/Third_Party/FlashDB/src/*.c")
+file(GLOB_RECURSE F103_LITTLEFS  "${F103_ROOT}/Middlewares/Third_Party/littlefs/*.c")
+file(GLOB_RECURSE F103_SERVICES  "${F103_ROOT}/Services/**/*.cpp")
+file(GLOB_RECURSE F103_SHARED    "Shared/Src/*.cpp")
+
+# Exclude FatFs backup directory (duplicate ff.c)
+list(FILTER F103_FATFS EXCLUDE REGEX ".*/backup/.*")
+
+add_executable(arcana-f103.elf
+    ${F103_CORE} ${F103_HAL} ${F103_RTOS} ${F103_STARTUP}
+    ${F103_FATFS} ${F103_FLASHDB} ${F103_LITTLEFS}
+    ${F103_SERVICES} ${F103_SHARED}
+)
+
+target_compile_definitions(arcana-f103.elf PRIVATE
+    USE_HAL_DRIVER STM32F103xE LFS_NO_MALLOC LFS_NO_ASSERT
+)
+target_include_directories(arcana-f103.elf PRIVATE
+    ${F103_ROOT}/Core/Inc
+    ${F103_ROOT}/Drivers/STM32F1xx_HAL_Driver/Inc
+    ${F103_ROOT}/Drivers/STM32F1xx_HAL_Driver/Inc/Legacy
+    ${F103_ROOT}/Drivers/CMSIS/Device/ST/STM32F1xx/Include
+    ${F103_ROOT}/Drivers/CMSIS/Include
+    ${F103_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/include
+    ${F103_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2
+    ${F103_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM3
+    ${F103_ROOT}/Middlewares/Third_Party/FatFs/src
+    ${F103_ROOT}/Middlewares/Third_Party/FlashDB/inc
+    ${F103_ROOT}/Middlewares/Third_Party/littlefs
+    ${F103_ROOT}/Services/controller
+    ${F103_ROOT}/Services/service
+    ${F103_ROOT}/Services/service/impl
+    ${F103_ROOT}/Services/driver
+    ${F103_ROOT}/Services/model
+    ${F103_ROOT}/Services/common
+    Shared/Inc
+)
+target_compile_options(arcana-f103.elf PRIVATE
+    $<$<COMPILE_LANGUAGE:C>:${F103_MCU_FLAGS} -Wall -fdata-sections -ffunction-sections -std=gnu11 -Wno-dangling-pointer>
+    $<$<COMPILE_LANGUAGE:CXX>:${F103_MCU_FLAGS} -Wall -fdata-sections -ffunction-sections -std=gnu++14 -fno-exceptions -fno-rtti -fno-use-cxa-atexit>
+    $<$<COMPILE_LANGUAGE:ASM>:${F103_MCU_FLAGS} -x assembler-with-cpp>
+)
+target_link_options(arcana-f103.elf PRIVATE
+    -T${F103_LINKER_SCRIPT} ${F103_MCU_FLAGS}
+    -Wl,--gc-sections --specs=nano.specs --specs=nosys.specs
+    -Wl,--start-group -lc -lm -lstdc++ -lsupc++ -Wl,--end-group
+    -Wl,--print-memory-usage
+)
+
+add_custom_command(TARGET arcana-f103.elf POST_BUILD
+    COMMAND ${CMAKE_OBJCOPY} -O binary $<TARGET_FILE:arcana-f103.elf> arcana-f103.bin
+    COMMAND ${CMAKE_OBJCOPY} -O ihex $<TARGET_FILE:arcana-f103.elf> arcana-f103.hex
+    COMMAND ${CMAKE_SIZE} $<TARGET_FILE:arcana-f103.elf>
 )
