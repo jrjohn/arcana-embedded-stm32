@@ -21,7 +21,7 @@ project(arcana-embedded-stm32 C CXX ASM)
 # ============================================
 set(F051_ROOT Targets/stm32f051c8)
 
-set(F051_MCU_FLAGS "-mcpu=cortex-m0 -mthumb -mfloat-abi=soft")
+set(F051_MCU_FLAGS -mcpu=cortex-m0 -mthumb -mfloat-abi=soft)
 set(F051_LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/${F051_ROOT}/STM32F051C8TX_FLASH.ld")
 
 file(GLOB_RECURSE F051_CORE      "${F051_ROOT}/Core/Src/*.c")
@@ -61,7 +61,8 @@ target_compile_options(arcana-f051.elf PRIVATE
     $<$<COMPILE_LANGUAGE:ASM>:${F051_MCU_FLAGS} -x assembler-with-cpp>
 )
 target_link_options(arcana-f051.elf PRIVATE
-    -T${F051_LINKER_SCRIPT} ${F051_MCU_FLAGS}
+    "LINKER:-T${F051_LINKER_SCRIPT}"
+    ${F051_MCU_FLAGS}
     -Wl,--gc-sections --specs=nano.specs --specs=nosys.specs
     -Wl,--start-group -lc -lm -lstdc++ -lsupc++ -Wl,--end-group
     -Wl,--print-memory-usage
@@ -78,7 +79,7 @@ add_custom_command(TARGET arcana-f051.elf POST_BUILD
 # ============================================
 set(F103_ROOT Targets/stm32f103ze)
 
-set(F103_MCU_FLAGS "-mcpu=cortex-m3 -mthumb -mfloat-abi=soft")
+set(F103_MCU_FLAGS -mcpu=cortex-m3 -mthumb -mfloat-abi=soft)
 set(F103_LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/${F103_ROOT}/STM32F103ZETX_FLASH.ld")
 
 file(GLOB_RECURSE F103_CORE      "${F103_ROOT}/Core/Src/*.c")
@@ -132,7 +133,8 @@ target_compile_options(arcana-f103.elf PRIVATE
     $<$<COMPILE_LANGUAGE:ASM>:${F103_MCU_FLAGS} -x assembler-with-cpp>
 )
 target_link_options(arcana-f103.elf PRIVATE
-    -T${F103_LINKER_SCRIPT} ${F103_MCU_FLAGS}
+    "LINKER:-T${F103_LINKER_SCRIPT}"
+    ${F103_MCU_FLAGS}
     -Wl,--gc-sections --specs=nano.specs --specs=nosys.specs
     -Wl,--start-group -lc -lm -lstdc++ -lsupc++ -Wl,--end-group
     -Wl,--print-memory-usage
