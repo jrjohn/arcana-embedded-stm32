@@ -12,6 +12,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 COPY . .
 
+# Use CI placeholder credentials (real Credentials.hpp is gitignored)
+RUN cp Targets/stm32f103ze/Services/service/impl/Credentials.hpp.ci \
+       Targets/stm32f103ze/Services/service/impl/Credentials.hpp
+
 RUN mkdir -p build && cd build && cmake -DCMAKE_BUILD_TYPE=Release .. && make -j$(nproc)
 
 FROM builder AS artifacts
