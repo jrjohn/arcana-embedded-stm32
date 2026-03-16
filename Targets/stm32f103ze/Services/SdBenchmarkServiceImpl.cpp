@@ -181,7 +181,7 @@ void SdBenchmarkServiceImpl::runBenchmark() {
         mStats.totalKB = freeMB;         // freeMB
         mStats.totalRecords = totalMB;   // totalMB
         mStats.updateTimestamp();
-        mStatsObs.publish(&mStats);
+        mStatsObs.notify(&mStats);   // sync — task deletes after this
     } else {
         printf("[SD] Mounted! (getfree err=%d)\r\n", (int)fr);
     }

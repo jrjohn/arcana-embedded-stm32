@@ -132,7 +132,11 @@ void MainView::renderTime(Ili9341Lcd& lcd, const LcdOutput& out, LcdOutput& rend
 }
 
 void MainView::renderEcgColumn(Ili9341Lcd& lcd, uint8_t x, uint8_t y, uint8_t prevY) {
+    // Scale 0-99 → 8-92 to leave top/bottom margin (avoid touching borders)
+    y    = (uint8_t)(y    * 84 / 100 + 8);
+    prevY = (uint8_t)(prevY * 84 / 100 + 8);
     if (y >= ECG_HEIGHT) y = ECG_HEIGHT - 1;
+    if (prevY >= ECG_HEIGHT) prevY = ECG_HEIGHT - 1;
 
     uint16_t eraseX = (x + 1) % ECG_WIDTH;
     for (int i = 0; i < 4; i++) {
