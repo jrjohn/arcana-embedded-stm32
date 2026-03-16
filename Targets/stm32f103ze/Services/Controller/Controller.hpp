@@ -9,6 +9,7 @@
 #include "AtsStorageService.hpp"
 #include "WifiService.hpp"
 #include "MqttService.hpp"
+#include "BleService.hpp"
 #include "ServiceTypes.hpp"
 
 // Forward declarations for future services
@@ -46,8 +47,7 @@ private:
     atsstorage::AtsStorageService*    mSdStorage;
     wifi::WifiService*               mWifi;
     mqtt::MqttService*               mMqtt;
-    // CommandBridgeService*         mBridge;
-    // diagnostic::DiagnosticService* mDiag;
+    ble::BleService*                 mBle;
 };
 
 } // namespace arcana

@@ -141,6 +141,13 @@ bool Hc08Ble::sendCmd(const char* cmd, const char* expect, uint32_t timeoutMs) {
     return mRxLen > 0;
 }
 
+uint16_t Hc08Ble::waitForData(uint32_t timeoutMs) {
+    if (xSemaphoreTake(mFrameSem, pdMS_TO_TICKS(timeoutMs)) == pdTRUE) {
+        return mRxLen;
+    }
+    return 0;
+}
+
 bool Hc08Ble::send(const uint8_t* data, uint16_t len, uint32_t timeoutMs) {
     HAL_StatusTypeDef st = HAL_UART_Transmit(&sHuart2, (uint8_t*)data, len, timeoutMs);
     return st == HAL_OK;

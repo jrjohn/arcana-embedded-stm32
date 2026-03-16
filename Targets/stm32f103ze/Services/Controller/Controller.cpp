@@ -8,6 +8,7 @@
 #include "AtsStorageServiceImpl.hpp"
 #include "WifiServiceImpl.hpp"
 #include "MqttServiceImpl.hpp"
+#include "BleServiceImpl.hpp"
 #include "LcdViewModel.hpp"
 #include "MainView.hpp"
 #include "Hc08Ble.hpp"
@@ -24,6 +25,7 @@ Controller::Controller()
     , mSdStorage(0)
     , mWifi(0)
     , mMqtt(0)
+    , mBle(0)
 {
 }
 
@@ -59,6 +61,7 @@ void Controller::wireServices() {
     mSdStorage = &atsstorage::AtsStorageServiceImpl::getInstance();
     mWifi      = &wifi::WifiServiceImpl::getInstance();
     mMqtt      = &mqtt::MqttServiceImpl::getInstance();
+    mBle       = &ble::BleServiceImpl::getInstance();
 
     // Wire LED <- Timer
     mLed->input.TimerEvents = mTimer->output.BaseTimer;
@@ -109,6 +112,7 @@ void Controller::initServices() {
     mSdStorage->init();
     mWifi->init();
     mMqtt->init();
+    mBle->init();
 
     // View layer init (mutex, queues)
     sMainView.init();
@@ -123,6 +127,7 @@ void Controller::startServices() {
     mSdStorage->start();
     mWifi->start();
     mMqtt->start();
+    mBle->start();
 
     // View layer start (render task + ViewModel subscriptions)
     sMainView.start();

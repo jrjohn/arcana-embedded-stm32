@@ -6,6 +6,7 @@
 # Add inputs and outputs from these tool invocations to the build variables 
 CPP_SRCS += \
 ../Services/Service/impl/AtsStorageServiceImpl.cpp \
+../Services/Service/impl/BleServiceImpl.cpp \
 ../Services/Service/impl/LcdServiceImpl.cpp \
 ../Services/Service/impl/LedServiceImpl.cpp \
 ../Services/Service/impl/LightServiceImpl.cpp \
@@ -18,6 +19,7 @@ CPP_SRCS += \
 
 OBJS += \
 ./Services/Service/impl/AtsStorageServiceImpl.o \
+./Services/Service/impl/BleServiceImpl.o \
 ./Services/Service/impl/LcdServiceImpl.o \
 ./Services/Service/impl/LedServiceImpl.o \
 ./Services/Service/impl/LightServiceImpl.o \
@@ -30,6 +32,7 @@ OBJS += \
 
 CPP_DEPS += \
 ./Services/Service/impl/AtsStorageServiceImpl.d \
+./Services/Service/impl/BleServiceImpl.d \
 ./Services/Service/impl/LcdServiceImpl.d \
 ./Services/Service/impl/LedServiceImpl.d \
 ./Services/Service/impl/LightServiceImpl.d \

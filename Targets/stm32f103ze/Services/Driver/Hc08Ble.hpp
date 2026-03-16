@@ -35,6 +35,12 @@ public:
     const char* getResponse() const { return mRxBuf; }
     uint16_t getResponseLen() const { return mRxLen; }
 
+    /** Clear RX buffer */
+    void clearRx() { mRxLen = 0; mRxBuf[0] = '\0'; }
+
+    /** Wait for incoming data (blocks until IDLE or timeout). Returns bytes received. */
+    uint16_t waitForData(uint32_t timeoutMs);
+
     /** Check if BLE peer is connected (based on STATE pin or AT response) */
     bool isConnected() const { return mConnected; }
 
