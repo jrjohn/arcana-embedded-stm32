@@ -17,8 +17,8 @@ MainView::MainView()
     , mRenderTaskStack{}
     , mRenderTaskHandle(0)
     , mEcgQueue(0)
-    , mRendered()
     , mLcdMutex(0)
+    , mRendered()
 {
     input.viewModel = 0;
     input.lcd = 0;
