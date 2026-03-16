@@ -195,21 +195,38 @@ DRESULT disk_write(BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count)
     for (int retry = 0; retry < 3; retry++) {
         ensure_hal_ready();
 
-        /* Polling write at reduced clock */
-        MODIFY_REG(SDIO->CLKCR, 0xFFU, SDIO_CLKDIV_SLOW);
-
-        HAL_StatusTypeDef hal = HAL_SD_WriteBlocks(&g_hsd, (uint8_t *)buff,
-                                                    sector, count, 5000);
-
+        /* DMA write at full clock — CPU free during transfer.
+         * Only TX direction used (reads stay polling), so no DMA
+         * direction switching = no DATAEND hang. */
         MODIFY_REG(SDIO->CLKCR, 0xFFU, SDIO_CLKDIV_FAST);
-        SDIO->DCTRL = 0;
-        __HAL_SD_CLEAR_FLAG(&g_hsd, SDIO_STATIC_FLAGS);
 
+        /* Clear stale semaphore */
+        xSemaphoreTake(g_sd_dma_sem, 0);
+
+        HAL_StatusTypeDef hal = HAL_SD_WriteBlocks_DMA(&g_hsd, (uint8_t *)buff,
+                                                        sector, count);
         if (hal != HAL_OK) {
             sdio_reinit();
             g_sdio_write_count = 0;
             continue;
         }
+
+        /* Wait for DMA + SDIO completion (semaphore from TxCpltCallback) */
+        if (xSemaphoreTake(g_sd_dma_sem, pdMS_TO_TICKS(5000)) != pdTRUE) {
+            sdio_reinit();
+            g_sdio_write_count = 0;
+            continue;
+        }
+
+        /* Check for DMA/SDIO errors */
+        if (g_hsd.ErrorCode != HAL_SD_ERROR_NONE) {
+            sdio_reinit();
+            g_sdio_write_count = 0;
+            continue;
+        }
+
+        SDIO->DCTRL = 0;
+        __HAL_SD_CLEAR_FLAG(&g_hsd, SDIO_STATIC_FLAGS);
 
         /* Wait for card to finish internal programming */
         uint32_t timeout = HAL_GetTick() + 5000;
