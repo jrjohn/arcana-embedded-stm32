@@ -2,7 +2,7 @@
 #include "AtsStorageServiceImpl.hpp"
 #include "DeviceKey.hpp"
 #include "SystemClock.hpp"
-#include "LcdServiceImpl.hpp"
+#include "MainView.hpp"
 #include "ats/ArcanaTsSchema.hpp"
 #include "ats/ArcanaTsTypes.hpp"
 #include "ff.h"
@@ -35,6 +35,9 @@ extern "C" {
 }
 
 namespace arcana {
+
+// Defined in Controller.cpp
+extern lcd::MainView* g_mainView;
 namespace atsstorage {
 
 // Static storage
@@ -379,10 +382,9 @@ void AtsStorageServiceImpl::taskLoop() {
         uint8_t ecgVal = ECG_LUT[ecgPhase % ECG_LUT_LEN];
         ecgPhase++;
 
-        // Push ECG sample to LCD via queue (250Hz, thread-safe)
-        if ((mTotalRecords & 3) == 0) {
-            static_cast<lcd::LcdServiceImpl&>(
-                lcd::LcdServiceImpl::getInstance()).pushEcgSample(ecgVal);
+        // Push ECG sample to View via queue (250Hz, thread-safe)
+        if ((mTotalRecords & 3) == 0 && g_mainView) {
+            g_mainView->pushEcgSample(ecgVal);
         }
 
         // Build synthetic record (will be replaced by real ADS1298 SPI data)

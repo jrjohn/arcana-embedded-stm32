@@ -33,6 +33,13 @@ Controller& Controller::getInstance() {
     return sInstance;
 }
 
+// Static MVVM instances (owned by Controller scope)
+static lcd::LcdViewModel sViewModel;
+static lcd::MainView     sMainView;
+
+// Global pointer for cross-module ECG push (AtsStorageService → MainView)
+lcd::MainView* g_mainView = &sMainView;
+
 void Controller::run() {
     wireServices();
     wireViews();
@@ -52,26 +59,11 @@ void Controller::wireServices() {
     mWifi      = &wifi::WifiServiceImpl::getInstance();
     mMqtt      = &mqtt::MqttServiceImpl::getInstance();
 
-    // Wire LED <- Timer (base tick for 1-second color cycling)
+    // Wire LED <- Timer
     mLed->input.TimerEvents = mTimer->output.BaseTimer;
 
-    // Wire LCD <- Sensor (display temperature from MPU6050)
-    mLcd->input.SensorData = mSensor->output.DataEvents;
-
-    // Wire LCD <- Light (display ambient light from AP3216C)
-    mLcd->input.LightData = mLight->output.DataEvents;
-
-    // Wire SdStorage <- Sensor (encrypt + append to TSDB on SD card)
+    // Wire SdStorage <- Sensor
     mSdStorage->input.SensorData = mSensor->output.DataEvents;
-
-    // Wire LCD <- SdStorage stats (display record count + write rate)
-    mLcd->input.StorageStats = mSdStorage->output.StatsEvents;
-
-    // Wire LCD <- BaseTimer (1-second clock display)
-    mLcd->input.BaseTimer = mTimer->output.BaseTimer;
-
-    // Wire LCD <- SD Benchmark (display write speed — unused now but keep wiring)
-    mLcd->input.SdBenchmark = mSdBench->output.StatsEvents;
 
     // Wire MQTT <- WiFi + Sensor + Light
     mMqtt->input.Wifi       = mWifi;
@@ -80,38 +72,42 @@ void Controller::wireServices() {
 }
 
 void Controller::wireViews() {
-    // Static MVVM instances (owned by Controller, wired to LcdService)
-    static lcd::LcdViewModel sViewModel;
-    static lcd::MainView     sMainView;
+    // ViewModel ← Service outputs (ViewModel subscribes to data sources)
+    sViewModel.input.SensorData   = mSensor->output.DataEvents;
+    sViewModel.input.LightData    = mLight->output.DataEvents;
+    sViewModel.input.StorageStats = mSdStorage->output.StatsEvents;
+    sViewModel.input.SdBenchmark  = mSdBench->output.StatsEvents;
+    sViewModel.input.BaseTimer    = mTimer->output.BaseTimer;
 
-    // Wire View ← ViewModel (View reads ViewModel output on render)
-    // Wire LcdService ← ViewModel + View
-    mLcd->input.ViewModel = &sViewModel;
-    mLcd->input.View      = &sMainView;
+    // View ← ViewModel + LCD hardware
+    sMainView.input.viewModel = &sViewModel;
+    sMainView.input.lcd       = &mLcd->getLcd();
 }
 
 void Controller::initHAL() {
     mTimer->initHAL();
     mLed->initHAL();
-    mSensor->initHAL();      // Initializes shared I2C bus
+    mSensor->initHAL();
     mLight->initHAL();
-    mLcd->initHAL();
-    mSdBench->initHAL();     // Initializes SDIO + SD card
-    mSdStorage->initHAL();   // Derives per-device encryption key
-    mWifi->initHAL();        // Initializes USART3 + ESP8266 GPIO
+    mLcd->initHAL();          // LCD hardware init
+    mSdBench->initHAL();
+    mSdStorage->initHAL();
+    mWifi->initHAL();
     mMqtt->initHAL();
 }
 
 void Controller::initServices() {
     mTimer->init();
     mLed->init();
-    mSensor->init();          // Initializes MPU6050
-    mLight->init();           // Initializes AP3216C
-    mLcd->init();
+    mSensor->init();
+    mLight->init();
     mSdBench->init();
-    mSdStorage->init();       // Creates semaphores
+    mSdStorage->init();
     mWifi->init();
     mMqtt->init();
+
+    // View layer init (mutex, queues)
+    sMainView.init();
 }
 
 void Controller::startServices() {
@@ -119,11 +115,14 @@ void Controller::startServices() {
     mLed->start();
     mSensor->start();
     mLight->start();
-    mLcd->start();
-    mSdBench->start();        // exFAT format+mount must succeed first
-    mSdStorage->start();      // Waits for g_exfat_ready, then inits FlashDB
+    mSdBench->start();
+    mSdStorage->start();
     mWifi->start();
-    mMqtt->start();           // MQTT task waits for g_exfat_ready flag
+    mMqtt->start();
+
+    // View layer start (render task + ViewModel subscriptions)
+    sMainView.start();
+    sViewModel.init(sMainView.renderTaskHandle());
 }
 
 } // namespace arcana

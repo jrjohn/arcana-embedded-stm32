@@ -1,5 +1,10 @@
 #pragma once
 
+#include "Observable.hpp"
+#include "F103Models.hpp"
+#include "SystemClock.hpp"
+#include "FreeRTOS.h"
+#include "task.h"
 #include <cstdint>
 #include <cstring>
 
@@ -88,7 +93,33 @@ enum class LcdEffect : uint8_t {
 
 class LcdViewModel {
 public:
-    LcdViewModel() : mOutput() {}
+    // Input: data sources wired by Controller
+    struct Input {
+        Observable<SensorDataModel>*    SensorData;
+        Observable<LightDataModel>*     LightData;
+        Observable<StorageStatsModel>*  StorageStats;
+        Observable<SdBenchmarkModel>*   SdBenchmark;
+        Observable<TimerModel>*         BaseTimer;
+    };
+    Input input;
+
+    LcdViewModel() : input(), mOutput(), mNotifyTask(0) {
+        input.SensorData = 0;
+        input.LightData = 0;
+        input.StorageStats = 0;
+        input.SdBenchmark = 0;
+        input.BaseTimer = 0;
+    }
+
+    /** Subscribe to all wired Observables. renderTask receives xTaskNotifyGive on change. */
+    void init(TaskHandle_t renderTask) {
+        mNotifyTask = renderTask;
+        if (input.SensorData)   input.SensorData->subscribe(onSensorData, this);
+        if (input.LightData)    input.LightData->subscribe(onLightData, this);
+        if (input.StorageStats) input.StorageStats->subscribe(onStorageStats, this);
+        if (input.SdBenchmark)  input.SdBenchmark->subscribe(onSdBenchmark, this);
+        if (input.BaseTimer)    input.BaseTimer->subscribe(onBaseTimer, this);
+    }
 
     void onEvent(const LcdInput& input) {
         switch (input.type) {
@@ -137,7 +168,42 @@ public:
     uint8_t ecgCursor() const { return mOutput.ecgCursor; }
 
 private:
+    void notifyView() { if (mNotifyTask) xTaskNotifyGive(mNotifyTask); }
+
+    static void onSensorData(SensorDataModel* model, void* ctx) {
+        LcdViewModel* self = static_cast<LcdViewModel*>(ctx);
+        LcdInput in; in.type = LcdInput::SensorData;
+        in.sensor.temperature = model->temperature;
+        self->onEvent(in); self->notifyView();
+    }
+    static void onLightData(LightDataModel*, void*) {}
+    static void onStorageStats(StorageStatsModel* model, void* ctx) {
+        LcdViewModel* self = static_cast<LcdViewModel*>(ctx);
+        LcdInput in; in.type = LcdInput::StorageStats;
+        in.storage.records = model->recordCount;
+        in.storage.rate = model->writesPerSec;
+        in.storage.totalKB = model->totalKB;
+        in.storage.kbps = model->kbPerSec;
+        self->onEvent(in); self->notifyView();
+    }
+    static void onSdBenchmark(SdBenchmarkModel* model, void* ctx) {
+        LcdViewModel* self = static_cast<LcdViewModel*>(ctx);
+        LcdInput in; in.type = LcdInput::SdInfo;
+        in.sdinfo.freeMB = model->totalKB;
+        in.sdinfo.totalMB = model->totalRecords;
+        self->onEvent(in); self->notifyView();
+    }
+    static void onBaseTimer(TimerModel*, void* ctx) {
+        LcdViewModel* self = static_cast<LcdViewModel*>(ctx);
+        LcdInput in; in.type = LcdInput::TimerTick;
+        in.timer.epoch = SystemClock::getInstance().now();
+        in.timer.synced = SystemClock::getInstance().isSynced();
+        in.timer.uptime = xTaskGetTickCount() / configTICK_RATE_HZ;
+        self->onEvent(in); self->notifyView();
+    }
+
     LcdOutput mOutput;
+    TaskHandle_t mNotifyTask;
 };
 
 } // namespace lcd

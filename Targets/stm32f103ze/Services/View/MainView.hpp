@@ -1,16 +1,41 @@
 #pragma once
 
 #include "LcdView.hpp"
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+#include "semphr.h"
 
 namespace arcana {
 namespace lcd {
 
+class LcdViewModel;  // forward
+
 /**
  * Main dashboard view — ECG waveform + storage stats + time.
+ * Owns render task, ECG queue, LCD mutex.
  * Default view on boot.
  */
 class MainView : public LcdView {
 public:
+    struct Input {
+        LcdViewModel* viewModel;
+        Ili9341Lcd*    lcd;
+    };
+    Input input;
+
+    MainView();
+
+    void init();    // create mutex, ECG queue
+    void start();   // create render task, call onEnter
+
+    /** Push ECG sample from any task (thread-safe via queue) */
+    void pushEcgSample(uint8_t y);
+
+    /** Render task handle — ViewModel needs this for xTaskNotifyGive */
+    TaskHandle_t renderTaskHandle() const { return mRenderTaskHandle; }
+
+    // LcdView interface
     void onEnter(Ili9341Lcd& lcd) override;
     void render(Ili9341Lcd& lcd, const LcdOutput& output, LcdOutput& rendered) override;
     void renderEcgColumn(Ili9341Lcd& lcd, uint8_t x, uint8_t y, uint8_t prevY) override;
@@ -23,6 +48,26 @@ private:
 
     static void uint32ToStr(char* buf, uint32_t value);
 
+    // Render task
+    static void renderTaskEntry(void* param);
+    void processRender();
+    static const uint16_t RENDER_TASK_STACK = 256;
+    StaticTask_t mRenderTaskBuf;
+    StackType_t mRenderTaskStack[RENDER_TASK_STACK];
+    TaskHandle_t mRenderTaskHandle;
+
+    // ECG sample queue
+    static const uint8_t ECG_QUEUE_LEN = 16;
+    QueueHandle_t mEcgQueue;
+    StaticQueue_t mEcgQueueBuf;
+    uint8_t mEcgQueueStorage[ECG_QUEUE_LEN];
+
+    // LCD mutex + render diff
+    SemaphoreHandle_t mLcdMutex;
+    StaticSemaphore_t mLcdMutexBuf;
+    LcdOutput mRendered;
+
+    // Layout constants
     static const uint16_t VALUE_X      = 20;
     static const uint16_t TEMP_VALUE_Y = 42;
     static const uint16_t SD_INFO_Y    = 82;

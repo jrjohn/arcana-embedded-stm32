@@ -1,10 +1,96 @@
 #include "MainView.hpp"
+#include "LcdViewModel.hpp"
 #include "SystemClock.hpp"
 #include <cstdio>
 #include <cstring>
 
 namespace arcana {
 namespace lcd {
+
+// ---------------------------------------------------------------------------
+// Lifecycle
+// ---------------------------------------------------------------------------
+
+MainView::MainView()
+    : input()
+    , mRenderTaskBuf()
+    , mRenderTaskStack{}
+    , mRenderTaskHandle(0)
+    , mEcgQueue(0)
+    , mRendered()
+    , mLcdMutex(0)
+{
+    input.viewModel = 0;
+    input.lcd = 0;
+}
+
+void MainView::init() {
+    mLcdMutex = xSemaphoreCreateMutexStatic(&mLcdMutexBuf);
+    mEcgQueue = xQueueCreateStatic(ECG_QUEUE_LEN, 1,
+                                    mEcgQueueStorage, &mEcgQueueBuf);
+}
+
+void MainView::start() {
+    if (input.lcd) onEnter(*input.lcd);
+
+    mRenderTaskHandle = xTaskCreateStatic(
+        renderTaskEntry, "LcdRndr", RENDER_TASK_STACK,
+        this, tskIDLE_PRIORITY + 1, mRenderTaskStack, &mRenderTaskBuf);
+}
+
+void MainView::pushEcgSample(uint8_t y) {
+    if (mEcgQueue) {
+        xQueueSend(mEcgQueue, &y, 0);
+        if (mRenderTaskHandle) xTaskNotifyGive(mRenderTaskHandle);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Render task — blocks on xTaskNotify, wakes on ViewModel change / ECG
+// ---------------------------------------------------------------------------
+
+void MainView::renderTaskEntry(void* param) {
+    MainView* self = static_cast<MainView*>(param);
+    for (;;) {
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(100));
+        self->processRender();
+    }
+}
+
+void MainView::processRender() {
+    if (!input.viewModel || !input.lcd) return;
+    if (xSemaphoreTake(mLcdMutex, pdMS_TO_TICKS(10)) != pdTRUE) return;
+
+    LcdViewModel& vm = *input.viewModel;
+    Ili9341Lcd& lcd = *input.lcd;
+
+    // 1. Drain all pending ECG samples → ViewModel → render
+    uint8_t y;
+    while (xQueueReceive(mEcgQueue, &y, 0) == pdTRUE) {
+        const LcdOutput& out = vm.output();
+        uint8_t cursor = out.ecgCursor;
+        uint8_t prevY = out.ecgPrevY;
+
+        LcdInput in;
+        in.type = LcdInput::EcgSample;
+        in.ecg.y = y;
+        vm.onEvent(in);
+
+        renderEcgColumn(lcd, cursor, y, prevY);
+    }
+
+    // 2. Render dirty fields
+    if (vm.output().dirty) {
+        render(lcd, vm.output(), mRendered);
+        vm.clearDirty();
+    }
+
+    xSemaphoreGive(mLcdMutex);
+}
+
+// ---------------------------------------------------------------------------
+// Layout: onEnter draws static labels
+// ---------------------------------------------------------------------------
 
 void MainView::onEnter(Ili9341Lcd& lcd) {
     lcd.fillScreen(Ili9341Lcd::BLACK);
