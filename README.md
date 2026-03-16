@@ -115,15 +115,16 @@ ObservableDispatcher (dual priority queue: 8 normal + 4 high)
 Targets/stm32f103ze/
 ├── Services/
 │   ├── Controller/     # Controller.hpp/.cpp, F103App.cpp
-│   ├── Service/        # Interfaces + Implementations (co-located)
-│   │   ├── ITimerService.hpp / TimerServiceImpl.hpp/.cpp
-│   │   ├── LcdService.hpp / LcdServiceImpl.hpp/.cpp  (HW only)
-│   │   ├── SensorService.hpp / SensorServiceImpl.hpp/.cpp
-│   │   ├── AtsStorageService.hpp / AtsStorageServiceImpl.hpp/.cpp
-│   │   ├── SdBenchmarkService.hpp / SdBenchmarkServiceImpl.hpp/.cpp
-│   │   ├── WifiService.hpp / WifiServiceImpl.hpp/.cpp
-│   │   ├── MqttService.hpp / MqttServiceImpl.hpp/.cpp
-│   │   └── Led/Light/SdStorage ServiceImpl
+│   ├── Service/        # Interfaces (contracts)
+│   │   ├── ITimerService.hpp, LcdService.hpp, SensorService.hpp
+│   │   ├── AtsStorageService.hpp, SdBenchmarkService.hpp
+│   │   ├── WifiService.hpp, MqttService.hpp, LedService.hpp, ...
+│   │   └── impl/      # Implementations
+│   │       ├── TimerServiceImpl.hpp/.cpp
+│   │       ├── LcdServiceImpl.hpp/.cpp  (HW init only)
+│   │       ├── AtsStorageServiceImpl.hpp/.cpp (1kHz TSDB)
+│   │       ├── SdBenchmarkServiceImpl.hpp/.cpp (SD mount/format)
+│   │       └── Wifi/Mqtt/Led/Light/Sensor/SdStorage ServiceImpl
 │   ├── Driver/         # Hardware abstraction
 │   │   ├── Ili9341Lcd.hpp/.cpp     (FSMC LCD)
 │   │   ├── SdCard.hpp/.cpp         (SDIO DMA)
