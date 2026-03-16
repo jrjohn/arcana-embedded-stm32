@@ -6,7 +6,7 @@
 # Common compiler flags for all Services subdirectories
 SERVICES_INCLUDES = \
 -I../Core/Inc \
--I../Services/Controller -I../Services/Service -I../Services/Driver \
+-I../Services/Controller -I../Services/Service -I../Services/Service/impl -I../Services/Driver \
 -I../Services/Model -I../Services/View -I../Services/ViewModel \
 -I../Services/Common \
 -I../../../Shared/Inc -I../../../Shared/Inc/ats \
