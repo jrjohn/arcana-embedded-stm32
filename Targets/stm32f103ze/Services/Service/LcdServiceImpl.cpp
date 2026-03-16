@@ -13,11 +13,8 @@ namespace lcd {
 LcdServiceImpl::LcdServiceImpl()
     : mRenderTaskHandle(0)
     , mEcgQueue(0)
-    , mViewModel()
     , mRendered()
     , mLcd()
-    , mMainView()
-    , mActiveView(&mMainView)
     , mLcdMutex(0)
 {
 }
@@ -36,7 +33,7 @@ ServiceStatus LcdServiceImpl::initHAL() {
 
 ServiceStatus LcdServiceImpl::init() {
     mLcdMutex = xSemaphoreCreateMutexStatic(&mLcdMutexBuf);
-    mActiveView->onEnter(mLcd);
+    if (input.View) input.View->onEnter(mLcd);
 
     // Subscribe to data sources (Service role: feed ViewModel only)
     if (input.SensorData)   input.SensorData->subscribe(onSensorData, this);
@@ -62,16 +59,15 @@ ServiceStatus LcdServiceImpl::start() {
 }
 
 void LcdServiceImpl::stop() {
-    // Task will exit when mActiveView is nulled
-    mActiveView = nullptr;
+    input.View = nullptr;
 }
 
 void LcdServiceImpl::setView(LcdView* view) {
     if (xSemaphoreTake(mLcdMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-        if (mActiveView) mActiveView->onExit(mLcd);
-        mActiveView = view;
+        if (input.View) input.View->onExit(mLcd);
+        input.View = view;
         mRendered = LcdOutput();
-        if (mActiveView) mActiveView->onEnter(mLcd);
+        if (input.View) input.View->onEnter(mLcd);
         xSemaphoreGive(mLcdMutex);
     }
 }
@@ -85,7 +81,7 @@ void LcdServiceImpl::onSensorData(SensorDataModel* model, void* ctx) {
     LcdInput in;
     in.type = LcdInput::SensorData;
     in.sensor.temperature = model->temperature;
-    self->mViewModel.onEvent(in);
+    self->input.ViewModel->onEvent(in);
     if (self->mRenderTaskHandle) xTaskNotifyGive(self->mRenderTaskHandle);
 }
 
@@ -99,7 +95,7 @@ void LcdServiceImpl::onStorageStats(StorageStatsModel* model, void* ctx) {
     in.storage.rate = model->writesPerSec;
     in.storage.totalKB = model->totalKB;
     in.storage.kbps = model->kbPerSec;
-    self->mViewModel.onEvent(in);
+    self->input.ViewModel->onEvent(in);
     if (self->mRenderTaskHandle) xTaskNotifyGive(self->mRenderTaskHandle);
 }
 
@@ -109,7 +105,7 @@ void LcdServiceImpl::onSdBenchmark(SdBenchmarkModel* model, void* ctx) {
     in.type = LcdInput::SdInfo;
     in.sdinfo.freeMB = model->totalKB;       // repurposed: freeMB
     in.sdinfo.totalMB = model->totalRecords;  // repurposed: totalMB
-    self->mViewModel.onEvent(in);
+    self->input.ViewModel->onEvent(in);
     if (self->mRenderTaskHandle) xTaskNotifyGive(self->mRenderTaskHandle);
 }
 
@@ -120,7 +116,7 @@ void LcdServiceImpl::onBaseTimer(TimerModel*, void* ctx) {
     in.timer.epoch = SystemClock::getInstance().now();
     in.timer.synced = SystemClock::getInstance().isSynced();
     in.timer.uptime = xTaskGetTickCount() / configTICK_RATE_HZ;
-    self->mViewModel.onEvent(in);
+    self->input.ViewModel->onEvent(in);
     if (self->mRenderTaskHandle) xTaskNotifyGive(self->mRenderTaskHandle);
 }
 
@@ -149,28 +145,31 @@ void LcdServiceImpl::renderTask(void* param) {
 }
 
 void LcdServiceImpl::processRender() {
-    if (!mActiveView) return;
+    if (!input.View || !input.ViewModel) return;
     if (xSemaphoreTake(mLcdMutex, pdMS_TO_TICKS(10)) != pdTRUE) return;
+
+    LcdViewModel& vm = *input.ViewModel;
+    LcdView& view = *input.View;
 
     // 1. Drain all pending ECG samples → ViewModel → View
     uint8_t y;
     while (xQueueReceive(mEcgQueue, &y, 0) == pdTRUE) {
-        const LcdOutput& out = mViewModel.output();
+        const LcdOutput& out = vm.output();
         uint8_t cursor = out.ecgCursor;
         uint8_t prevY = out.ecgPrevY;
 
         LcdInput in;
         in.type = LcdInput::EcgSample;
         in.ecg.y = y;
-        mViewModel.onEvent(in);
+        vm.onEvent(in);
 
-        mActiveView->renderEcgColumn(mLcd, cursor, y, prevY);
+        view.renderEcgColumn(mLcd, cursor, y, prevY);
     }
 
     // 2. Render dirty fields (stats, time, temp)
-    if (mViewModel.output().dirty) {
-        mActiveView->render(mLcd, mViewModel.output(), mRendered);
-        mViewModel.clearDirty();
+    if (vm.output().dirty) {
+        view.render(mLcd, vm.output(), mRendered);
+        vm.clearDirty();
     }
 
     xSemaphoreGive(mLcdMutex);

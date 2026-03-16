@@ -32,6 +32,7 @@ private:
     Controller& operator=(const Controller&);
 
     void wireServices();
+    void wireViews();
     void initHAL();
     void initServices();
     void startServices();

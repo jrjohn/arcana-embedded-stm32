@@ -4,7 +4,6 @@
 #include "Ili9341Lcd.hpp"
 #include "LcdViewModel.hpp"
 #include "LcdView.hpp"
-#include "MainView.hpp"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
@@ -65,14 +64,11 @@ private:
     StaticQueue_t mEcgQueueBuf;
     uint8_t mEcgQueueStorage[ECG_QUEUE_LEN];
 
-    // MVVM
-    LcdViewModel mViewModel;
+    // Render state
     LcdOutput mRendered;
 
-    // View management
+    // LCD hardware
     Ili9341Lcd mLcd;
-    MainView mMainView;
-    LcdView* mActiveView;
 
     // LCD access mutex (FSMC not safe for concurrent access)
     SemaphoreHandle_t mLcdMutex;

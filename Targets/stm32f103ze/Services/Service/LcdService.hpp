@@ -7,14 +7,23 @@
 namespace arcana {
 namespace lcd {
 
+// Forward declarations — View layer
+class LcdViewModel;
+class LcdView;
+
 class LcdService {
 public:
     struct Input {
+        // Data sources (Observable)
         Observable<SensorDataModel>*    SensorData;
         Observable<LightDataModel>*     LightData;
         Observable<StorageStatsModel>*  StorageStats;
         Observable<SdBenchmarkModel>*   SdBenchmark;
         Observable<TimerModel>*         BaseTimer;
+
+        // MVVM wiring (set by Controller::wireViews)
+        LcdViewModel*                   ViewModel;
+        LcdView*                        View;
     };
 
     Input input;
@@ -32,6 +41,8 @@ protected:
         input.StorageStats = 0;
         input.SdBenchmark = 0;
         input.BaseTimer = 0;
+        input.ViewModel = 0;
+        input.View = 0;
     }
 };
 

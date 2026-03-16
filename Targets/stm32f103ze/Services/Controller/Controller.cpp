@@ -8,6 +8,8 @@
 #include "AtsStorageServiceImpl.hpp"
 #include "WifiServiceImpl.hpp"
 #include "MqttServiceImpl.hpp"
+#include "LcdViewModel.hpp"
+#include "MainView.hpp"
 
 namespace arcana {
 
@@ -33,6 +35,7 @@ Controller& Controller::getInstance() {
 
 void Controller::run() {
     wireServices();
+    wireViews();
     initHAL();
     initServices();
     startServices();
@@ -74,6 +77,17 @@ void Controller::wireServices() {
     mMqtt->input.Wifi       = mWifi;
     mMqtt->input.SensorData = mSensor->output.DataEvents;
     mMqtt->input.LightData  = mLight->output.DataEvents;
+}
+
+void Controller::wireViews() {
+    // Static MVVM instances (owned by Controller, wired to LcdService)
+    static lcd::LcdViewModel sViewModel;
+    static lcd::MainView     sMainView;
+
+    // Wire View ← ViewModel (View reads ViewModel output on render)
+    // Wire LcdService ← ViewModel + View
+    mLcd->input.ViewModel = &sViewModel;
+    mLcd->input.View      = &sMainView;
 }
 
 void Controller::initHAL() {
