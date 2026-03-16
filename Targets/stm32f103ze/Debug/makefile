@@ -11,7 +11,10 @@ RM := rm -rf
 -include sources.mk
 -include Shared/Src/ats/subdir.mk
 -include Shared/Src/subdir.mk
--include Services/subdir.mk
+-include Services/View/subdir.mk
+-include Services/Service/subdir.mk
+-include Services/Driver/subdir.mk
+-include Services/Controller/subdir.mk
 -include Middlewares/Third_Party/FreeRTOS/Source/portable/MemMang/subdir.mk
 -include Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM3/subdir.mk
 -include Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/subdir.mk
