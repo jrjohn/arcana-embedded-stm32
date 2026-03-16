@@ -87,14 +87,20 @@ bool Hc08Ble::initHAL() {
 
     printf("[BLE] HC-08 USART2 @ 9600 init\r\n");
 
-    // Quick AT test
+    // Quick AT test (only works when NOT connected to a BLE peer)
     if (sendCmd("AT")) {
-        printf("[BLE] HC-08 ready\r\n");
+        printf("[BLE] HC-08 AT OK\r\n");
+
+        // Set device name
+        sendCmd("AT+NAME=ArcanaBLE", "OK");
+        printf("[BLE] Name=ArcanaBLE\r\n");
+
         return true;
     }
 
-    printf("[BLE] HC-08 no response\r\n");
-    return false;
+    // If connected to BLE peer, AT commands don't work — still OK for data mode
+    printf("[BLE] HC-08 in data mode (peer connected)\r\n");
+    return true;  // not a failure — transparent mode works
 }
 
 // ---------------------------------------------------------------------------

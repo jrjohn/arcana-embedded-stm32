@@ -101,11 +101,18 @@ void BleServiceImpl::bleTask(void* param) {
 
 void BleServiceImpl::taskLoop() {
     while (mRunning) {
-        // Block until BLE receives data (IDLE line = frame complete)
         mBle.clearRx();
         uint16_t len = mBle.waitForData(portMAX_DELAY);
+        if (len == 0) continue;
         if (len > 0) {
-            processFrame((const uint8_t*)mBle.getResponse(), len);
+            const uint8_t* raw = (const uint8_t*)mBle.getResponse();
+            // Log raw bytes received from BLE
+            printf("[BLE] RX %u bytes:", len);
+            for (uint16_t i = 0; i < len && i < 24; i++) {
+                printf(" %02X", raw[i]);
+            }
+            printf("\r\n");
+            processFrame(raw, len);
         }
     }
 }
