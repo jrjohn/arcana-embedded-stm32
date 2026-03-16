@@ -57,6 +57,7 @@
 									<listOptionValue builtIn="false" value="../Services/command"/>
 									<listOptionValue builtIn="false" value="../Services/command/impl"/>
 									<listOptionValue builtIn="false" value="../../../Shared/Inc"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/ats"/>
 									<listOptionValue builtIn="false" value="../Drivers/STM32F0xx_HAL_Driver/Inc"/>
 									<listOptionValue builtIn="false" value="../Drivers/STM32F0xx_HAL_Driver/Inc/Legacy"/>
 									<listOptionValue builtIn="false" value="../Middlewares/Third_Party/FreeRTOS/Source/include"/>
@@ -77,6 +78,7 @@
 									<listOptionValue builtIn="false" value="../Services/command"/>
 									<listOptionValue builtIn="false" value="../Services/command/impl"/>
 									<listOptionValue builtIn="false" value="../../../Shared/Inc"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/ats"/>
 									<listOptionValue builtIn="false" value="../Drivers/STM32F0xx_HAL_Driver/Inc"/>
 									<listOptionValue builtIn="false" value="../Drivers/STM32F0xx_HAL_Driver/Inc/Legacy"/>
 									<listOptionValue builtIn="false" value="../Middlewares/Third_Party/FreeRTOS/Source/include"/>
@@ -180,6 +182,7 @@
 									<listOptionValue builtIn="false" value="../Services/command"/>
 									<listOptionValue builtIn="false" value="../Services/command/impl"/>
 									<listOptionValue builtIn="false" value="../../../Shared/Inc"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/ats"/>
 									<listOptionValue builtIn="false" value="../Drivers/STM32F0xx_HAL_Driver/Inc"/>
 									<listOptionValue builtIn="false" value="../Drivers/STM32F0xx_HAL_Driver/Inc/Legacy"/>
 									<listOptionValue builtIn="false" value="../Middlewares/Third_Party/FreeRTOS/Source/include"/>
@@ -200,6 +203,7 @@
 									<listOptionValue builtIn="false" value="../Services/command"/>
 									<listOptionValue builtIn="false" value="../Services/command/impl"/>
 									<listOptionValue builtIn="false" value="../../../Shared/Inc"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/ats"/>
 									<listOptionValue builtIn="false" value="../Drivers/STM32F0xx_HAL_Driver/Inc"/>
 									<listOptionValue builtIn="false" value="../Drivers/STM32F0xx_HAL_Driver/Inc/Legacy"/>
 									<listOptionValue builtIn="false" value="../Middlewares/Third_Party/FreeRTOS/Source/include"/>

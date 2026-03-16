@@ -6,7 +6,7 @@
 #include "LcdService.hpp"
 #include "LightService.hpp"
 #include "SdBenchmarkService.hpp"
-#include "SdStorageService.hpp"
+#include "AtsStorageService.hpp"
 #include "WifiService.hpp"
 #include "MqttService.hpp"
 #include "ServiceTypes.hpp"
@@ -42,7 +42,7 @@ private:
     lcd::LcdService*                 mLcd;
     light::LightService*             mLight;
     sdbench::SdBenchmarkService*     mSdBench;
-    sdstorage::SdStorageService*     mSdStorage;
+    atsstorage::AtsStorageService*    mSdStorage;
     wifi::WifiService*               mWifi;
     mqtt::MqttService*               mMqtt;
     // CommandBridgeService*         mBridge;

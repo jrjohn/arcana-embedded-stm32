@@ -5,7 +5,7 @@
 #include "LcdServiceImpl.hpp"
 #include "LightServiceImpl.hpp"
 #include "SdBenchmarkServiceImpl.hpp"
-#include "SdStorageServiceImpl.hpp"
+#include "AtsStorageServiceImpl.hpp"
 #include "WifiServiceImpl.hpp"
 #include "MqttServiceImpl.hpp"
 
@@ -45,7 +45,7 @@ void Controller::wireServices() {
     mLcd       = &lcd::LcdServiceImpl::getInstance();
     mLight     = &light::LightServiceImpl::getInstance();
     mSdBench   = &sdbench::SdBenchmarkServiceImpl::getInstance();
-    mSdStorage = &sdstorage::SdStorageServiceImpl::getInstance();
+    mSdStorage = &atsstorage::AtsStorageServiceImpl::getInstance();
     mWifi      = &wifi::WifiServiceImpl::getInstance();
     mMqtt      = &mqtt::MqttServiceImpl::getInstance();
 

@@ -59,6 +59,7 @@
 									<listOptionValue builtIn="false" value="../Services/model"/>
 									<listOptionValue builtIn="false" value="../Services/common"/>
 									<listOptionValue builtIn="false" value="../../../Shared/Inc"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/ats"/>
 									<listOptionValue builtIn="false" value="../Middlewares/Third_Party/FatFs/src"/>
 									<listOptionValue builtIn="false" value="../Middlewares/Third_Party/FlashDB/inc"/>
 									<listOptionValue builtIn="false" value="../Drivers/STM32F1xx_HAL_Driver/Inc"/>
@@ -89,6 +90,7 @@
 									<listOptionValue builtIn="false" value="../Services/model"/>
 									<listOptionValue builtIn="false" value="../Services/common"/>
 									<listOptionValue builtIn="false" value="../../../Shared/Inc"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/ats"/>
 									<listOptionValue builtIn="false" value="../Middlewares/Third_Party/FatFs/src"/>
 									<listOptionValue builtIn="false" value="../Middlewares/Third_Party/FlashDB/inc"/>
 									<listOptionValue builtIn="false" value="../Drivers/STM32F1xx_HAL_Driver/Inc"/>
@@ -191,6 +193,7 @@
 									<listOptionValue builtIn="false" value="../Services/model"/>
 									<listOptionValue builtIn="false" value="../Services/common"/>
 									<listOptionValue builtIn="false" value="../../../Shared/Inc"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/ats"/>
 									<listOptionValue builtIn="false" value="../Middlewares/Third_Party/FatFs/src"/>
 									<listOptionValue builtIn="false" value="../Middlewares/Third_Party/FlashDB/inc"/>
 									<listOptionValue builtIn="false" value="../Drivers/STM32F1xx_HAL_Driver/Inc"/>
@@ -219,6 +222,7 @@
 									<listOptionValue builtIn="false" value="../Services/model"/>
 									<listOptionValue builtIn="false" value="../Services/common"/>
 									<listOptionValue builtIn="false" value="../../../Shared/Inc"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/ats"/>
 									<listOptionValue builtIn="false" value="../Middlewares/Third_Party/FatFs/src"/>
 									<listOptionValue builtIn="false" value="../Middlewares/Third_Party/FlashDB/inc"/>
 									<listOptionValue builtIn="false" value="../Drivers/STM32F1xx_HAL_Driver/Inc"/>

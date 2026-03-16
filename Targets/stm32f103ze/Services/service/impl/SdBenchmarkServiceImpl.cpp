@@ -103,12 +103,14 @@ void SdBenchmarkServiceImpl::runBenchmark() {
 
     // Step 1: Try to mount existing exFAT filesystem
     sdLcdStatus("[SD] Mounting...");
+    printf("[SD] Mounting...\r\n");
     fr = f_mount(&sFatFs, "", 1);
 
     if (fr != FR_OK) {
         // Mount failed — format as exFAT (first time or corrupted)
         snprintf(msg, sizeof(msg), "[SD] No FS (%d), formatting", (int)fr);
         sdLcdStatus(msg);
+        printf("%s\r\n", msg);
         vTaskDelay(pdMS_TO_TICKS(1000));
 
         MKFS_PARM mkfs_opt;
@@ -117,13 +119,16 @@ void SdBenchmarkServiceImpl::runBenchmark() {
         mkfs_opt.au_size = 0;
 
         sdLcdStatus("[SD] Formatting exFAT...");
+        printf("[SD] Formatting exFAT...\r\n");
         fr = f_mkfs("", &mkfs_opt, mMkfsBuf, MKFS_BUF_SIZE);
         if (fr != FR_OK) {
             snprintf(msg, sizeof(msg), "[SD] mkfs ERR: %d", (int)fr);
             sdLcdStatus(msg);
+            printf("%s\r\n", msg);
             return;
         }
         sdLcdStatus("[SD] Format OK!");
+        printf("[SD] Format OK!\r\n");
         vTaskDelay(pdMS_TO_TICKS(500));
 
         // Mount the freshly formatted filesystem
@@ -131,6 +136,7 @@ void SdBenchmarkServiceImpl::runBenchmark() {
         if (fr != FR_OK) {
             snprintf(msg, sizeof(msg), "[SD] mount ERR: %d", (int)fr);
             sdLcdStatus(msg);
+            printf("%s\r\n", msg);
             return;
         }
     }
@@ -149,8 +155,11 @@ void SdBenchmarkServiceImpl::runBenchmark() {
                  (unsigned long)freeMB, (unsigned long)totalMB);
         sdLcdStatus(msg);
         sdLcdStatus2("exFAT Ready");
+        printf("[SD] %luMB/%luMB exFAT Ready\r\n",
+               (unsigned long)freeMB, (unsigned long)totalMB);
     } else {
         sdLcdStatus("[SD] Mounted!");
+        printf("[SD] Mounted! (getfree err=%d)\r\n", (int)fr);
     }
 }
 

@@ -138,10 +138,13 @@ void SdStorageServiceImpl::storageTask(void* param) {
     if (!self->mRunning) { vTaskDelete(0); return; }
 
     // Initialize FAL adapter (opens/creates partition files)
+    printf("[STORE] FAL init...\r\n");
     if (!self->mFal.init()) {
+        printf("[STORE] FAL init FAILED\r\n");
         vTaskDelete(0);
         return;
     }
+    printf("[STORE] FAL init OK\r\n");
 
     // Initialize FlashDB TSDB
     uint32_t secSize = storage::SdFalAdapter::SECTOR_SIZE;
@@ -150,17 +153,21 @@ void SdStorageServiceImpl::storageTask(void* param) {
     fdb_tsdb_control(&self->mTsdb, FDB_TSDB_CTRL_SET_LOCK, (void *)fdbLock);
     fdb_tsdb_control(&self->mTsdb, FDB_TSDB_CTRL_SET_UNLOCK, (void *)fdbUnlock);
 
+    printf("[STORE] TSDB init...\r\n");
     fdb_err_t err = fdb_tsdb_init(&self->mTsdb, "sensor", "tsdb", fdbGetTime,
                                    BLOB_SIZE, NULL);
     if (err != FDB_NO_ERR) {
+        printf("[STORE] TSDB init FAILED err=%d\r\n", (int)err);
         vTaskDelete(0);
         return;
     }
+    printf("[STORE] TSDB init OK\r\n");
 
     // Seed timestamp to exceed persisted last_time from previous sessions.
     // Without this, records are dropped after reboot until tick > last_time.
     if (self->mTsdb.last_time > 0) {
         sLastTime = self->mTsdb.last_time;
+        printf("[STORE] TSDB seed lastTime=%lu\r\n", (unsigned long)sLastTime);
     }
 
     // Initialize FlashDB KVDB
@@ -168,18 +175,22 @@ void SdStorageServiceImpl::storageTask(void* param) {
     fdb_kvdb_control(&self->mKvdb, FDB_KVDB_CTRL_SET_LOCK, (void *)fdbLock);
     fdb_kvdb_control(&self->mKvdb, FDB_KVDB_CTRL_SET_UNLOCK, (void *)fdbUnlock);
 
+    printf("[STORE] KVDB init...\r\n");
     err = fdb_kvdb_init(&self->mKvdb, "upload", "kvdb", NULL, NULL);
     if (err != FDB_NO_ERR) {
+        printf("[STORE] KVDB init FAILED err=%d\r\n", (int)err);
         fdb_tsdb_deinit(&self->mTsdb);
         vTaskDelete(0);
         return;
     }
+    printf("[STORE] KVDB init OK\r\n");
 
     self->mDbReady = true;
 
     // Get initial nonce counter from TSDB query count
     self->mNonceCounter = (uint32_t)fdb_tsl_query_count(
         &self->mTsdb, 0, 0x7FFFFFFF, FDB_TSL_WRITE);
+    printf("[STORE] Ready, nonce=%lu\r\n", (unsigned long)self->mNonceCounter);
 
     self->taskLoop();
     vTaskDelete(0);
@@ -226,6 +237,9 @@ void SdStorageServiceImpl::appendRecord(const SensorDataModel* model) {
     // Append to TSDB
     struct fdb_blob fblob;
     fdb_err_t err = fdb_tsl_append(&mTsdb, fdb_blob_make(&fblob, blob, BLOB_SIZE));
+    if (err != FDB_NO_ERR) {
+        printf("[STORE] write ERR=%d nonce=%lu\r\n", (int)err, (unsigned long)mNonceCounter);
+    }
     if (err == FDB_NO_ERR) {
         mNonceCounter++;
         mWritesInWindow++;
@@ -240,6 +254,8 @@ void SdStorageServiceImpl::appendRecord(const SensorDataModel* model) {
         uint32_t elapsedMs = elapsed / (SystemCoreClock / 1000);
         if (elapsedMs >= 1000) {
             mLastRate = mWritesInWindow;
+            printf("[STORE] %lu rec, %lu rec/s\r\n",
+                   (unsigned long)mNonceCounter, (unsigned long)mLastRate);
             mWritesInWindow = 0;
             mWindowStartTick = now;
         }
