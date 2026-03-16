@@ -69,6 +69,11 @@ int32_t FatFsFilePort::write(const uint8_t* buf, uint32_t size) {
         if (fr == FR_OK && bytesWritten == size) {
             return static_cast<int32_t>(bytesWritten);
         }
+        if (attempt == MAX_RETRIES - 1) {
+            printf("[FP] write FAIL sz=%lu wr=%lu err=%d fpos=%lu\r\n",
+                   (unsigned long)size, (unsigned long)bytesWritten,
+                   (int)fr, (unsigned long)f_tell(&mFil));
+        }
         vTaskDelay(1);
     }
     return -1;
@@ -81,6 +86,11 @@ bool FatFsFilePort::seek(uint32_t offset) {
         mFil.err = 0;
         FRESULT fr = f_lseek(&mFil, offset);
         if (fr == FR_OK) return true;
+        if (attempt == MAX_RETRIES - 1) {
+            printf("[FP] seek FAIL off=%lu err=%d fsz=%lu\r\n",
+                   (unsigned long)offset, (int)fr,
+                   (unsigned long)f_size(&mFil));
+        }
         vTaskDelay(1);
     }
     return false;

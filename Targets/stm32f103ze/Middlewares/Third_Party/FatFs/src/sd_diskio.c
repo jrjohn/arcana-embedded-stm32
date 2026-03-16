@@ -186,10 +186,16 @@ DRESULT disk_write(BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count)
     if (pdrv != 0 || !g_sd_ready) return RES_NOTRDY;
     if (!g_sd_dma_sem) return RES_ERROR;
 
+    /* Proactive SDIO reinit every N writes to prevent bus degradation */
+    if (++g_sdio_write_count >= SDIO_REINIT_INTERVAL) {
+        sdio_reinit();
+        g_sdio_write_count = 0;
+    }
+
     for (int retry = 0; retry < 3; retry++) {
         ensure_hal_ready();
 
-        /* Polling write at reduced clock (same as reads — no DMA, no degradation) */
+        /* Polling write at reduced clock */
         MODIFY_REG(SDIO->CLKCR, 0xFFU, SDIO_CLKDIV_SLOW);
 
         HAL_StatusTypeDef hal = HAL_SD_WriteBlocks(&g_hsd, (uint8_t *)buff,
@@ -200,7 +206,8 @@ DRESULT disk_write(BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count)
         __HAL_SD_CLEAR_FLAG(&g_hsd, SDIO_STATIC_FLAGS);
 
         if (hal != HAL_OK) {
-            vTaskDelay(1);
+            sdio_reinit();
+            g_sdio_write_count = 0;
             continue;
         }
 

@@ -406,7 +406,11 @@ void AtsStorageServiceImpl::taskLoop() {
         uint32_t now = xTaskGetTickCount();
         if ((now - lastReportTick) >= pdMS_TO_TICKS(1000)) {
             bool flushed = mDb.flush();
-            if (!flushed) printf("[ATS] flush FAILED\r\n");
+            if (!flushed) {
+                sdio_force_reinit();
+                flushed = mDb.flush();
+                if (!flushed) printf("[ATS] flush FAILED (after reinit)\r\n");
+            }
 
             mStatsModel.recordCount = mTotalRecords;
             mStatsModel.writesPerSec = (uint16_t)windowOk;
