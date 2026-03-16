@@ -39,18 +39,18 @@ private:
     static void onLightData(LightDataModel* model, void* ctx);
     void pushSensorJson();
 
-    // Cached latest readings
-    float mTemp;
-    int16_t mAx, mAy, mAz;
-    uint16_t mAls, mPs;
-    volatile bool mSensorDirty;
-
     // Task
     static const uint16_t TASK_STACK_SIZE = 256;
     StaticTask_t mTaskBuf;
     StackType_t mTaskStack[TASK_STACK_SIZE];
     TaskHandle_t mTaskHandle;
     bool mRunning;
+
+    // Cached latest readings
+    float mTemp;
+    int16_t mAx, mAy, mAz;
+    uint16_t mAls, mPs;
+    volatile bool mSensorDirty;
 
     // Reference to BLE driver
     Hc08Ble& mBle;
