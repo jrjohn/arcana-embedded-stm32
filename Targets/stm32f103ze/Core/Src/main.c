@@ -105,6 +105,41 @@ int main(void)
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
   printf("[BOOT] arcana-embedded-f103 started\r\n");
+
+  // Initialize RTC (backup domain, LSE or LSI, 1Hz prescaler)
+  {
+    __HAL_RCC_PWR_CLK_ENABLE();
+    __HAL_RCC_BKP_CLK_ENABLE();
+    HAL_PWR_EnableBkUpAccess();
+
+    if (BKP->DR1 != 0xA5A5) {
+      // First time — configure RTC
+      RCC->BDCR |= RCC_BDCR_LSEON;
+      uint32_t t = 5000000;
+      while (!(RCC->BDCR & RCC_BDCR_LSERDY) && t > 0) { t--; }
+
+      if (RCC->BDCR & RCC_BDCR_LSERDY) {
+        RCC->BDCR = (RCC->BDCR & ~RCC_BDCR_RTCSEL) | RCC_BDCR_RTCSEL_LSE;
+      } else {
+        RCC->CSR |= RCC_CSR_LSION;
+        while (!(RCC->CSR & RCC_CSR_LSIRDY)) {}
+        RCC->BDCR = (RCC->BDCR & ~RCC_BDCR_RTCSEL) | RCC_BDCR_RTCSEL_LSI;
+      }
+      RCC->BDCR |= RCC_BDCR_RTCEN;
+      RTC->CRL &= ~RTC_CRL_RSF; while (!(RTC->CRL & RTC_CRL_RSF)) {}
+      while (!(RTC->CRL & RTC_CRL_RTOFF)) {} RTC->CRL |= RTC_CRL_CNF;
+      RTC->PRLH = 0;
+      RTC->PRLL = (RCC->BDCR & RCC_BDCR_LSERDY) ? 32767 : 39999;
+      RTC->CNTH = 0; RTC->CNTL = 0;
+      RTC->CRL &= ~RTC_CRL_CNF; while (!(RTC->CRL & RTC_CRL_RTOFF)) {}
+      BKP->DR1 = 0xA5A5;
+      printf("[BOOT] RTC configured\r\n");
+    } else {
+      RCC->BDCR |= RCC_BDCR_RTCEN;
+      RTC->CRL &= ~RTC_CRL_RSF; while (!(RTC->CRL & RTC_CRL_RSF)) {}
+      printf("[BOOT] RTC restored\r\n");
+    }
+  }
   /* USER CODE END 2 */
 
   /* Init scheduler */

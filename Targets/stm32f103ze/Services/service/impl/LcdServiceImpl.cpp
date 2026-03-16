@@ -1,5 +1,7 @@
 #include "LcdServiceImpl.hpp"
 #include "SystemClock.hpp"
+#include "FreeRTOS.h"
+#include "task.h"
 #include <cstdio>
 
 namespace arcana {
@@ -208,27 +210,44 @@ void LcdServiceImpl::onBaseTimer(TimerModel* model, void* ctx) {
 }
 
 void LcdServiceImpl::updateTimeDisplay() {
-    if (!SystemClock::getInstance().isSynced()) return;
-
     uint32_t epoch = SystemClock::getInstance().now();
 
-    // Date: "2026-03-10" — font2, 10 chars × 12px = 120px, center x=(240-120)/2=60
-    uint32_t date = SystemClock::dateYYYYMMDD(epoch);
-    char dateBuf[12];
-    snprintf(dateBuf, sizeof(dateBuf), "%04lu-%02lu-%02lu",
-        (unsigned long)(date / 10000),
-        (unsigned long)((date / 100) % 100),
-        (unsigned long)(date % 100));
-    mLcd.fillRect(60, CLOCK_DATE_Y, 120, 16, Ili9341Lcd::BLACK);
-    mLcd.drawString(60, CLOCK_DATE_Y, dateBuf, Ili9341Lcd::WHITE, Ili9341Lcd::BLACK, 2);
+    if (epoch > 1577836800) {
+        // RTC has valid time (> 2020-01-01) — show date + time
+        uint16_t color = SystemClock::getInstance().isSynced()
+            ? Ili9341Lcd::CYAN : Ili9341Lcd::WHITE;
 
-    // Time: "14:30:05" — font2, 8 chars × 12px = 96px, center x=(240-96)/2=72
-    uint8_t h, m, s;
-    SystemClock::toHMS(epoch, h, m, s);
-    char timeBuf[12];
-    snprintf(timeBuf, sizeof(timeBuf), "%02u:%02u:%02u", h, m, s);
-    mLcd.fillRect(72, CLOCK_TIME_Y, 96, 16, Ili9341Lcd::BLACK);
-    mLcd.drawString(72, CLOCK_TIME_Y, timeBuf, Ili9341Lcd::WHITE, Ili9341Lcd::BLACK, 2);
+        uint32_t date = SystemClock::dateYYYYMMDD(epoch);
+        char dateBuf[12];
+        snprintf(dateBuf, sizeof(dateBuf), "%04lu-%02lu-%02lu",
+            (unsigned long)(date / 10000),
+            (unsigned long)((date / 100) % 100),
+            (unsigned long)(date % 100));
+        mLcd.fillRect(60, CLOCK_DATE_Y, 120, 16, Ili9341Lcd::BLACK);
+        mLcd.drawString(60, CLOCK_DATE_Y, dateBuf, Ili9341Lcd::WHITE, Ili9341Lcd::BLACK, 2);
+
+        uint8_t h, m, s;
+        SystemClock::toHMS(epoch, h, m, s);
+        char timeBuf[12];
+        snprintf(timeBuf, sizeof(timeBuf), "%02u:%02u:%02u", h, m, s);
+        mLcd.fillRect(72, CLOCK_TIME_Y, 96, 16, Ili9341Lcd::BLACK);
+        mLcd.drawString(72, CLOCK_TIME_Y, timeBuf, color, Ili9341Lcd::BLACK, 2);
+    } else {
+        // RTC never set — show uptime
+        uint32_t uptimeSec = xTaskGetTickCount() / configTICK_RATE_HZ;
+        uint32_t h = uptimeSec / 3600;
+        uint32_t m = (uptimeSec / 60) % 60;
+        uint32_t s = uptimeSec % 60;
+
+        mLcd.fillRect(60, CLOCK_DATE_Y, 120, 16, Ili9341Lcd::BLACK);
+        mLcd.drawString(78, CLOCK_DATE_Y, "UPTIME", Ili9341Lcd::YELLOW, Ili9341Lcd::BLACK, 2);
+
+        char timeBuf[12];
+        snprintf(timeBuf, sizeof(timeBuf), "%02lu:%02lu:%02lu",
+            (unsigned long)h, (unsigned long)m, (unsigned long)s);
+        mLcd.fillRect(72, CLOCK_TIME_Y, 96, 16, Ili9341Lcd::BLACK);
+        mLcd.drawString(72, CLOCK_TIME_Y, timeBuf, Ili9341Lcd::YELLOW, Ili9341Lcd::BLACK, 2);
+    }
 }
 
 void LcdServiceImpl::intToStr(char* buf, int value) {

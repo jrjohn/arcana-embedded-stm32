@@ -2,10 +2,19 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
+#include "stm32f1xx_hal.h"
 #include <cstdint>
 
 namespace arcana {
 
+/**
+ * System clock with STM32F103 RTC backing.
+ *
+ * Time sources (priority order):
+ *  1. RTC counter (persists across reset with VBAT battery)
+ *  2. NTP sync updates RTC counter
+ *  3. Uptime fallback if RTC was never set (counter == 0)
+ */
 class SystemClock {
 public:
     static SystemClock& getInstance() {
@@ -13,18 +22,22 @@ public:
         return sInstance;
     }
 
+    /** Sync from NTP — writes epoch to RTC counter */
     void sync(uint32_t epochSec) {
-        mEpochAtSync = epochSec;
-        mTickAtSync = xTaskGetTickCount();
+        setRtcCounter(epochSec);
         mSynced = true;
     }
 
-    bool isSynced() const { return mSynced; }
+    /** Returns true if NTP has synced at least once (this boot or persisted via RTC) */
+    bool isSynced() const {
+        // If RTC has a meaningful value (> year 2020), consider it synced
+        if (getRtcCounter() > 1577836800) return true;  // > 2020-01-01
+        return mSynced;
+    }
 
+    /** Current UTC epoch seconds. Returns RTC counter, or 0 if never set. */
     uint32_t now() const {
-        if (!mSynced) return 0;
-        uint32_t elapsedSec = (xTaskGetTickCount() - mTickAtSync) / configTICK_RATE_HZ;
-        return mEpochAtSync + elapsedSec;
+        return getRtcCounter();
     }
 
     static uint32_t startOfDay(uint32_t epoch) {
@@ -53,14 +66,44 @@ public:
     }
 
 private:
-    SystemClock() : mEpochAtSync(0), mTickAtSync(0), mSynced(false) {}
+    SystemClock() : mSynced(false) {}
 
-    uint32_t mEpochAtSync;
-    TickType_t mTickAtSync;
     bool mSynced;
 
-    // Civil date algorithms (no <time.h> dependency)
-    // Based on Howard Hinnant's algorithms: http://howardhinnant.github.io/date_algorithms.html
+    // -- RTC register helpers (STM32F103 specific) --
+
+    static uint32_t getRtcCounter() {
+        // Read twice to handle counter rollover between CNTH and CNTL
+        uint16_t h1 = RTC->CNTH;
+        uint16_t l  = RTC->CNTL;
+        uint16_t h2 = RTC->CNTH;
+        if (h1 != h2) { l = RTC->CNTL; h1 = h2; }
+        return ((uint32_t)h1 << 16) | l;
+    }
+
+    static void setRtcCounter(uint32_t value) {
+        rtcEnterConfig();
+        RTC->CNTH = (uint16_t)(value >> 16);
+        RTC->CNTL = (uint16_t)(value & 0xFFFF);
+        rtcExitConfig();
+    }
+
+    static void rtcWaitSync() {
+        RTC->CRL &= ~RTC_CRL_RSF;
+        while (!(RTC->CRL & RTC_CRL_RSF)) {}
+    }
+
+    static void rtcEnterConfig() {
+        while (!(RTC->CRL & RTC_CRL_RTOFF)) {}  // wait for last write to finish
+        RTC->CRL |= RTC_CRL_CNF;                // enter config mode
+    }
+
+    static void rtcExitConfig() {
+        RTC->CRL &= ~RTC_CRL_CNF;               // exit config mode
+        while (!(RTC->CRL & RTC_CRL_RTOFF)) {}   // wait for write to complete
+    }
+
+    // -- Civil date algorithms (Howard Hinnant) --
 
     static void epochToDate(uint32_t epoch, uint16_t& year, uint8_t& month, uint8_t& day) {
         uint32_t z = epoch / 86400 + 719468;
@@ -89,3 +132,4 @@ private:
 };
 
 } // namespace arcana
+
