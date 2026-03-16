@@ -6,7 +6,7 @@
 #include "LcdView.hpp"
 #include "MainView.hpp"
 #include "FreeRTOS.h"
-#include "timers.h"
+#include "task.h"
 #include "queue.h"
 #include "semphr.h"
 
@@ -51,10 +51,13 @@ private:
     static void onSdBenchmark(SdBenchmarkModel* model, void* ctx);
     static void onBaseTimer(TimerModel* model, void* ctx);
 
-    // Render timer (4ms = 250Hz) — View pulls from ViewModel
-    static void renderTimerCallback(TimerHandle_t timer);
-    TimerHandle_t mEcgTimer;
-    StaticTimer_t mEcgTimerBuf;
+    // Render task — wakes on xTaskNotify from Observable callbacks / ECG push
+    static void renderTask(void* param);
+    void processRender();
+    static const uint16_t RENDER_TASK_STACK = 256;
+    StaticTask_t mRenderTaskBuf;
+    StackType_t mRenderTaskStack[RENDER_TASK_STACK];
+    TaskHandle_t mRenderTaskHandle;
 
     // ECG sample queue
     static const uint8_t ECG_QUEUE_LEN = 16;

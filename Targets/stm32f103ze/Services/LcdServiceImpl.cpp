@@ -11,7 +11,7 @@ namespace lcd {
 // ---------------------------------------------------------------------------
 
 LcdServiceImpl::LcdServiceImpl()
-    : mEcgTimer(0)
+    : mRenderTaskHandle(0)
     , mEcgQueue(0)
     , mViewModel()
     , mRendered()
@@ -49,19 +49,21 @@ ServiceStatus LcdServiceImpl::init() {
 }
 
 ServiceStatus LcdServiceImpl::start() {
-    // ECG sample queue (ATS task → render timer)
+    // ECG sample queue (ATS task → render task)
     mEcgQueue = xQueueCreateStatic(ECG_QUEUE_LEN, 1,
                                     mEcgQueueStorage, &mEcgQueueBuf);
 
-    // Render timer (4ms = 250Hz) — View pulls from ViewModel
-    mEcgTimer = xTimerCreateStatic("lcd", pdMS_TO_TICKS(4), pdTRUE,
-                                    this, renderTimerCallback, &mEcgTimerBuf);
-    xTimerStart(mEcgTimer, 0);
+    // Render task — blocks on xTaskNotifyWait, wakes on Observable / ECG events
+    mRenderTaskHandle = xTaskCreateStatic(
+        renderTask, "LcdRndr", RENDER_TASK_STACK,
+        this, tskIDLE_PRIORITY + 1, mRenderTaskStack, &mRenderTaskBuf);
+    if (!mRenderTaskHandle) return ServiceStatus::Error;
     return ServiceStatus::OK;
 }
 
 void LcdServiceImpl::stop() {
-    if (mEcgTimer) xTimerStop(mEcgTimer, 0);
+    // Task will exit when mActiveView is nulled
+    mActiveView = nullptr;
 }
 
 void LcdServiceImpl::setView(LcdView* view) {
@@ -84,6 +86,7 @@ void LcdServiceImpl::onSensorData(SensorDataModel* model, void* ctx) {
     in.type = LcdInput::SensorData;
     in.sensor.temperature = model->temperature;
     self->mViewModel.onEvent(in);
+    if (self->mRenderTaskHandle) xTaskNotifyGive(self->mRenderTaskHandle);
 }
 
 void LcdServiceImpl::onLightData(LightDataModel*, void*) {}
@@ -97,6 +100,7 @@ void LcdServiceImpl::onStorageStats(StorageStatsModel* model, void* ctx) {
     in.storage.totalKB = model->totalKB;
     in.storage.kbps = model->kbPerSec;
     self->mViewModel.onEvent(in);
+    if (self->mRenderTaskHandle) xTaskNotifyGive(self->mRenderTaskHandle);
 }
 
 void LcdServiceImpl::onSdBenchmark(SdBenchmarkModel*, void*) {}
@@ -109,6 +113,7 @@ void LcdServiceImpl::onBaseTimer(TimerModel*, void* ctx) {
     in.timer.synced = SystemClock::getInstance().isSynced();
     in.timer.uptime = xTaskGetTickCount() / configTICK_RATE_HZ;
     self->mViewModel.onEvent(in);
+    if (self->mRenderTaskHandle) xTaskNotifyGive(self->mRenderTaskHandle);
 }
 
 // ---------------------------------------------------------------------------
@@ -116,40 +121,51 @@ void LcdServiceImpl::onBaseTimer(TimerModel*, void* ctx) {
 // ---------------------------------------------------------------------------
 
 void LcdServiceImpl::pushEcgSample(uint8_t y) {
-    if (mEcgQueue) xQueueSend(mEcgQueue, &y, 0);
+    if (mEcgQueue) {
+        xQueueSend(mEcgQueue, &y, 0);
+        if (mRenderTaskHandle) xTaskNotifyGive(mRenderTaskHandle);
+    }
 }
 
 // ---------------------------------------------------------------------------
-// Render timer (4ms) — View pulls from ViewModel, all LCD in ONE context
+// Render task — blocks on xTaskNotify, wakes on Observable / ECG events
 // ---------------------------------------------------------------------------
 
-void LcdServiceImpl::renderTimerCallback(TimerHandle_t timer) {
-    LcdServiceImpl* self = static_cast<LcdServiceImpl*>(pvTimerGetTimerID(timer));
-    if (!self->mActiveView) return;
-    if (xSemaphoreTake(self->mLcdMutex, 0) != pdTRUE) return;
+void LcdServiceImpl::renderTask(void* param) {
+    LcdServiceImpl* self = static_cast<LcdServiceImpl*>(param);
+    for (;;) {
+        // Block until notified, or timeout at 100ms (safety: 10Hz minimum render)
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(100));
+        self->processRender();
+    }
+}
 
-    // 1. Process ECG queue → ViewModel → View
+void LcdServiceImpl::processRender() {
+    if (!mActiveView) return;
+    if (xSemaphoreTake(mLcdMutex, pdMS_TO_TICKS(10)) != pdTRUE) return;
+
+    // 1. Drain all pending ECG samples → ViewModel → View
     uint8_t y;
-    if (xQueueReceive(self->mEcgQueue, &y, 0) == pdTRUE) {
-        const LcdOutput& out = self->mViewModel.output();
+    while (xQueueReceive(mEcgQueue, &y, 0) == pdTRUE) {
+        const LcdOutput& out = mViewModel.output();
         uint8_t cursor = out.ecgCursor;
         uint8_t prevY = out.ecgPrevY;
 
         LcdInput in;
         in.type = LcdInput::EcgSample;
         in.ecg.y = y;
-        self->mViewModel.onEvent(in);
+        mViewModel.onEvent(in);
 
-        self->mActiveView->renderEcgColumn(self->mLcd, cursor, y, prevY);
+        mActiveView->renderEcgColumn(mLcd, cursor, y, prevY);
     }
 
-    // 2. Render dirty fields (stats, time, temp) — checked at 250Hz but only draws when dirty
-    if (self->mViewModel.output().dirty) {
-        self->mActiveView->render(self->mLcd, self->mViewModel.output(), self->mRendered);
-        self->mViewModel.clearDirty();
+    // 2. Render dirty fields (stats, time, temp)
+    if (mViewModel.output().dirty) {
+        mActiveView->render(mLcd, mViewModel.output(), mRendered);
+        mViewModel.clearDirty();
     }
 
-    xSemaphoreGive(self->mLcdMutex);
+    xSemaphoreGive(mLcdMutex);
 }
 
 } // namespace lcd

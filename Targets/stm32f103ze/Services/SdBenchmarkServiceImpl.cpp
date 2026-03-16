@@ -8,7 +8,10 @@
 
 /* Global flag: set to 1 after exFAT format+mount succeeds.
  * MQTT task waits for this before connecting. */
-extern "C" { volatile uint8_t g_exfat_ready = 0; }
+extern "C" {
+    volatile uint8_t g_exfat_ready = 0;
+    void sdio_force_reinit(void);
+}
 
 // LCD debug output for SD status (reuse SD Bench area: y=80..124)
 static void sdLcdStatus(const char* msg) {
@@ -101,12 +104,30 @@ void SdBenchmarkServiceImpl::runBenchmark() {
     char msg[40];
     FRESULT fr;
 
-    // Step 1: Try to mount existing exFAT filesystem
-    sdLcdStatus("[SD] Mounting...");
-    printf("[SD] Mounting...\r\n");
-    fr = f_mount(&sFatFs, "", 1);
+    static const int MAX_RETRIES = 3;
+    bool mounted = false;
 
-    if (fr != FR_OK) {
+    for (int attempt = 0; attempt < MAX_RETRIES && !mounted; ++attempt) {
+        if (attempt > 0) {
+            // HAL-level recovery before retry
+            snprintf(msg, sizeof(msg), "[SD] Retry %d/%d reinit", attempt + 1, MAX_RETRIES);
+            sdLcdStatus(msg);
+            printf("%s\r\n", msg);
+            f_mount(0, "", 0);           // Unmount (ignore result)
+            sdio_force_reinit();         // Reset SDIO + DMA state
+            vTaskDelay(pdMS_TO_TICKS(500));
+        }
+
+        // Step 1: Try to mount existing exFAT filesystem
+        sdLcdStatus("[SD] Mounting...");
+        printf("[SD] Mounting... (attempt %d)\r\n", attempt + 1);
+        fr = f_mount(&sFatFs, "", 1);
+
+        if (fr == FR_OK) {
+            mounted = true;
+            break;
+        }
+
         // Mount failed — format as exFAT (first time or corrupted)
         snprintf(msg, sizeof(msg), "[SD] No FS (%d), formatting", (int)fr);
         sdLcdStatus(msg);
@@ -125,7 +146,7 @@ void SdBenchmarkServiceImpl::runBenchmark() {
             snprintf(msg, sizeof(msg), "[SD] mkfs ERR: %d", (int)fr);
             sdLcdStatus(msg);
             printf("%s\r\n", msg);
-            return;
+            continue;  // Retry with HAL reinit
         }
         sdLcdStatus("[SD] Format OK!");
         printf("[SD] Format OK!\r\n");
@@ -133,12 +154,20 @@ void SdBenchmarkServiceImpl::runBenchmark() {
 
         // Mount the freshly formatted filesystem
         fr = f_mount(&sFatFs, "", 1);
-        if (fr != FR_OK) {
+        if (fr == FR_OK) {
+            mounted = true;
+        } else {
             snprintf(msg, sizeof(msg), "[SD] mount ERR: %d", (int)fr);
             sdLcdStatus(msg);
             printf("%s\r\n", msg);
-            return;
+            // Will retry with HAL reinit on next iteration
         }
+    }
+
+    if (!mounted) {
+        sdLcdStatus("[SD] FAILED all retries");
+        printf("[SD] FAILED after %d attempts\r\n", MAX_RETRIES);
+        return;
     }
 
     // Filesystem mounted — signal MQTT
