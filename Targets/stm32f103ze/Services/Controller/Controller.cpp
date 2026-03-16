@@ -10,6 +10,7 @@
 #include "MqttServiceImpl.hpp"
 #include "LcdViewModel.hpp"
 #include "MainView.hpp"
+#include "Hc08Ble.hpp"
 
 namespace arcana {
 
@@ -94,6 +95,9 @@ void Controller::initHAL() {
     mSdStorage->initHAL();
     mWifi->initHAL();
     mMqtt->initHAL();
+
+    // BLE (HC-08 on USART2)
+    Hc08Ble::getInstance().initHAL();
 }
 
 void Controller::initServices() {

@@ -47,6 +47,7 @@
 "./Services/Driver/EcgDisplay.o"
 "./Services/Driver/Esp8266.o"
 "./Services/Driver/FatFsFilePort.o"
+"./Services/Driver/Hc08Ble.o"
 "./Services/Driver/I2cBus.o"
 "./Services/Driver/Ili9341Lcd.o"
 "./Services/Driver/Mpu6050Sensor.o"

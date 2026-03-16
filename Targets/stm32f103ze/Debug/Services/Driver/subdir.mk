@@ -10,6 +10,7 @@ CPP_SRCS += \
 ../Services/Driver/EcgDisplay.cpp \
 ../Services/Driver/Esp8266.cpp \
 ../Services/Driver/FatFsFilePort.cpp \
+../Services/Driver/Hc08Ble.cpp \
 ../Services/Driver/I2cBus.cpp \
 ../Services/Driver/Ili9341Lcd.cpp \
 ../Services/Driver/Mpu6050Sensor.cpp \
@@ -22,6 +23,7 @@ OBJS += \
 ./Services/Driver/EcgDisplay.o \
 ./Services/Driver/Esp8266.o \
 ./Services/Driver/FatFsFilePort.o \
+./Services/Driver/Hc08Ble.o \
 ./Services/Driver/I2cBus.o \
 ./Services/Driver/Ili9341Lcd.o \
 ./Services/Driver/Mpu6050Sensor.o \
@@ -34,6 +36,7 @@ CPP_DEPS += \
 ./Services/Driver/EcgDisplay.d \
 ./Services/Driver/Esp8266.d \
 ./Services/Driver/FatFsFilePort.d \
+./Services/Driver/Hc08Ble.d \
 ./Services/Driver/I2cBus.d \
 ./Services/Driver/Ili9341Lcd.d \
 ./Services/Driver/Mpu6050Sensor.d \
