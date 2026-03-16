@@ -18,6 +18,7 @@ namespace atsstorage {
 // Static storage
 uint8_t AtsStorageServiceImpl::sKey[crypto::ChaCha20::KEY_SIZE] = {};
 uint8_t AtsStorageServiceImpl::sSlowBuf[ats::BLOCK_SIZE] = {};
+uint8_t AtsStorageServiceImpl::sReadCache[ats::BLOCK_SIZE] = {};
 
 // Time source for ArcanaTS — uses SystemClock epoch or tick fallback
 static uint32_t atsGetTime() {
@@ -122,7 +123,7 @@ void AtsStorageServiceImpl::storageTask(void* param) {
         return;
     }
 
-    printf("[ATS] Ready\r\n");
+    printf("[ATS] Ready, 1kHz mode\r\n");
     self->taskLoop();
     vTaskDelete(0);
 }
@@ -143,12 +144,17 @@ bool AtsStorageServiceImpl::openDailyDb() {
     cfg.primaryBufA = 0;
     cfg.primaryBufB = 0;
     cfg.slowBuf = sSlowBuf;
-    cfg.readCache = 0;  // shares with slowBuf
+    cfg.readCache = sReadCache;
 
     printf("[ATS] db.open...\r\n");
     if (!mDb.open("sensor.ats", cfg)) {
-        printf("[ATS] db.open FAILED\r\n");
-        return false;
+        // Recovery failed — delete corrupt file and retry fresh
+        printf("[ATS] db.open failed, deleting corrupt file...\r\n");
+        f_unlink("sensor.ats");
+        if (!mDb.open("sensor.ats", cfg)) {
+            printf("[ATS] db.open FAILED\r\n");
+            return false;
+        }
     }
     printf("[ATS] db.open OK (started=%d)\r\n", mDb.isOpen() && mDb.getChannelCount() > 0);
 
@@ -196,32 +202,65 @@ void AtsStorageServiceImpl::rotateDailyDb(uint32_t lastDay) {
 }
 
 void AtsStorageServiceImpl::taskLoop() {
-    static const uint32_t FLUSH_INTERVAL_MS = 60000;  // 60s timer flush
     uint32_t lastDay = 0;
-    uint32_t lastFlushTick = xTaskGetTickCount();
+    uint32_t lastReportTick = xTaskGetTickCount();
+    TickType_t nextWake = xTaskGetTickCount();
+    uint32_t windowOk = 0;
+    uint32_t windowFail = 0;
+    uint8_t rec[RECORD_SIZE];
+    memset(rec, 0, RECORD_SIZE);
 
     while (mRunning) {
-        if (xSemaphoreTake(mWriteSem, pdMS_TO_TICKS(1000)) == pdTRUE) {
-            if (!mRunning) break;
-            appendRecord(&mPendingData);
+        // 1kHz pacing — 1 record per ms
+        vTaskDelayUntil(&nextWake, 1);
+
+        if (!mDbReady) continue;
+
+        // Build synthetic record (will be replaced by real ADS1298 SPI data)
+        uint32_t ts = atsGetTime();
+        memcpy(rec, &ts, 4);
+        float temp = 25.0f + (float)(mTotalRecords % 1000) * 0.01f;
+        memcpy(rec + 4, &temp, 4);
+        int16_t ax = (int16_t)(mTotalRecords & 0x7FFF);
+        memcpy(rec + 8, &ax, 2);
+        memcpy(rec + 10, &ax, 2);
+        memcpy(rec + 12, &ax, 2);
+
+        if (mDb.append(0, rec)) {
+            mTotalRecords++;
+            windowOk++;
+        } else {
+            windowFail++;
         }
 
-        // Timer-based slow flush — limit data loss window to 60s
-        uint32_t nowTick = xTaskGetTickCount();
-        if (mDbReady && (nowTick - lastFlushTick) >= pdMS_TO_TICKS(FLUSH_INTERVAL_MS)) {
-            printf("[ATS] timer flush %lu rec\r\n", (unsigned long)mTotalRecords);
-            mDb.flush();
-            lastFlushTick = nowTick;
-        }
+        // Report + LCD update every 1 second
+        uint32_t now = xTaskGetTickCount();
+        if ((now - lastReportTick) >= pdMS_TO_TICKS(1000)) {
+            mStatsModel.recordCount = mTotalRecords;
+            mStatsModel.writesPerSec = (uint16_t)windowOk;
+            mStatsModel.totalKB = (mDb.getStats().blocksWritten + 1) * 4;
+            mStatsModel.kbPerSec = (uint16_t)(windowOk * RECORD_SIZE / 1024);
+            mStatsModel.updateTimestamp();
+            mStatsObs.publish(&mStatsModel);
 
-        // Midnight rotation
-        if (SystemClock::getInstance().isSynced()) {
-            uint32_t today = SystemClock::dateYYYYMMDD(
-                SystemClock::getInstance().now());
-            if (lastDay != 0 && today != lastDay) {
-                rotateDailyDb(lastDay);
+            printf("[ATS] %lu rec, %lu/s, blk=%lu (%luKB)\r\n",
+                   (unsigned long)mTotalRecords, (unsigned long)windowOk,
+                   (unsigned long)mDb.getStats().blocksWritten,
+                   (unsigned long)mStatsModel.totalKB);
+
+            windowOk = 0;
+            windowFail = 0;
+            lastReportTick = now;
+
+            // Midnight rotation
+            if (SystemClock::getInstance().isSynced()) {
+                uint32_t today = SystemClock::dateYYYYMMDD(
+                    SystemClock::getInstance().now());
+                if (lastDay != 0 && today != lastDay) {
+                    rotateDailyDb(lastDay);
+                }
+                lastDay = today;
             }
-            lastDay = today;
         }
     }
 }
@@ -256,6 +295,8 @@ void AtsStorageServiceImpl::appendRecord(const SensorDataModel* model) {
 
         mStatsModel.recordCount = mTotalRecords;
         mStatsModel.writesPerSec = mLastRate;
+        mStatsModel.totalKB = (mDb.getStats().blocksWritten + 1) * 4;
+        mStatsModel.kbPerSec = (uint16_t)(mLastRate * RECORD_SIZE / 1024);
         mStatsModel.updateTimestamp();
         mStatsObs.publish(&mStatsModel);
     }

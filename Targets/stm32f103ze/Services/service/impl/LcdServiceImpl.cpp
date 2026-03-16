@@ -170,17 +170,31 @@ void LcdServiceImpl::updateStorageDisplay(const StorageStatsModel* data) {
     // "Records:" label at VALUE_X, value after label (x=68)
     static const uint16_t VAL_X = VALUE_X + 54;  // after "Records:" (9 chars × 6px)
 
-    char buf[20];
+    // Format: "10231 (200KB)"
+    char buf[28];
     uint32ToStr(buf, data->recordCount);
+    char* p = buf;
+    while (*p) p++;
+    *p++ = ' '; *p++ = '(';
+    uint32ToStr(p, data->totalKB);
+    while (*p) p++;
+    *p++ = 'K'; *p++ = 'B'; *p++ = ')'; *p = '\0';
+
     mLcd.fillRect(VAL_X, SD_RECORDS_Y, 160, 8, Ili9341Lcd::BLACK);
     mLcd.drawString(VAL_X, SD_RECORDS_Y, buf, Ili9341Lcd::GREEN, Ili9341Lcd::BLACK, 1);
 
     // "Rate:" label at VALUE_X, value after label
     static const uint16_t RATE_VAL_X = VALUE_X + 36;  // after "Rate:" (6 chars × 6px)
-    char rateBuf[16];
+
+    // Format: "1000 (14KB) /s"
+    char rateBuf[28];
     uint32ToStr(rateBuf, data->writesPerSec);
-    char* p = rateBuf;
+    p = rateBuf;
     while (*p) p++;
+    *p++ = ' '; *p++ = '(';
+    uint32ToStr(p, data->kbPerSec);
+    while (*p) p++;
+    *p++ = 'K'; *p++ = 'B'; *p++ = ')';
     *p++ = ' '; *p++ = '/'; *p++ = 's'; *p = '\0';
 
     mLcd.fillRect(RATE_VAL_X, SD_RATE_Y, 160, 8, Ili9341Lcd::BLACK);

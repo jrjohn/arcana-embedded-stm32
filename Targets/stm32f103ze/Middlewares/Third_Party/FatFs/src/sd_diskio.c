@@ -135,6 +135,49 @@ DRESULT disk_read(BYTE pdrv, BYTE *buff, LBA_t sector, UINT count)
     return RES_ERROR;
 }
 
+/* Proactive SDIO peripheral reset — prevents DMA state degradation.
+ * STM32F103 SDIO+DMA2 accumulates stale state after ~600 consecutive
+ * DMA writes. This resets the peripheral BEFORE degradation occurs. */
+#define SDIO_RESET_INTERVAL 400
+static volatile uint32_t g_sdio_write_count = 0;
+
+static void sdio_proactive_reset(void) {
+    extern DMA_HandleTypeDef g_hdma_sdio;
+
+    /* 1. Disable DMA + wait for it to stop */
+    __HAL_DMA_DISABLE(&g_hdma_sdio);
+    while (g_hdma_sdio.Instance->CCR & DMA_CCR_EN) {}
+
+    /* 2. Clear DMA flags + state */
+    __HAL_DMA_CLEAR_FLAG(&g_hdma_sdio,
+        DMA_FLAG_TC4 | DMA_FLAG_TE4 | DMA_FLAG_HT4 | DMA_FLAG_GL4);
+    g_hdma_sdio.State = HAL_DMA_STATE_READY;
+    g_hdma_sdio.Lock = HAL_UNLOCKED;
+
+    /* 3. Clear SDIO data path + all interrupt flags */
+    SDIO->DCTRL = 0;
+    SDIO->MASK = 0;
+    SDIO->ICR = 0xFFFFFFFF;
+
+    /* 4. Send STOP command to reset card's internal state */
+    SDMMC_CmdStopTransfer(g_hsd.Instance);
+
+    /* 5. Clear flags again after STOP */
+    SDIO->ICR = 0xFFFFFFFF;
+    SDIO->DCTRL = 0;
+
+    /* 6. Reset HAL state */
+    g_hsd.State = HAL_SD_STATE_READY;
+    g_hsd.Context = SD_CONTEXT_NONE;
+    g_hsd.ErrorCode = HAL_SD_ERROR_NONE;
+
+    /* 7. Wait for card to be ready */
+    uint32_t t = HAL_GetTick() + 500;
+    while (HAL_SD_GetCardState(&g_hsd) != HAL_SD_CARD_TRANSFER) {
+        if (HAL_GetTick() > t) break;
+    }
+}
+
 /*-----------------------------------------------------------------------*/
 /* Write Sector(s) — DMA at full SDIO clock speed                        */
 /*-----------------------------------------------------------------------*/
@@ -142,6 +185,12 @@ DRESULT disk_write(BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count)
 {
     if (pdrv != 0 || !g_sd_ready) return RES_NOTRDY;
     if (!g_sd_dma_sem) return RES_ERROR;
+
+    /* Proactive reset before degradation threshold */
+    if (++g_sdio_write_count >= SDIO_RESET_INTERVAL) {
+        g_sdio_write_count = 0;
+        sdio_proactive_reset();
+    }
 
     for (int retry = 0; retry < 3; retry++) {
         ensure_hal_ready();

@@ -72,11 +72,15 @@ class StorageStatsModel : public Model {
 public:
     uint32_t recordCount;
     uint16_t writesPerSec;  // Writes completed in last 1-second window
+    uint32_t totalKB;       // Total file size on disk in KB
+    uint16_t kbPerSec;      // Data throughput in KB/s
 
     StorageStatsModel()
         : Model(static_cast<uint8_t>(F103ModelType::StorageStats))
         , recordCount(0)
-        , writesPerSec(0) {}
+        , writesPerSec(0)
+        , totalKB(0)
+        , kbPerSec(0) {}
 };
 
 class SdBenchmarkModel : public Model {

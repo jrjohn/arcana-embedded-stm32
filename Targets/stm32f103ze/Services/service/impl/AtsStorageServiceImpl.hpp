@@ -67,6 +67,7 @@ private:
 
     // Buffers (static, no heap)
     static uint8_t sSlowBuf[ats::BLOCK_SIZE];
+    static uint8_t sReadCache[ats::BLOCK_SIZE];
 
     // Per-device encryption key
     static uint8_t sKey[crypto::ChaCha20::KEY_SIZE];

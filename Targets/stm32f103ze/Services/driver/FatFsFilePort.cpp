@@ -10,6 +10,8 @@
 #include "ats/ArcanaTsTypes.hpp"
 #include "FreeRTOS.h"
 #include "task.h"
+#include <cstring>
+#include <cstdio>
 
 namespace arcana {
 namespace ats {
@@ -18,6 +20,7 @@ static const int MAX_RETRIES = 3;
 
 bool FatFsFilePort::open(const char* path, uint8_t mode) {
     if (mIsOpen) return false;
+    memset(&mFil, 0, sizeof(mFil));
 
     BYTE fa = 0;
     if (mode & ATS_MODE_READ)   fa |= FA_READ;
@@ -30,6 +33,7 @@ bool FatFsFilePort::open(const char* path, uint8_t mode) {
         mIsOpen = true;
         return true;
     }
+    printf("[FP] open '%s' fa=0x%02X err=%d\r\n", path, (int)fa, (int)fr);
     return false;
 }
 
