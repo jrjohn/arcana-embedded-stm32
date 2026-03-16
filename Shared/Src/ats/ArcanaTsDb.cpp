@@ -517,12 +517,11 @@ bool ArcanaTsDb::writeBlock(uint8_t channelId, const uint8_t* payload,
     memcpy(hdr->nonce, nonce, 12);
     hdr->payloadCrc32 = payloadCrc;
 
-    // Write to file: payload + header fields first
-    if (!mCfg.file->seek(mNextBlockOffset)) return false;
-    // Write everything except blockSeqNo (bytes 4 onward)
+    // Write to file: header fields + payload first (skip first 4 bytes = blockSeqNo)
+    if (!mCfg.file->seek(mNextBlockOffset + 4)) return false;
     if (mCfg.file->write(blockBuf + 4, BLOCK_SIZE - 4) != (BLOCK_SIZE - 4)) return false;
 
-    // Atomic commit: write blockSeqNo last
+    // Atomic commit: write blockSeqNo at offset 0 LAST
     uint32_t seqNo = mNextSeqNo;
     if (!mCfg.file->seek(mNextBlockOffset)) return false;
     if (mCfg.file->write(reinterpret_cast<const uint8_t*>(&seqNo), 4) != 4) return false;
@@ -852,6 +851,7 @@ bool ArcanaTsDb::recoverFromExisting() {
 
     uint32_t fileSize = mCfg.file->size();
     uint32_t validBlocks = 0;
+    uint32_t totalRecords = 0;
 
     while (mNextBlockOffset + BLOCK_SIZE <= fileSize) {
         AtsBlockHeader hdr;
@@ -860,6 +860,7 @@ bool ArcanaTsDb::recoverFromExisting() {
         addIndexEntry(mNextBlockOffset / BLOCK_SIZE, hdr.channelId,
                       hdr.recordCount, hdr.firstTimestamp, hdr.lastTimestamp);
 
+        totalRecords += hdr.recordCount;
         mNextSeqNo = hdr.blockSeqNo + 1;
         mNextBlockOffset += BLOCK_SIZE;
         validBlocks++;
@@ -873,6 +874,7 @@ bool ArcanaTsDb::recoverFromExisting() {
     }
 
     mStats.blocksWritten = validBlocks;
+    mStats.totalRecords = totalRecords;
 
     // Re-init buffers
     if (mCfg.primaryChannel != 0xFF && mCfg.primaryBufA && mCfg.primaryBufB) {

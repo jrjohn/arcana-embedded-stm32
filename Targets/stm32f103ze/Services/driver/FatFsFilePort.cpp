@@ -23,7 +23,7 @@ bool FatFsFilePort::open(const char* path, uint8_t mode) {
     if (mode & ATS_MODE_READ)   fa |= FA_READ;
     if (mode & ATS_MODE_WRITE)  fa |= FA_WRITE;
     if (mode & ATS_MODE_CREATE) fa |= FA_CREATE_ALWAYS;
-    else if (mode & ATS_MODE_WRITE) fa |= FA_OPEN_ALWAYS;
+    else                        fa |= FA_OPEN_EXISTING;
 
     FRESULT fr = f_open(&mFil, path, fa);
     if (fr == FR_OK) {
