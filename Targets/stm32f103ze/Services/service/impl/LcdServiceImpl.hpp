@@ -2,10 +2,27 @@
 
 #include "LcdService.hpp"
 #include "Ili9341Lcd.hpp"
+#include "LcdViewModel.hpp"
+#include "LcdView.hpp"
+#include "MainView.hpp"
+#include "FreeRTOS.h"
+#include "timers.h"
+#include "queue.h"
+#include "semphr.h"
 
 namespace arcana {
 namespace lcd {
 
+/**
+ * LCD Service — MVVM + multi-view architecture.
+ *
+ * Data flow:
+ *   Observable callbacks → LcdInput → ViewModel.onEvent() → Output
+ *   Active LcdView reads Output and renders to LCD.
+ *
+ * Views can be switched at runtime (button/touch).
+ * Currently: MainView (dashboard + ECG).
+ */
 class LcdServiceImpl : public LcdService {
 public:
     static LcdService& getInstance();
@@ -15,44 +32,48 @@ public:
     ServiceStatus start() override;
     void stop() override;
 
+    /** Push an ECG sample from any task (thread-safe via queue) */
+    void pushEcgSample(uint8_t y);
+
+    /** Switch to a different view */
+    void setView(LcdView* view);
+
 private:
     LcdServiceImpl();
     ~LcdServiceImpl();
     LcdServiceImpl(const LcdServiceImpl&);
     LcdServiceImpl& operator=(const LcdServiceImpl&);
 
+    // Observable callbacks
     static void onSensorData(SensorDataModel* model, void* ctx);
     static void onLightData(LightDataModel* model, void* ctx);
     static void onStorageStats(StorageStatsModel* model, void* ctx);
     static void onSdBenchmark(SdBenchmarkModel* model, void* ctx);
     static void onBaseTimer(TimerModel* model, void* ctx);
-    void updateSensorDisplay(const SensorDataModel* data);
-    void updateLightDisplay(const LightDataModel* data);
-    void updateStorageDisplay(const StorageStatsModel* data);
-    void updateSdBenchmarkDisplay(const SdBenchmarkModel* data);
-    void updateTimeDisplay();
-    void drawInitialScreen();
-    void drawEcgWaveform();
 
-    static void intToStr(char* buf, int value);
-    static void uint32ToStr(char* buf, uint32_t value);
+    // Render timer (4ms = 250Hz) — View pulls from ViewModel
+    static void renderTimerCallback(TimerHandle_t timer);
+    TimerHandle_t mEcgTimer;
+    StaticTimer_t mEcgTimerBuf;
 
+    // ECG sample queue
+    static const uint8_t ECG_QUEUE_LEN = 16;
+    QueueHandle_t mEcgQueue;
+    StaticQueue_t mEcgQueueBuf;
+    uint8_t mEcgQueueStorage[ECG_QUEUE_LEN];
+
+    // MVVM
+    LcdViewModel mViewModel;
+    LcdOutput mRendered;
+
+    // View management
     Ili9341Lcd mLcd;
-    uint8_t mEcgPrevY[240];  // previous Y for each column (for erase)
+    MainView mMainView;
+    LcdView* mActiveView;
 
-    static const uint16_t TEMP_VALUE_Y = 42;
-    static const uint16_t SD_SPEED_Y = 80;
-    static const uint16_t SD_TOTAL_Y = 100;
-    static const uint16_t SD_RECORDS_Y = 112;
-    static const uint16_t SD_RATE_Y = 124;
-    static const uint16_t MQTT_LABEL_Y = 142;
-    static const uint16_t MQTT_STATUS_Y = 154;
-    static const uint16_t ECG_TOP_Y = 174;
-    static const uint16_t ECG_HEIGHT = 100;
-    static const uint16_t ECG_WIDTH = 240;
-    static const uint16_t CLOCK_DATE_Y = 286;
-    static const uint16_t CLOCK_TIME_Y = 304;
-    static const uint16_t VALUE_X = 20;
+    // LCD access mutex (FSMC not safe for concurrent access)
+    SemaphoreHandle_t mLcdMutex;
+    StaticSemaphore_t mLcdMutexBuf;
 };
 
 } // namespace lcd

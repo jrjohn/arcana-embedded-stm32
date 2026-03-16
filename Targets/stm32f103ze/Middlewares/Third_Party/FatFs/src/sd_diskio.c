@@ -144,10 +144,7 @@ static volatile uint32_t g_sdio_write_count = 0;
 static void sdio_reinit(void) {
     extern DMA_HandleTypeDef g_hdma_sdio;
 
-    /* 1. Full HAL DeInit — resets SDIO peripheral + state machine */
-    HAL_SD_DeInit(&g_hsd);
-
-    /* 2. Reset DMA channel */
+    /* 1. Disable + reset DMA channel */
     __HAL_DMA_DISABLE(&g_hdma_sdio);
     while (g_hdma_sdio.Instance->CCR & DMA_CCR_EN) {}
     __HAL_DMA_CLEAR_FLAG(&g_hdma_sdio,
@@ -155,25 +152,24 @@ static void sdio_reinit(void) {
     g_hdma_sdio.State = HAL_DMA_STATE_READY;
     g_hdma_sdio.Lock = HAL_UNLOCKED;
 
-    /* 3. Re-init SD at 400kHz (identification phase) */
-    g_hsd.Instance = SDIO;
-    g_hsd.Init.ClockEdge = SDIO_CLOCK_EDGE_RISING;
-    g_hsd.Init.ClockBypass = SDIO_CLOCK_BYPASS_DISABLE;
-    g_hsd.Init.ClockPowerSave = SDIO_CLOCK_POWER_SAVE_DISABLE;
-    g_hsd.Init.BusWide = SDIO_BUS_WIDE_1B;
-    g_hsd.Init.HardwareFlowControl = SDIO_HARDWARE_FLOW_CONTROL_DISABLE;
-    g_hsd.Init.ClockDiv = 178;  /* 400kHz */
-    HAL_SD_Init(&g_hsd);
+    /* 2. Clear SDIO data path + flags (keep card link alive for FatFS) */
+    SDIO->DCTRL = 0;
+    SDIO->MASK = 0;
+    SDIO->ICR = 0xFFFFFFFF;
+    SDMMC_CmdStopTransfer(g_hsd.Instance);
+    SDIO->ICR = 0xFFFFFFFF;
+    SDIO->DCTRL = 0;
 
-    /* 4. Re-link DMA */
-    HAL_DMA_Init(&g_hdma_sdio);
-    __HAL_LINKDMA(&g_hsd, hdmatx, g_hdma_sdio);
-    __HAL_LINKDMA(&g_hsd, hdmarx, g_hdma_sdio);
+    /* 3. Reset HAL state machine (but NOT the card) */
+    g_hsd.State = HAL_SD_STATE_READY;
+    g_hsd.Context = SD_CONTEXT_NONE;
+    g_hsd.ErrorCode = HAL_SD_ERROR_NONE;
 
-    /* 5. Switch to 4-bit bus + 24MHz transfer clock */
-    HAL_SD_ConfigWideBusOperation(&g_hsd, SDIO_BUS_WIDE_4B);
-    SDIO->CLKCR = (SDIO->CLKCR & ~0xFFU) | 1U;  /* CLKDIV=1 → 24MHz */
-    g_hsd.Init.ClockDiv = 1;
+    /* 4. Wait for card to be ready */
+    uint32_t t = HAL_GetTick() + 500;
+    while (HAL_SD_GetCardState(&g_hsd) != HAL_SD_CARD_TRANSFER) {
+        if (HAL_GetTick() > t) break;
+    }
 }
 
 /* Expose reinit for external callers (AtsStorageService recovery) */

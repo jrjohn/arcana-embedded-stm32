@@ -2,7 +2,7 @@
 #include "AtsStorageServiceImpl.hpp"
 #include "DeviceKey.hpp"
 #include "SystemClock.hpp"
-#include "EcgBuffer.hpp"
+#include "LcdServiceImpl.hpp"
 #include "ats/ArcanaTsSchema.hpp"
 #include "ats/ArcanaTsTypes.hpp"
 #include "ff.h"
@@ -374,9 +374,10 @@ void AtsStorageServiceImpl::taskLoop() {
         uint8_t ecgVal = ECG_LUT[ecgPhase % ECG_LUT_LEN];
         ecgPhase++;
 
-        // Draw ECG column every 4th sample (250Hz → 240 columns ≈ 1 sec sweep)
+        // Push ECG sample to LCD via queue (250Hz, thread-safe)
         if ((mTotalRecords & 3) == 0) {
-            g_ecgDisplay.pushAndDraw(ecgVal);
+            static_cast<lcd::LcdServiceImpl&>(
+                lcd::LcdServiceImpl::getInstance()).pushEcgSample(ecgVal);
         }
 
         // Build synthetic record (will be replaced by real ADS1298 SPI data)
