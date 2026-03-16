@@ -73,6 +73,10 @@ void Controller::wireServices() {
     mMqtt->input.Wifi       = mWifi;
     mMqtt->input.SensorData = mSensor->output.DataEvents;
     mMqtt->input.LightData  = mLight->output.DataEvents;
+
+    // Wire BLE <- Sensor + Light (JSON streaming)
+    mBle->input.SensorData = mSensor->output.DataEvents;
+    mBle->input.LightData  = mLight->output.DataEvents;
 }
 
 void Controller::wireViews() {

@@ -39,6 +39,17 @@ private:
     void taskLoop();
     void processFrame(const uint8_t* data, uint16_t len);
 
+    // Sensor Observable callbacks → JSON push
+    static void onSensorData(SensorDataModel* model, void* ctx);
+    static void onLightData(LightDataModel* model, void* ctx);
+    void pushSensorJson();
+
+    // Cached latest readings
+    float mTemp;
+    int16_t mAx, mAy, mAz;
+    uint16_t mAls, mPs;
+    volatile bool mSensorDirty;
+
     // Command registry (shared with MQTT if needed)
     static const uint8_t MAX_COMMANDS = 8;
     ICommand* mCommands[MAX_COMMANDS];

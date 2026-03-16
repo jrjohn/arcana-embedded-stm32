@@ -37,6 +37,8 @@ BleServiceImpl::BleServiceImpl()
     , mTaskStack{}
     , mTaskHandle(0)
     , mRunning(false)
+    , mTemp(0), mAx(0), mAy(0), mAz(0)
+    , mAls(0), mPs(0), mSensorDirty(false)
     , mBle(Hc08Ble::getInstance())
 {
 }
@@ -54,6 +56,11 @@ ServiceStatus BleServiceImpl::initHAL() {
 
 ServiceStatus BleServiceImpl::init() {
     registerCommand(&sPingCmd);
+
+    // Subscribe to sensor data for JSON streaming
+    if (input.SensorData) input.SensorData->subscribe(onSensorData, this);
+    if (input.LightData)  input.LightData->subscribe(onLightData, this);
+
     return ServiceStatus::OK;
 }
 
@@ -102,7 +109,14 @@ void BleServiceImpl::bleTask(void* param) {
 void BleServiceImpl::taskLoop() {
     while (mRunning) {
         mBle.clearRx();
-        uint16_t len = mBle.waitForData(portMAX_DELAY);
+        uint16_t len = mBle.waitForData(pdMS_TO_TICKS(1000));
+
+        // Push sensor JSON when dirty (1Hz from Observable callback)
+        if (mSensorDirty) {
+            mSensorDirty = false;
+            pushSensorJson();
+        }
+
         if (len == 0) continue;
         if (len > 0) {
             const uint8_t* raw = (const uint8_t*)mBle.getResponse();
@@ -182,6 +196,43 @@ void BleServiceImpl::processFrame(const uint8_t* data, uint16_t len) {
     mBle.send(frameBuf, (uint16_t)frameLen);
     printf("[BLE] RSP status=%u data=%u\r\n",
            (unsigned)rsp.status, (unsigned)rsp.dataLength);
+}
+
+// ---------------------------------------------------------------------------
+// Sensor data → JSON streaming to BLE
+// ---------------------------------------------------------------------------
+
+void BleServiceImpl::onSensorData(SensorDataModel* model, void* ctx) {
+    BleServiceImpl* self = static_cast<BleServiceImpl*>(ctx);
+    self->mTemp = model->temperature;
+    self->mAx = model->accelX;
+    self->mAy = model->accelY;
+    self->mAz = model->accelZ;
+    self->mSensorDirty = true;
+}
+
+void BleServiceImpl::onLightData(LightDataModel* model, void* ctx) {
+    BleServiceImpl* self = static_cast<BleServiceImpl*>(ctx);
+    self->mAls = model->ambientLight;
+    self->mPs  = model->proximity;
+    self->mSensorDirty = true;
+}
+
+void BleServiceImpl::pushSensorJson() {
+    char json[96];
+    int whole = (int)mTemp;
+    int frac = (int)((mTemp - whole) * 10);
+    if (frac < 0) frac = -frac;
+
+    int n = snprintf(json, sizeof(json),
+        "{\"t\":%d.%d,\"ax\":%d,\"ay\":%d,\"az\":%d,\"als\":%u,\"ps\":%u}\n",
+        whole, frac,
+        (int)mAx, (int)mAy, (int)mAz,
+        (unsigned)mAls, (unsigned)mPs);
+
+    if (n > 0) {
+        mBle.send((const uint8_t*)json, (uint16_t)n);
+    }
 }
 
 } // namespace ble
