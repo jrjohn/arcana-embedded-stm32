@@ -28,13 +28,14 @@
 | Target | MCU | RAM | Flash | Features |
 |--------|-----|-----|-------|----------|
 | **STM32F051C8** | Cortex-M0, 48MHz | 8KB | 64KB | Observable + Command Pattern + Wire Protocol |
-| **STM32F103ZET6** | Cortex-M3, 72MHz | 64KB | 512KB | MVVM LCD + ArcanaTS SD + ECG + WiFi/MQTT |
+| **STM32F103ZET6** | Cortex-M3, 72MHz | 64KB | 512KB | MVVM LCD + ArcanaTS SD + ECG + BLE + WiFi/MQTT |
 
 ### F103 Board: 野火霸道 V2
 
 - 3.2" ILI9341 TFT LCD (240x320, FSMC)
 - 32GB SD card (SDIO 4-bit, exFAT)
 - ESP8266 WiFi (AT commands, NTP)
+- HC-08 BLE 4.0 (USART2, transparent UART via FFE0/FFE1)
 - DHT11 temperature, MPU6050 IMU, AP3216C light
 - fireDAP CMSIS-DAP debugger
 
@@ -97,6 +98,38 @@ ObservableDispatcher (dual priority queue: 8 normal + 4 high)
                                    View.processRender()
 ```
 
+### CommandBridge (Transport-Agnostic Commands)
+
+```
+Phone (BLE)          Cloud (MQTT)
+    │ FFE1               │
+    ▼                    ▼
+  HC-08              ESP8266
+    │                    │
+    ▼                    ▼
+BleServiceImpl    MqttServiceImpl
+    │                    │
+    └────────┬───────────┘
+             ▼
+     CommandBridge (shared)
+     ├── PingCommand
+     ├── GetSensorCommand (future)
+     └── SetConfigCommand (future)
+             │
+     ┌───────┴───────┐
+     ▼               ▼
+BLE callback    MQTT callback
+(原路回傳)       (原路回傳)
+```
+
+Same FrameCodec wire protocol (magic 0xAC DA + CRC-16) for both transports.
+New commands register once in CommandBridge, available on BLE + MQTT simultaneously.
+
+BLE also streams sensor JSON at 1Hz (no framing, plain text):
+```
+{"t":28.6,"ax":-40,"ay":-1992,"az":17520,"als":682,"ps":78}
+```
+
 ### ArcanaTS v2 (Time-Series Database)
 
 - Cross-platform: PAL interfaces (IFilePort, ICipher, IMutex)
@@ -118,17 +151,21 @@ Targets/stm32f103ze/
 │   ├── Service/        # Interfaces (contracts)
 │   │   ├── ITimerService.hpp, LcdService.hpp, SensorService.hpp
 │   │   ├── AtsStorageService.hpp, SdBenchmarkService.hpp
-│   │   ├── WifiService.hpp, MqttService.hpp, LedService.hpp, ...
+│   │   ├── WifiService.hpp, MqttService.hpp, BleService.hpp, ...
+│   │   ├── CommandBridge.hpp         (shared command registry)
 │   │   └── impl/      # Implementations
 │   │       ├── TimerServiceImpl.hpp/.cpp
 │   │       ├── LcdServiceImpl.hpp/.cpp  (HW init only)
 │   │       ├── AtsStorageServiceImpl.hpp/.cpp (1kHz TSDB)
 │   │       ├── SdBenchmarkServiceImpl.hpp/.cpp (SD mount/format)
+│   │       ├── CommandBridge.cpp       (shared command processing)
+│   │       ├── BleServiceImpl.hpp/.cpp (HC-08 BLE transport)
 │   │       └── Wifi/Mqtt/Led/Light/Sensor/SdStorage ServiceImpl
 │   ├── Driver/         # Hardware abstraction
 │   │   ├── Ili9341Lcd.hpp/.cpp     (FSMC LCD)
 │   │   ├── SdCard.hpp/.cpp         (SDIO DMA)
 │   │   ├── Esp8266.hpp/.cpp        (UART AT)
+│   │   ├── Hc08Ble.hpp/.cpp        (BLE 4.0 USART2)
 │   │   ├── I2cBus, DhtSensor, Ap3216c, Mpu6050
 │   │   ├── SdFalAdapter.hpp/.cpp   (FlashDB FAL)
 │   │   └── FatFsFilePort.hpp/.cpp  (ArcanaTS file I/O)
@@ -160,6 +197,8 @@ Shared/
 | **ArcanaTS** | Daily .ats rotation, device.ats lifecycle, ChaCha20 encrypted |
 | **SDIO Recovery** | Proactive reinit every 200 writes + reactive on failure |
 | **Event-Driven LCD** | xTaskNotify render (no timer polling), dirty flag optimization |
+| **BLE 4.0** | HC-08 transparent UART, sensor JSON streaming + FrameCodec commands |
+| **CommandBridge** | Shared command registry — BLE + MQTT use same command handlers |
 | **NTP Clock** | ESP8266 UDP NTP, RTC restore from device.ats on boot |
 
 ### F103 Build Output
@@ -224,6 +263,8 @@ python3 read_serial.py    # /dev/tty.usbserial-1120 @ 115200
 | **SDIO proactive reinit** | Every 200 polling writes prevents bus degradation |
 | **1kHz zero-fail writes** | ArcanaTS + periodic flush + SDIO recovery = sustained throughput |
 | **Cross-platform ArcanaTS** | PAL interfaces work on STM32/ESP32/Linux |
+| **Shared CommandBridge** | BLE + MQTT transports share one command registry — register once, works everywhere |
+| **BLE sensor streaming** | 1Hz JSON push via HC-08 FFE1, phone receives automatically |
 | **Static allocation** | No malloc, predictable memory, no fragmentation |
 
 ### Known Limitations
@@ -261,12 +302,14 @@ python3 read_serial.py    # /dev/tty.usbserial-1120 @ 115200
 - [x] SD card auto-format + SDIO self-healing
 - [x] Role-based MVVM directory structure
 - [x] Proper MVVM wiring (View → ViewModel → Service)
+- [x] HC-08 BLE 4.0 driver + sensor JSON streaming
+- [x] Shared CommandBridge (BLE + MQTT use same commands)
+- [ ] arcana-android BLE integration (sensor dashboard)
 - [ ] Real ADS1298 SPI ECG (replace synthetic LUT)
 - [ ] ECG Observable (decouple AtsStorage → View)
 - [ ] SettingsView / ChartView (multi-view navigation)
 - [ ] Host-side unit tests with mock PAL
-- [ ] UART transport layer (DMA-based)
-- [ ] BLE connectivity (ESP32 bridge)
+- [ ] BLE baud upgrade (9600 → 115200 for ECG streaming)
 
 ---
 
