@@ -1,6 +1,5 @@
 #include "BleServiceImpl.hpp"
-#include "FrameCodec.hpp"
-#include "Crc16.hpp"
+#include "CommandBridge.hpp"
 #include <cstring>
 #include <cstdio>
 
@@ -8,32 +7,11 @@ namespace arcana {
 namespace ble {
 
 // ---------------------------------------------------------------------------
-// Built-in PingCommand — returns FreeRTOS tick count
-// ---------------------------------------------------------------------------
-
-class PingCommand : public ICommand {
-public:
-    CommandKey getKey() const override {
-        return { Cluster::System, 0x01 };
-    }
-    void execute(const CommandRequest& req, CommandResponseModel& rsp) override {
-        (void)req;
-        uint32_t tick = xTaskGetTickCount();
-        rsp.setUint32(tick);
-        rsp.status = CommandStatus::Success;
-    }
-};
-
-static PingCommand sPingCmd;
-
-// ---------------------------------------------------------------------------
 // Lifecycle
 // ---------------------------------------------------------------------------
 
 BleServiceImpl::BleServiceImpl()
-    : mCommands{}
-    , mCommandCount(0)
-    , mTaskBuf()
+    : mTaskBuf()
     , mTaskStack{}
     , mTaskHandle(0)
     , mRunning(false)
@@ -51,16 +29,12 @@ BleService& BleServiceImpl::getInstance() {
 }
 
 ServiceStatus BleServiceImpl::initHAL() {
-    return ServiceStatus::OK;  // HC-08 already init'd by Controller
+    return ServiceStatus::OK;
 }
 
 ServiceStatus BleServiceImpl::init() {
-    registerCommand(&sPingCmd);
-
-    // Subscribe to sensor data for JSON streaming
     if (input.SensorData) input.SensorData->subscribe(onSensorData, this);
     if (input.LightData)  input.LightData->subscribe(onLightData, this);
-
     return ServiceStatus::OK;
 }
 
@@ -78,30 +52,22 @@ void BleServiceImpl::stop() {
 }
 
 // ---------------------------------------------------------------------------
-// Command registry
+// BLE transport callback — CommandBridge sends response here
 // ---------------------------------------------------------------------------
 
-bool BleServiceImpl::registerCommand(ICommand* cmd) {
-    if (mCommandCount >= MAX_COMMANDS) return false;
-    mCommands[mCommandCount++] = cmd;
-    return true;
-}
-
-ICommand* BleServiceImpl::findCommand(CommandKey key) {
-    for (uint8_t i = 0; i < mCommandCount; i++) {
-        if (mCommands[i]->getKey() == key) return mCommands[i];
-    }
-    return nullptr;
+void BleServiceImpl::onBleResponse(const uint8_t* frameBuf, uint16_t frameLen, void* ctx) {
+    BleServiceImpl* self = static_cast<BleServiceImpl*>(ctx);
+    self->mBle.send(frameBuf, frameLen);
 }
 
 // ---------------------------------------------------------------------------
-// BLE task — monitors HC-08 for incoming framed commands
+// BLE task
 // ---------------------------------------------------------------------------
 
 void BleServiceImpl::bleTask(void* param) {
     BleServiceImpl* self = static_cast<BleServiceImpl*>(param);
-    vTaskDelay(pdMS_TO_TICKS(2000));  // Wait for BLE to stabilize
-    printf("[BLE] Command service ready (%u cmds)\r\n", self->mCommandCount);
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    printf("[BLE] Transport ready\r\n");
     self->taskLoop();
     vTaskDelete(0);
 }
@@ -111,95 +77,23 @@ void BleServiceImpl::taskLoop() {
         mBle.clearRx();
         uint16_t len = mBle.waitForData(pdMS_TO_TICKS(1000));
 
-        // Push sensor JSON when dirty (1Hz from Observable callback)
         if (mSensorDirty) {
             mSensorDirty = false;
             pushSensorJson();
         }
 
         if (len == 0) continue;
-        if (len > 0) {
-            const uint8_t* raw = (const uint8_t*)mBle.getResponse();
-            // Log raw bytes received from BLE
-            printf("[BLE] RX %u bytes:", len);
-            for (uint16_t i = 0; i < len && i < 24; i++) {
-                printf(" %02X", raw[i]);
-            }
-            printf("\r\n");
-            processFrame(raw, len);
-        }
+
+        const uint8_t* raw = (const uint8_t*)mBle.getResponse();
+        printf("[BLE] RX %u bytes\r\n", len);
+
+        // Delegate to shared CommandBridge
+        CommandBridge::getInstance().processFrame(raw, len, onBleResponse, this);
     }
 }
 
 // ---------------------------------------------------------------------------
-// Frame processing — deframe → execute → encode response → send back
-// ---------------------------------------------------------------------------
-
-void BleServiceImpl::processFrame(const uint8_t* data, uint16_t len) {
-    // 1. Deframe (validate magic, CRC-16)
-    const uint8_t* payload = nullptr;
-    size_t payloadLen = 0;
-    uint8_t flags = 0, streamId = 0;
-
-    if (!FrameCodec::deframe(data, len, payload, payloadLen, flags, streamId)) {
-        printf("[BLE] Bad frame (%u bytes)\r\n", len);
-        return;
-    }
-
-    // 2. Decode command request from payload
-    // Payload format: [cluster:1][commandId:1][paramsLen:1][params:0-8]
-    if (payloadLen < 3) return;
-    CommandRequest req;
-    req.key.cluster = static_cast<Cluster>(payload[0]);
-    req.key.commandId = payload[1];
-    req.paramsLength = payload[2];
-    if (req.paramsLength > 8) req.paramsLength = 8;
-    if (payloadLen >= 3u + req.paramsLength) {
-        memcpy(req.params, payload + 3, req.paramsLength);
-    }
-
-    printf("[BLE] CMD %02X:%02X\r\n",
-           (unsigned)req.key.cluster, (unsigned)req.key.commandId);
-
-    // 3. Execute command
-    CommandResponseModel rsp;
-    rsp.key = req.key;
-
-    ICommand* cmd = findCommand(req.key);
-    if (cmd) {
-        cmd->execute(req, rsp);
-    } else {
-        rsp.status = CommandStatus::NotFound;
-    }
-
-    // 4. Encode response payload: [cluster:1][commandId:1][status:1][dataLen:1][data:0-16]
-    uint8_t rspPayload[20];
-    rspPayload[0] = static_cast<uint8_t>(rsp.key.cluster);
-    rspPayload[1] = rsp.key.commandId;
-    rspPayload[2] = static_cast<uint8_t>(rsp.status);
-    rspPayload[3] = rsp.dataLength;
-    if (rsp.dataLength > 0) {
-        memcpy(rspPayload + 4, rsp.data, rsp.dataLength);
-    }
-    size_t rspPayloadLen = 4 + rsp.dataLength;
-
-    // 5. Frame the response
-    uint8_t frameBuf[32];
-    size_t frameLen = 0;
-    if (!FrameCodec::frame(rspPayload, rspPayloadLen,
-                           FrameCodec::kFlagFin, FrameCodec::kSidNone,
-                           frameBuf, sizeof(frameBuf), frameLen)) {
-        return;
-    }
-
-    // 6. Send back via BLE
-    mBle.send(frameBuf, (uint16_t)frameLen);
-    printf("[BLE] RSP status=%u data=%u\r\n",
-           (unsigned)rsp.status, (unsigned)rsp.dataLength);
-}
-
-// ---------------------------------------------------------------------------
-// Sensor data → JSON streaming to BLE
+// Sensor data → JSON streaming
 // ---------------------------------------------------------------------------
 
 void BleServiceImpl::onSensorData(SensorDataModel* model, void* ctx) {

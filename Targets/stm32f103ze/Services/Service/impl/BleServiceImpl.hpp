@@ -2,8 +2,6 @@
 
 #include "BleService.hpp"
 #include "Hc08Ble.hpp"
-#include "CommandTypes.hpp"
-#include "ICommand.hpp"
 #include "FreeRTOS.h"
 #include "task.h"
 
@@ -11,11 +9,9 @@ namespace arcana {
 namespace ble {
 
 /**
- * BLE Service implementation — HC-08 transport + command execution.
- *
- * Task monitors BLE for incoming framed commands (FrameCodec wire format).
- * Deframes → decodes → executes → encodes response → sends back via BLE.
- * Same wire protocol as MQTT — phone/cloud use identical frame format.
+ * BLE transport — HC-08 transparent UART.
+ * Receives framed commands → delegates to shared CommandBridge.
+ * Streams sensor JSON to phone at 1Hz.
  */
 class BleServiceImpl : public BleService {
 public:
@@ -26,9 +22,6 @@ public:
     ServiceStatus start() override;
     void stop() override;
 
-    /** Register a command handler (max 8) */
-    bool registerCommand(ICommand* cmd);
-
 private:
     BleServiceImpl();
     ~BleServiceImpl();
@@ -37,7 +30,9 @@ private:
 
     static void bleTask(void* param);
     void taskLoop();
-    void processFrame(const uint8_t* data, uint16_t len);
+
+    // BLE → CommandBridge response callback
+    static void onBleResponse(const uint8_t* frameBuf, uint16_t frameLen, void* ctx);
 
     // Sensor Observable callbacks → JSON push
     static void onSensorData(SensorDataModel* model, void* ctx);
@@ -49,13 +44,6 @@ private:
     int16_t mAx, mAy, mAz;
     uint16_t mAls, mPs;
     volatile bool mSensorDirty;
-
-    // Command registry (shared with MQTT if needed)
-    static const uint8_t MAX_COMMANDS = 8;
-    ICommand* mCommands[MAX_COMMANDS];
-    uint8_t mCommandCount;
-
-    ICommand* findCommand(CommandKey key);
 
     // Task
     static const uint16_t TASK_STACK_SIZE = 256;
