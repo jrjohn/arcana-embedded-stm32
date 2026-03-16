@@ -135,47 +135,51 @@ DRESULT disk_read(BYTE pdrv, BYTE *buff, LBA_t sector, UINT count)
     return RES_ERROR;
 }
 
-/* Proactive SDIO peripheral reset — prevents DMA state degradation.
- * STM32F103 SDIO+DMA2 accumulates stale state after ~600 consecutive
- * DMA writes. This resets the peripheral BEFORE degradation occurs. */
-#define SDIO_RESET_INTERVAL 400
+/* Full SDIO + DMA + SD card re-initialization (software power cycle).
+ * Called proactively every N writes AND reactively on write failure.
+ * Equivalent to HAL_SD_DeInit + HAL_SD_Init + bus width config. */
+#define SDIO_REINIT_INTERVAL 400
 static volatile uint32_t g_sdio_write_count = 0;
 
-static void sdio_proactive_reset(void) {
+static void sdio_reinit(void) {
     extern DMA_HandleTypeDef g_hdma_sdio;
 
-    /* 1. Disable DMA + wait for it to stop */
+    /* 1. Full HAL DeInit — resets SDIO peripheral + state machine */
+    HAL_SD_DeInit(&g_hsd);
+
+    /* 2. Reset DMA channel */
     __HAL_DMA_DISABLE(&g_hdma_sdio);
     while (g_hdma_sdio.Instance->CCR & DMA_CCR_EN) {}
-
-    /* 2. Clear DMA flags + state */
     __HAL_DMA_CLEAR_FLAG(&g_hdma_sdio,
         DMA_FLAG_TC4 | DMA_FLAG_TE4 | DMA_FLAG_HT4 | DMA_FLAG_GL4);
     g_hdma_sdio.State = HAL_DMA_STATE_READY;
     g_hdma_sdio.Lock = HAL_UNLOCKED;
 
-    /* 3. Clear SDIO data path + all interrupt flags */
-    SDIO->DCTRL = 0;
-    SDIO->MASK = 0;
-    SDIO->ICR = 0xFFFFFFFF;
+    /* 3. Re-init SD at 400kHz (identification phase) */
+    g_hsd.Instance = SDIO;
+    g_hsd.Init.ClockEdge = SDIO_CLOCK_EDGE_RISING;
+    g_hsd.Init.ClockBypass = SDIO_CLOCK_BYPASS_DISABLE;
+    g_hsd.Init.ClockPowerSave = SDIO_CLOCK_POWER_SAVE_DISABLE;
+    g_hsd.Init.BusWide = SDIO_BUS_WIDE_1B;
+    g_hsd.Init.HardwareFlowControl = SDIO_HARDWARE_FLOW_CONTROL_DISABLE;
+    g_hsd.Init.ClockDiv = 178;  /* 400kHz */
+    HAL_SD_Init(&g_hsd);
 
-    /* 4. Send STOP command to reset card's internal state */
-    SDMMC_CmdStopTransfer(g_hsd.Instance);
+    /* 4. Re-link DMA */
+    HAL_DMA_Init(&g_hdma_sdio);
+    __HAL_LINKDMA(&g_hsd, hdmatx, g_hdma_sdio);
+    __HAL_LINKDMA(&g_hsd, hdmarx, g_hdma_sdio);
 
-    /* 5. Clear flags again after STOP */
-    SDIO->ICR = 0xFFFFFFFF;
-    SDIO->DCTRL = 0;
+    /* 5. Switch to 4-bit bus + 24MHz transfer clock */
+    HAL_SD_ConfigWideBusOperation(&g_hsd, SDIO_BUS_WIDE_4B);
+    SDIO->CLKCR = (SDIO->CLKCR & ~0xFFU) | 1U;  /* CLKDIV=1 → 24MHz */
+    g_hsd.Init.ClockDiv = 1;
+}
 
-    /* 6. Reset HAL state */
-    g_hsd.State = HAL_SD_STATE_READY;
-    g_hsd.Context = SD_CONTEXT_NONE;
-    g_hsd.ErrorCode = HAL_SD_ERROR_NONE;
-
-    /* 7. Wait for card to be ready */
-    uint32_t t = HAL_GetTick() + 500;
-    while (HAL_SD_GetCardState(&g_hsd) != HAL_SD_CARD_TRANSFER) {
-        if (HAL_GetTick() > t) break;
-    }
+/* Expose reinit for external callers (AtsStorageService recovery) */
+void sdio_force_reinit(void) {
+    sdio_reinit();
+    g_sdio_write_count = 0;
 }
 
 /*-----------------------------------------------------------------------*/
@@ -186,10 +190,10 @@ DRESULT disk_write(BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count)
     if (pdrv != 0 || !g_sd_ready) return RES_NOTRDY;
     if (!g_sd_dma_sem) return RES_ERROR;
 
-    /* Proactive reset before degradation threshold */
-    if (++g_sdio_write_count >= SDIO_RESET_INTERVAL) {
+    /* Proactive reinit before degradation threshold */
+    if (++g_sdio_write_count >= SDIO_REINIT_INTERVAL) {
         g_sdio_write_count = 0;
-        sdio_proactive_reset();
+        sdio_reinit();
     }
 
     for (int retry = 0; retry < 3; retry++) {
@@ -219,6 +223,23 @@ DRESULT disk_write(BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count)
         }
 
         return RES_OK;
+    }
+
+    /* All 3 retries failed — full reinit (software power cycle) + final attempt */
+    sdio_reinit();
+    g_sdio_write_count = 0;
+    ensure_hal_ready();
+    xSemaphoreTake(g_sd_dma_sem, 0);
+    if (HAL_SD_WriteBlocks_DMA(&g_hsd, (uint8_t *)buff, sector, count) == HAL_OK) {
+        if (xSemaphoreTake(g_sd_dma_sem, pdMS_TO_TICKS(5000)) == pdTRUE) {
+            if (g_hsd.ErrorCode == HAL_SD_ERROR_NONE) {
+                uint32_t t2 = HAL_GetTick() + 5000;
+                while (HAL_SD_GetCardState(&g_hsd) != HAL_SD_CARD_TRANSFER) {
+                    if (HAL_GetTick() > t2) break;
+                }
+                return RES_OK;
+            }
+        }
     }
 
     return RES_ERROR;

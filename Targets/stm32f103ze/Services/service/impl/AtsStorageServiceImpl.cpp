@@ -10,6 +10,7 @@
 
 extern "C" {
     extern volatile uint8_t g_exfat_ready;
+    void sdio_force_reinit(void);
 }
 
 namespace arcana {
@@ -136,6 +137,35 @@ void AtsStorageServiceImpl::storageTask(void* param) {
         printf("[ATS] Open FAILED\r\n");
         vTaskDelete(0);
         return;
+    }
+
+    // Write test: verify the DB is actually writable (catches corrupted files)
+    {
+        uint8_t testRec[RECORD_SIZE] = {};
+        uint32_t ts = atsGetTime();
+        memcpy(testRec, &ts, 4);
+        self->mDb.append(0, testRec);
+        uint32_t blkBefore = self->mDb.getStats().blocksWritten;
+        self->mDb.flush();
+        uint32_t blkAfter = self->mDb.getStats().blocksWritten;
+        if (blkAfter <= blkBefore) {
+            // Flush failed — file is corrupted, rename and recreate
+            printf("[ATS] Write test FAILED, renaming corrupt file...\r\n");
+            self->mDb.close();
+            self->mDbReady = false;
+            f_rename("sensor.ats", "sensor_bad.ats");
+            // Force SDIO reinit after heavy recovery reads degraded the bus
+            sdio_force_reinit();
+            printf("[ATS] SDIO reinit done, recreating...\r\n");
+            if (!self->openDailyDb()) {
+                printf("[ATS] Recreate FAILED\r\n");
+                vTaskDelete(0);
+                return;
+            }
+            printf("[ATS] Fresh DB created\r\n");
+        } else {
+            printf("[ATS] Write test OK\r\n");
+        }
     }
 
     printf("[ATS] Ready, 1kHz mode\r\n");
