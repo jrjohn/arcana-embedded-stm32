@@ -19,6 +19,7 @@ namespace atsstorage {
 uint8_t AtsStorageServiceImpl::sKey[crypto::ChaCha20::KEY_SIZE] = {};
 uint8_t AtsStorageServiceImpl::sSlowBuf[ats::BLOCK_SIZE] = {};
 uint8_t AtsStorageServiceImpl::sReadCache[ats::BLOCK_SIZE] = {};
+uint8_t AtsStorageServiceImpl::sDevSlowBuf[ats::BLOCK_SIZE] = {};
 
 // Time source for ArcanaTS — uses SystemClock epoch or tick fallback
 static uint32_t atsGetTime() {
@@ -38,6 +39,7 @@ AtsStorageServiceImpl::AtsStorageServiceImpl()
     , mTaskHandle(0)
     , mRunning(false)
     , mDbReady(false)
+    , mDeviceDbReady(false)
     , mPendingData()
     , mWriteSemBuffer()
     , mWriteSem(0)
@@ -99,6 +101,12 @@ void AtsStorageServiceImpl::stop() {
         mDb.close();
         mDbReady = false;
     }
+    if (mDeviceDbReady) {
+        writeLifecycleEvent(
+            static_cast<uint8_t>(ats::LifecycleEventType::PowerOff), 0);
+        mDeviceDb.close();
+        mDeviceDbReady = false;
+    }
 }
 
 void AtsStorageServiceImpl::onSensorData(SensorDataModel* model, void* context) {
@@ -115,6 +123,13 @@ void AtsStorageServiceImpl::storageTask(void* param) {
         vTaskDelay(pdMS_TO_TICKS(100));
     }
     if (!self->mRunning) { vTaskDelete(0); return; }
+
+    // Open device.ats (permanent lifecycle DB) + restore RTC
+    if (self->openDeviceDb()) {
+        self->restoreTimeFromDeviceDb();
+        self->writeLifecycleEvent(
+            static_cast<uint8_t>(ats::LifecycleEventType::PowerOn), 0);
+    }
 
     printf("[ATS] Opening sensor DB...\r\n");
     if (!self->openDailyDb()) {
@@ -200,6 +215,93 @@ void AtsStorageServiceImpl::rotateDailyDb(uint32_t lastDay) {
         printf("[ATS] New day DB FAILED\r\n");
     }
 }
+
+// ---------------------------------------------------------------------------
+// device.ats — permanent lifecycle DB
+// ---------------------------------------------------------------------------
+
+bool AtsStorageServiceImpl::openDeviceDb() {
+    ats::AtsConfig cfg;
+    memset(&cfg, 0, sizeof(cfg));
+
+    cfg.file = &mDeviceFilePort;
+    cfg.cipher = &mCipher;
+    cfg.mutex = &mMutex;  // shared with sensor DB (same task)
+    cfg.getTime = atsGetTime;
+    cfg.key = sKey;
+    cfg.deviceUid = (const uint8_t*)UID_BASE;
+    cfg.deviceUidSize = 12;
+    cfg.overflow = ats::OverflowPolicy::Drop;
+    cfg.primaryChannel = 0xFF;
+    cfg.slowBuf = sDevSlowBuf;
+    cfg.readCache = 0;  // device.ats writes rarely, can share slowBuf for reads
+
+    printf("[DEV] Opening device.ats...\r\n");
+    if (!mDeviceDb.open("device.ats", cfg)) {
+        f_unlink("device.ats");
+        if (!mDeviceDb.open("device.ats", cfg)) {
+            printf("[DEV] Open FAILED\r\n");
+            return false;
+        }
+    }
+
+    if (mDeviceDb.getChannelCount() == 0) {
+        ats::ArcanaTsSchema lc = ats::ArcanaTsSchema::lifecycleEvent();
+        if (!mDeviceDb.addChannel(0, lc)) {
+            printf("[DEV] addChannel FAILED\r\n");
+            mDeviceDb.close();
+            return false;
+        }
+        if (!mDeviceDb.start()) {
+            printf("[DEV] start FAILED\r\n");
+            mDeviceDb.close();
+            return false;
+        }
+    }
+
+    mDeviceDbReady = true;
+    printf("[DEV] device.ats OK, %lu rec\r\n",
+           (unsigned long)mDeviceDb.getStats().totalRecords);
+    return true;
+}
+
+void AtsStorageServiceImpl::restoreTimeFromDeviceDb() {
+    if (!mDeviceDbReady) return;
+    if (SystemClock::getInstance().isSynced()) return;  // RTC already valid
+
+    // Read latest lifecycle record to get last known timestamp
+    // LIFECYCLE record: [ts:4][eventType:1][eventCode:2][reserved:1][param:4] = 12 bytes
+    uint8_t buf[12];
+    uint16_t n = mDeviceDb.queryLatest(0, buf, 1);
+    if (n > 0) {
+        uint32_t lastEpoch;
+        memcpy(&lastEpoch, buf, 4);
+        if (lastEpoch > 1577836800) {  // > 2020-01-01
+            SystemClock::getInstance().sync(lastEpoch);
+            printf("[DEV] RTC restored: %lu\r\n", (unsigned long)lastEpoch);
+        }
+    }
+}
+
+void AtsStorageServiceImpl::writeLifecycleEvent(uint8_t eventType, uint32_t param) {
+    if (!mDeviceDbReady) return;
+
+    // LIFECYCLE schema: ts(U32), evtTyp(U8), evtCod(U16), rsv(U8), param(U32) = 12 bytes
+    uint8_t rec[12];
+    uint32_t ts = atsGetTime();
+    memcpy(rec, &ts, 4);
+    rec[4] = eventType;
+    rec[5] = 0; rec[6] = 0;  // eventCode = 0
+    rec[7] = 0;               // reserved
+    memcpy(rec + 8, &param, 4);
+
+    mDeviceDb.append(0, rec);
+    mDeviceDb.flush();  // lifecycle events must persist immediately
+    printf("[DEV] event type=0x%02X param=%lu\r\n",
+           (unsigned)eventType, (unsigned long)param);
+}
+
+// ---------------------------------------------------------------------------
 
 void AtsStorageServiceImpl::taskLoop() {
     uint32_t lastDay = 0;

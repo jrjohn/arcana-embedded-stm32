@@ -59,15 +59,23 @@ private:
 
     void publishStats();
 
-    // ArcanaTS engine
+    // ArcanaTS sensor DB (daily rotation)
     ats::ArcanaTsDb mDb;
     ats::FatFsFilePort mFilePort;
     ats::FreeRtosMutex mMutex;
     ats::ChaCha20Cipher mCipher;
 
+    // ArcanaTS device DB (permanent, never rotated)
+    ats::ArcanaTsDb mDeviceDb;
+    ats::FatFsFilePort mDeviceFilePort;
+    bool openDeviceDb();
+    void restoreTimeFromDeviceDb();
+    void writeLifecycleEvent(uint8_t eventType, uint32_t param);
+
     // Buffers (static, no heap)
     static uint8_t sSlowBuf[ats::BLOCK_SIZE];
     static uint8_t sReadCache[ats::BLOCK_SIZE];
+    static uint8_t sDevSlowBuf[ats::BLOCK_SIZE];
 
     // Per-device encryption key
     static uint8_t sKey[crypto::ChaCha20::KEY_SIZE];
@@ -79,6 +87,7 @@ private:
     TaskHandle_t mTaskHandle;
     bool mRunning;
     bool mDbReady;
+    bool mDeviceDbReady;
 
     // Pending write data
     SensorDataModel mPendingData;
