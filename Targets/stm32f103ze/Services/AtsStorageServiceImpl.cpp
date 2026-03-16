@@ -405,6 +405,9 @@ void AtsStorageServiceImpl::taskLoop() {
         // Report + LCD update every 1 second
         uint32_t now = xTaskGetTickCount();
         if ((now - lastReportTick) >= pdMS_TO_TICKS(1000)) {
+            bool flushed = mDb.flush();
+            if (!flushed) printf("[ATS] flush FAILED\r\n");
+
             mStatsModel.recordCount = mTotalRecords;
             mStatsModel.writesPerSec = (uint16_t)windowOk;
             mStatsModel.totalKB = (mDb.getStats().blocksWritten + 1) * 4;
@@ -412,10 +415,12 @@ void AtsStorageServiceImpl::taskLoop() {
             mStatsModel.updateTimestamp();
             mStatsObs.publish(&mStatsModel);
 
-            printf("[ATS] %lu rec, %lu/s, blk=%lu (%luKB)\r\n",
+            printf("[ATS] %lu rec, %lu/s, blk=%lu (%luKB) fail=%lu drop=%lu\r\n",
                    (unsigned long)mTotalRecords, (unsigned long)windowOk,
                    (unsigned long)mDb.getStats().blocksWritten,
-                   (unsigned long)mStatsModel.totalKB);
+                   (unsigned long)mStatsModel.totalKB,
+                   (unsigned long)mDb.getStats().blocksFailed,
+                   (unsigned long)mDb.getStats().overflowDrops);
 
             windowOk = 0;
             windowFail = 0;

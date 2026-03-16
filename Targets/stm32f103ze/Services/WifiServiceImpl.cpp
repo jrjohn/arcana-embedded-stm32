@@ -1,49 +1,8 @@
 #include "WifiServiceImpl.hpp"
 #include "Credentials.hpp"
 #include "SystemClock.hpp"
-#include "Ili9341Lcd.hpp"
 #include <cstdio>
 #include <cstring>
-
-static void lcdStatus(const char* msg) {
-    arcana::lcd::Ili9341Lcd disp;
-    disp.fillRect(20, 154, 200, 8, 0x0000);
-    disp.drawString(20, 154, msg, 0xFFFF, 0x0000, 1);
-}
-
-static void lcdStatus2(const char* msg) {
-    arcana::lcd::Ili9341Lcd disp;
-    disp.fillRect(20, 166, 200, 8, 0x0000);
-    disp.drawString(20, 166, msg, 0xFFFF, 0x0000, 1);
-}
-
-static void showResponse(arcana::Esp8266& esp) {
-    const char* resp = esp.getResponse();
-    uint16_t rlen = esp.getResponseLen();
-    char clean[128];
-    int ci = 0;
-    for (uint16_t i = 0; i < rlen && ci < 127; i++) {
-        char c = resp[i];
-        if (c == '\0') continue;
-        if (c != '\r' && c != '\n') {
-            if (c < 0x20 || c > 0x7E) {
-                if (ci + 3 < 127) {
-                    static const char hex[] = "0123456789ABCDEF";
-                    clean[ci++] = '[';
-                    clean[ci++] = hex[(uint8_t)c >> 4];
-                    clean[ci++] = hex[(uint8_t)c & 0xF];
-                    clean[ci++] = ']';
-                }
-            } else {
-                clean[ci++] = c;
-            }
-        }
-    }
-    clean[ci] = '\0';
-    const char* show = clean;
-    if (ci > 33) show = clean + ci - 33;
-    lcdStatus2(show);
-}
 
 namespace arcana {
 namespace wifi {
@@ -86,18 +45,18 @@ Esp8266& WifiServiceImpl::getEsp() {
 // --- Full reset + connect ---
 
 bool WifiServiceImpl::resetAndConnect() {
-    lcdStatus("[WiFi] Reset ESP...");
+    //lcdStatus("[WiFi] Reset ESP...");
     mEsp.reset();
 
-    lcdStatus("[WiFi] AT test...");
+    //lcdStatus("[WiFi] AT test...");
     if (!mEsp.sendCmd("AT", "OK", 2000)) {
         mEsp.reset();
         if (!mEsp.sendCmd("AT", "OK", 2000)) {
-            lcdStatus("[WiFi] ERR: no resp");
+            //lcdStatus("[WiFi] ERR: no resp");
             return false;
         }
     }
-    lcdStatus("[WiFi] AT OK");
+    //lcdStatus("[WiFi] AT OK");
 
     return connectWifi();
 }
@@ -105,7 +64,7 @@ bool WifiServiceImpl::resetAndConnect() {
 // --- Connect without reset (for reconnect when ESP still responsive) ---
 
 bool WifiServiceImpl::connect() {
-    lcdStatus("[WiFi] Reconnecting...");
+    //lcdStatus("[WiFi] Reconnecting...");
     return connectWifi();
 }
 
@@ -114,38 +73,38 @@ bool WifiServiceImpl::connect() {
 bool WifiServiceImpl::connectWifi() {
     mEsp.sendCmd("AT+CWDHCP_CUR=1,1", "OK", 500);
 
-    lcdStatus("CWMODE=1...");
+    //lcdStatus("CWMODE=1...");
     if (!mEsp.sendCmd("AT+CWMODE=1", "OK", 2500)) {
         if (!mEsp.responseContains("no change")) {
-            lcdStatus("ERR: CWMODE fail");
-            showResponse(mEsp);
+            //lcdStatus("ERR: CWMODE fail");
+            //showResponse(mEsp);
             return false;
         }
     }
 
     char cmd[128];
     snprintf(cmd, sizeof(cmd), "AT+CWJAP=\"%s\",\"%s\"", WIFI_SSID, WIFI_PASS);
-    lcdStatus("CWJAP...");
-    lcdStatus2("");
+    //lcdStatus("CWJAP...");
+    //lcdStatus2("");
     if (mEsp.sendCmd(cmd, "OK", 15000)) {
         vTaskDelay(pdMS_TO_TICKS(1000));
-        lcdStatus("[WiFi] Connected");
+        //lcdStatus("[WiFi] Connected");
         return true;
     }
-    lcdStatus("ERR: CWJAP");
-    showResponse(mEsp);
+    //lcdStatus("ERR: CWJAP");
+    //showResponse(mEsp);
     return false;
 }
 
 // --- NTP time sync via raw UDP ---
 
 bool WifiServiceImpl::syncNtp() {
-    lcdStatus("[NTP] UDP...");
+    //lcdStatus("[NTP] UDP...");
 
     // Open UDP connection to NTP server
     if (!mEsp.sendCmd("AT+CIPSTART=\"UDP\",\"pool.ntp.org\",123", "OK", 5000)) {
-        lcdStatus("[NTP] UDP fail");
-        showResponse(mEsp);
+        //lcdStatus("[NTP] UDP fail");
+        //showResponse(mEsp);
         vTaskDelay(pdMS_TO_TICKS(2000));
         return false;
     }
@@ -158,7 +117,7 @@ bool WifiServiceImpl::syncNtp() {
     // Send via AT+CIPSEND
     if (!mEsp.sendCmd("AT+CIPSEND=48", ">", 2000)) {
         mEsp.sendCmd("AT+CIPCLOSE", "OK", 1000);
-        lcdStatus("[NTP] SEND fail");
+        //lcdStatus("[NTP] SEND fail");
         vTaskDelay(pdMS_TO_TICKS(2000));
         return false;
     }
@@ -168,14 +127,14 @@ bool WifiServiceImpl::syncNtp() {
     mEsp.sendData(ntpReq, 48, 1000);
     if (!mEsp.waitFor("SEND OK", 5000)) {
         mEsp.sendCmd("AT+CIPCLOSE", "OK", 1000);
-        lcdStatus("[NTP] no SENDOK");
+        //lcdStatus("[NTP] no SENDOK");
         vTaskDelay(pdMS_TO_TICKS(2000));
         return false;
     }
 
     // +IPD may arrive in the SAME frame as "SEND OK" — ISR only captures +IPD
     // at mRxBuf position 0, so check mRxBuf directly first.
-    lcdStatus("[NTP] Waiting...");
+    //lcdStatus("[NTP] Waiting...");
     bool ok = false;
 
     // Case 1: +IPD already in mRxBuf (same frame as SEND OK)
@@ -205,7 +164,7 @@ bool WifiServiceImpl::syncNtp() {
                 mEsp.getResponse(), mEsp.getResponseLen());
             ok = applyNtpEpoch(epoch);
         } else {
-            lcdStatus("[NTP] No resp");
+            //lcdStatus("[NTP] No resp");
         }
     }
 
@@ -219,7 +178,7 @@ bool WifiServiceImpl::applyNtpEpoch(uint32_t epoch) {
         if (epoch != 0) {
             char dbg[24];
             snprintf(dbg, sizeof(dbg), "[NTP] e=%lu", (unsigned long)epoch);
-            lcdStatus(dbg);
+            //lcdStatus(dbg);
         }
         return false;
     }
@@ -230,7 +189,7 @@ bool WifiServiceImpl::applyNtpEpoch(uint32_t epoch) {
     uint8_t h, m, s;
     SystemClock::toHMS(epoch, h, m, s);
     snprintf(buf, sizeof(buf), "[NTP] %02u:%02u:%02u", h, m, s);
-    lcdStatus(buf);
+    //lcdStatus(buf);
     return true;
 }
 

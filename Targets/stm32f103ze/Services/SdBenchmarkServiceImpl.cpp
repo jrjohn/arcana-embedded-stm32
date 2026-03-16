@@ -1,5 +1,4 @@
 #include "SdBenchmarkServiceImpl.hpp"
-#include "Ili9341Lcd.hpp"
 #include "ff.h"
 #include "diskio.h"
 #include <cstring>
@@ -11,19 +10,6 @@
 extern "C" {
     volatile uint8_t g_exfat_ready = 0;
     void sdio_force_reinit(void);
-}
-
-// LCD debug output for SD status (reuse SD Bench area: y=80..124)
-static void sdLcdStatus(const char* msg) {
-    arcana::lcd::Ili9341Lcd disp;
-    disp.fillRect(20, 80, 200, 16, 0x0000);
-    disp.drawString(20, 80, msg, 0xFFFF, 0x0000, 1);
-}
-
-static void sdLcdStatus2(const char* msg) {
-    arcana::lcd::Ili9341Lcd disp;
-    disp.fillRect(20, 100, 200, 10, 0x0000);
-    disp.drawString(20, 100, msg, 0x07E0, 0x0000, 1);
 }
 
 namespace arcana {
@@ -111,7 +97,7 @@ void SdBenchmarkServiceImpl::runBenchmark() {
         if (attempt > 0) {
             // HAL-level recovery before retry
             snprintf(msg, sizeof(msg), "[SD] Retry %d/%d reinit", attempt + 1, MAX_RETRIES);
-            sdLcdStatus(msg);
+
             printf("%s\r\n", msg);
             f_mount(0, "", 0);           // Unmount (ignore result)
             sdio_force_reinit();         // Reset SDIO + DMA state
@@ -119,7 +105,6 @@ void SdBenchmarkServiceImpl::runBenchmark() {
         }
 
         // Step 1: Try to mount existing exFAT filesystem
-        sdLcdStatus("[SD] Mounting...");
         printf("[SD] Mounting... (attempt %d)\r\n", attempt + 1);
         fr = f_mount(&sFatFs, "", 1);
 
@@ -140,7 +125,6 @@ void SdBenchmarkServiceImpl::runBenchmark() {
 
         // Mount failed or FS corrupt — format as exFAT
         snprintf(msg, sizeof(msg), "[SD] No FS (%d), formatting", (int)fr);
-        sdLcdStatus(msg);
         printf("%s\r\n", msg);
         vTaskDelay(pdMS_TO_TICKS(1000));
 
@@ -149,16 +133,16 @@ void SdBenchmarkServiceImpl::runBenchmark() {
         mkfs_opt.fmt = FM_EXFAT;
         mkfs_opt.au_size = 0;
 
-        sdLcdStatus("[SD] Formatting exFAT...");
+
         printf("[SD] Formatting exFAT...\r\n");
         fr = f_mkfs("", &mkfs_opt, mMkfsBuf, MKFS_BUF_SIZE);
         if (fr != FR_OK) {
             snprintf(msg, sizeof(msg), "[SD] mkfs ERR: %d", (int)fr);
-            sdLcdStatus(msg);
+
             printf("%s\r\n", msg);
             continue;  // Retry with HAL reinit
         }
-        sdLcdStatus("[SD] Format OK!");
+
         printf("[SD] Format OK!\r\n");
         vTaskDelay(pdMS_TO_TICKS(500));
 
@@ -168,14 +152,14 @@ void SdBenchmarkServiceImpl::runBenchmark() {
             mounted = true;
         } else {
             snprintf(msg, sizeof(msg), "[SD] mount ERR: %d", (int)fr);
-            sdLcdStatus(msg);
+
             printf("%s\r\n", msg);
             // Will retry with HAL reinit on next iteration
         }
     }
 
     if (!mounted) {
-        sdLcdStatus("[SD] FAILED all retries");
+
         printf("[SD] FAILED after %d attempts\r\n", MAX_RETRIES);
         return;
     }
@@ -192,12 +176,9 @@ void SdBenchmarkServiceImpl::runBenchmark() {
         uint32_t freeMB  = (uint32_t)((uint64_t)fre_clust * fs->csize / 2048);
         snprintf(msg, sizeof(msg), "[SD] %luMB/%luMB",
                  (unsigned long)freeMB, (unsigned long)totalMB);
-        sdLcdStatus(msg);
-        sdLcdStatus2("exFAT Ready");
         printf("[SD] %luMB/%luMB exFAT Ready\r\n",
                (unsigned long)freeMB, (unsigned long)totalMB);
     } else {
-        sdLcdStatus("[SD] Mounted!");
         printf("[SD] Mounted! (getfree err=%d)\r\n", (int)fr);
     }
 }
