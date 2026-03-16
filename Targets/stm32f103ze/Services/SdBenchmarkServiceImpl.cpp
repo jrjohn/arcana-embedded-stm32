@@ -124,11 +124,21 @@ void SdBenchmarkServiceImpl::runBenchmark() {
         fr = f_mount(&sFatFs, "", 1);
 
         if (fr == FR_OK) {
-            mounted = true;
-            break;
+            // Post-mount validation: f_getfree catches corrupted FAT
+            DWORD fre_clust;
+            FATFS* fs;
+            if (f_getfree("", &fre_clust, &fs) == FR_OK) {
+                mounted = true;
+                break;
+            }
+            printf("[SD] mount OK but getfree FAILED — FS corrupt\r\n");
+            // Fall through to format
+        } else {
+            snprintf(msg, sizeof(msg), "[SD] mount err=%d", (int)fr);
+            printf("%s\r\n", msg);
         }
 
-        // Mount failed — format as exFAT (first time or corrupted)
+        // Mount failed or FS corrupt — format as exFAT
         snprintf(msg, sizeof(msg), "[SD] No FS (%d), formatting", (int)fr);
         sdLcdStatus(msg);
         printf("%s\r\n", msg);
