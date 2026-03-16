@@ -2,11 +2,32 @@
 #include "AtsStorageServiceImpl.hpp"
 #include "DeviceKey.hpp"
 #include "SystemClock.hpp"
+#include "EcgBuffer.hpp"
 #include "ats/ArcanaTsSchema.hpp"
 #include "ats/ArcanaTsTypes.hpp"
 #include "ff.h"
 #include <cstring>
 #include <cstdio>
+
+// Synthetic ECG waveform LUT (one heartbeat, 250 samples @ 250Hz = 1 sec = 60 BPM)
+// Values 0-99: 0=top of ECG area, 70=baseline, 99=bottom. Like Lead II.
+static const uint8_t ECG_LUT[] = {
+    70,70,70,70,70,70,70,70,70,70, 70,70,70,70,70,70,70,70,70,70, // baseline
+    70,70,70,70,70,70,70,70,70,70, 70,70,70,70,70,70,70,70,70,70, // baseline
+    70,70,69,68,66,64,63,63,64,66, 68,69,70,70,70,70,70,70,70,70, // P wave (small)
+    70,70,70,70,70,70,70,70,72,75, 70,50,25, 5, 0, 5,25,50,80,90, // Q-R-S (sharp!)
+    85,78,72,70,70,70,70,70,70,70, 70,70,70,70,70,70,70,70,70,70, // ST segment
+    70,69,67,64,61,58,56,55,55,56, 58,61,64,67,69,70,70,70,70,70, // T wave (rounded)
+    70,70,70,70,70,70,70,70,70,70, 70,70,70,70,70,70,70,70,70,70, // baseline
+    70,70,70,70,70,70,70,70,70,70, 70,70,70,70,70,70,70,70,70,70,
+    70,70,70,70,70,70,70,70,70,70, 70,70,70,70,70,70,70,70,70,70,
+    70,70,70,70,70,70,70,70,70,70, 70,70,70,70,70,70,70,70,70,70,
+    70,70,70,70,70,70,70,70,70,70, 70,70,70,70,70,70,70,70,70,70,
+    70,70,70,70,70,70,70,70,70,70, 70,70,70,70,70,70,70,70,70,70,
+    70,70,70,70,70,70,70,70,70,70,
+};
+static const uint16_t ECG_LUT_LEN = sizeof(ECG_LUT);
+
 
 extern "C" {
     extern volatile uint8_t g_exfat_ready;
@@ -341,6 +362,7 @@ void AtsStorageServiceImpl::taskLoop() {
     uint32_t windowFail = 0;
     uint8_t rec[RECORD_SIZE];
     memset(rec, 0, RECORD_SIZE);
+    uint32_t ecgPhase = 0;  // LUT index for synthetic ECG
 
     while (mRunning) {
         // 1kHz pacing — 1 record per ms
@@ -348,12 +370,21 @@ void AtsStorageServiceImpl::taskLoop() {
 
         if (!mDbReady) continue;
 
+        // Synthetic ECG value from LUT
+        uint8_t ecgVal = ECG_LUT[ecgPhase % ECG_LUT_LEN];
+        ecgPhase++;
+
+        // Draw ECG column every 4th sample (250Hz → 240 columns ≈ 1 sec sweep)
+        if ((mTotalRecords & 3) == 0) {
+            g_ecgDisplay.pushAndDraw(ecgVal);
+        }
+
         // Build synthetic record (will be replaced by real ADS1298 SPI data)
         uint32_t ts = atsGetTime();
         memcpy(rec, &ts, 4);
         float temp = 25.0f + (float)(mTotalRecords % 1000) * 0.01f;
         memcpy(rec + 4, &temp, 4);
-        int16_t ax = (int16_t)(mTotalRecords & 0x7FFF);
+        int16_t ax = (int16_t)(50 - (int16_t)ecgVal) * 400;  // ECG as accelerometer value
         memcpy(rec + 8, &ax, 2);
         memcpy(rec + 10, &ax, 2);
         memcpy(rec + 12, &ax, 2);

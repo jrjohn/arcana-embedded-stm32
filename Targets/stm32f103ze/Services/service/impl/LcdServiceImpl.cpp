@@ -1,8 +1,10 @@
 #include "LcdServiceImpl.hpp"
 #include "SystemClock.hpp"
+#include "EcgBuffer.hpp"
 #include "FreeRTOS.h"
 #include "task.h"
 #include <cstdio>
+#include <cstring>
 
 namespace arcana {
 namespace lcd {
@@ -75,6 +77,14 @@ void LcdServiceImpl::drawInitialScreen() {
     mLcd.drawHLine(10, 136, 220, Ili9341Lcd::DARKGRAY);
     mLcd.drawString(VALUE_X, MQTT_LABEL_Y, "WiFi / MQTT", Ili9341Lcd::WHITE, Ili9341Lcd::BLACK, 1);
     mLcd.drawString(VALUE_X, MQTT_STATUS_Y, "Idle", Ili9341Lcd::GRAY, Ili9341Lcd::BLACK, 1);
+
+    // === ECG waveform section ===
+    mLcd.drawHLine(0, ECG_TOP_Y - 2, 240, Ili9341Lcd::DARKGRAY);
+    mLcd.drawString(2, ECG_TOP_Y - 12, "ECG", Ili9341Lcd::GREEN, Ili9341Lcd::BLACK, 1);
+    mLcd.drawString(40, ECG_TOP_Y - 12, "II  25mm/s", Ili9341Lcd::GRAY, Ili9341Lcd::BLACK, 1);
+
+    // Init real-time ECG sweep display (ATS task draws directly)
+    g_ecgDisplay.init(&mLcd);  // baseline center
 }
 
 void LcdServiceImpl::onSensorData(SensorDataModel* model, void* ctx) {
@@ -248,6 +258,10 @@ void LcdServiceImpl::updateTimeDisplay() {
         mLcd.fillRect(72, CLOCK_TIME_Y, 96, 16, Ili9341Lcd::BLACK);
         mLcd.drawString(72, CLOCK_TIME_Y, timeBuf, Ili9341Lcd::YELLOW, Ili9341Lcd::BLACK, 2);
     }
+}
+
+void LcdServiceImpl::drawEcgWaveform() {
+    // Real-time drawing now handled by g_ecgDisplay.pushAndDraw() from ATS task
 }
 
 void LcdServiceImpl::intToStr(char* buf, int value) {
