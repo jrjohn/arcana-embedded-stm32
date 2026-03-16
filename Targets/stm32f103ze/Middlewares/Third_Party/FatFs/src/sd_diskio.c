@@ -138,7 +138,7 @@ DRESULT disk_read(BYTE pdrv, BYTE *buff, LBA_t sector, UINT count)
 /* Full SDIO + DMA + SD card re-initialization (software power cycle).
  * Called proactively every N writes AND reactively on write failure.
  * Equivalent to HAL_SD_DeInit + HAL_SD_Init + bus width config. */
-#define SDIO_REINIT_INTERVAL 400
+#define SDIO_REINIT_INTERVAL 200
 static volatile uint32_t g_sdio_write_count = 0;
 
 static void sdio_reinit(void) {
@@ -186,29 +186,21 @@ DRESULT disk_write(BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count)
     if (pdrv != 0 || !g_sd_ready) return RES_NOTRDY;
     if (!g_sd_dma_sem) return RES_ERROR;
 
-    /* Proactive reinit before degradation threshold */
-    if (++g_sdio_write_count >= SDIO_REINIT_INTERVAL) {
-        g_sdio_write_count = 0;
-        sdio_reinit();
-    }
-
     for (int retry = 0; retry < 3; retry++) {
         ensure_hal_ready();
 
-        /* Clear any stale semaphore signal */
-        xSemaphoreTake(g_sd_dma_sem, 0);
+        /* Polling write at reduced clock (same as reads — no DMA, no degradation) */
+        MODIFY_REG(SDIO->CLKCR, 0xFFU, SDIO_CLKDIV_SLOW);
 
-        if (HAL_SD_WriteBlocks_DMA(&g_hsd, (uint8_t *)buff, sector, count) != HAL_OK) {
-            continue;
-        }
+        HAL_StatusTypeDef hal = HAL_SD_WriteBlocks(&g_hsd, (uint8_t *)buff,
+                                                    sector, count, 5000);
 
-        /* Wait for DMA + SDIO completion (HAL_SD_TxCpltCallback gives semaphore) */
-        if (xSemaphoreTake(g_sd_dma_sem, pdMS_TO_TICKS(5000)) != pdTRUE) {
-            continue;
-        }
+        MODIFY_REG(SDIO->CLKCR, 0xFFU, SDIO_CLKDIV_FAST);
+        SDIO->DCTRL = 0;
+        __HAL_SD_CLEAR_FLAG(&g_hsd, SDIO_STATIC_FLAGS);
 
-        /* Check for transfer errors */
-        if (g_hsd.ErrorCode != HAL_SD_ERROR_NONE) {
+        if (hal != HAL_OK) {
+            vTaskDelay(1);
             continue;
         }
 
@@ -219,23 +211,6 @@ DRESULT disk_write(BYTE pdrv, const BYTE *buff, LBA_t sector, UINT count)
         }
 
         return RES_OK;
-    }
-
-    /* All 3 retries failed — full reinit (software power cycle) + final attempt */
-    sdio_reinit();
-    g_sdio_write_count = 0;
-    ensure_hal_ready();
-    xSemaphoreTake(g_sd_dma_sem, 0);
-    if (HAL_SD_WriteBlocks_DMA(&g_hsd, (uint8_t *)buff, sector, count) == HAL_OK) {
-        if (xSemaphoreTake(g_sd_dma_sem, pdMS_TO_TICKS(5000)) == pdTRUE) {
-            if (g_hsd.ErrorCode == HAL_SD_ERROR_NONE) {
-                uint32_t t2 = HAL_GetTick() + 5000;
-                while (HAL_SD_GetCardState(&g_hsd) != HAL_SD_CARD_TRANSFER) {
-                    if (HAL_GetTick() > t2) break;
-                }
-                return RES_OK;
-            }
-        }
     }
 
     return RES_ERROR;

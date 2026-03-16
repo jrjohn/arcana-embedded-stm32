@@ -146,6 +146,11 @@ void AtsStorageServiceImpl::storageTask(void* param) {
     }
     if (!self->mRunning) { vTaskDelete(0); return; }
 
+    // Clean up corrupt files from previous crashes (one-time boot cleanup)
+    f_unlink("sensor.ats");
+    f_unlink("sensor_bad.ats");
+    printf("[ATS] SD cleanup done\r\n");
+
     // Open device.ats (permanent lifecycle DB) + restore RTC
     if (self->openDeviceDb()) {
         self->restoreTimeFromDeviceDb();
