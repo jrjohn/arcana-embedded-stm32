@@ -103,7 +103,15 @@ void LcdServiceImpl::onStorageStats(StorageStatsModel* model, void* ctx) {
     if (self->mRenderTaskHandle) xTaskNotifyGive(self->mRenderTaskHandle);
 }
 
-void LcdServiceImpl::onSdBenchmark(SdBenchmarkModel*, void*) {}
+void LcdServiceImpl::onSdBenchmark(SdBenchmarkModel* model, void* ctx) {
+    LcdServiceImpl* self = static_cast<LcdServiceImpl*>(ctx);
+    LcdInput in;
+    in.type = LcdInput::SdInfo;
+    in.sdinfo.freeMB = model->totalKB;       // repurposed: freeMB
+    in.sdinfo.totalMB = model->totalRecords;  // repurposed: totalMB
+    self->mViewModel.onEvent(in);
+    if (self->mRenderTaskHandle) xTaskNotifyGive(self->mRenderTaskHandle);
+}
 
 void LcdServiceImpl::onBaseTimer(TimerModel*, void* ctx) {
     LcdServiceImpl* self = static_cast<LcdServiceImpl*>(ctx);

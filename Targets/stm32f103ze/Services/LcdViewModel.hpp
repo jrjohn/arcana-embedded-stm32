@@ -15,6 +15,10 @@ struct LcdOutput {
     float temperature;
     bool tempValid;
 
+    // SD card info (one-time after mount)
+    uint32_t sdFreeMB;
+    uint32_t sdTotalMB;
+
     // Storage stats
     uint32_t recordCount;
     uint16_t writesPerSec;
@@ -38,6 +42,7 @@ struct LcdOutput {
     static const uint8_t DIRTY_STORAGE = 0x02;
     static const uint8_t DIRTY_TIME    = 0x04;
     static const uint8_t DIRTY_ECG     = 0x08;
+    static const uint8_t DIRTY_SDINFO  = 0x10;
 
     LcdOutput() { memset(this, 0, sizeof(*this)); ecgPrevY = 70; }
 };
@@ -52,6 +57,7 @@ struct LcdInput {
         StorageStats,
         TimerTick,
         EcgSample,
+        SdInfo,
     };
 
     Type type;
@@ -62,6 +68,7 @@ struct LcdInput {
                  uint32_t totalKB; uint16_t kbps; }             storage;
         struct { uint32_t epoch; bool synced; uint32_t uptime; } timer;
         struct { uint8_t y; }                                    ecg;
+        struct { uint32_t freeMB; uint32_t totalMB; }            sdinfo;
     };
 };
 
@@ -104,6 +111,12 @@ public:
             mOutput.timeSynced = input.timer.synced;
             mOutput.uptimeSec = input.timer.uptime;
             mOutput.dirty |= LcdOutput::DIRTY_TIME;
+            break;
+
+        case LcdInput::SdInfo:
+            mOutput.sdFreeMB = input.sdinfo.freeMB;
+            mOutput.sdTotalMB = input.sdinfo.totalMB;
+            mOutput.dirty |= LcdOutput::DIRTY_SDINFO;
             break;
 
         case LcdInput::EcgSample: {

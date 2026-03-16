@@ -174,10 +174,14 @@ void SdBenchmarkServiceImpl::runBenchmark() {
     if (fr == FR_OK) {
         uint32_t totalMB = (uint32_t)((uint64_t)(fs->n_fatent - 2) * fs->csize / 2048);
         uint32_t freeMB  = (uint32_t)((uint64_t)fre_clust * fs->csize / 2048);
-        snprintf(msg, sizeof(msg), "[SD] %luMB/%luMB",
-                 (unsigned long)freeMB, (unsigned long)totalMB);
         printf("[SD] %luMB/%luMB exFAT Ready\r\n",
                (unsigned long)freeMB, (unsigned long)totalMB);
+
+        // Publish to LCD via MVVM (repurpose SdBenchmarkModel fields)
+        mStats.totalKB = freeMB;         // freeMB
+        mStats.totalRecords = totalMB;   // totalMB
+        mStats.updateTimestamp();
+        mStatsObs.publish(&mStats);
     } else {
         printf("[SD] Mounted! (getfree err=%d)\r\n", (int)fr);
     }

@@ -31,6 +31,7 @@ void MainView::onEnter(Ili9341Lcd& lcd) {
 
 void MainView::render(Ili9341Lcd& lcd, const LcdOutput& out, LcdOutput& rendered) {
     if (out.dirty & LcdOutput::DIRTY_TEMP)    renderTemp(lcd, out, rendered);
+    if (out.dirty & LcdOutput::DIRTY_SDINFO)  renderSdInfo(lcd, out, rendered);
     if (out.dirty & LcdOutput::DIRTY_STORAGE) renderStorage(lcd, out, rendered);
     if (out.dirty & LcdOutput::DIRTY_TIME)    renderTime(lcd, out, rendered);
 }
@@ -46,6 +47,19 @@ void MainView::renderTemp(Ili9341Lcd& lcd, const LcdOutput& out, LcdOutput& rend
     lcd.drawString(VALUE_X, TEMP_VALUE_Y, buf, Ili9341Lcd::YELLOW, Ili9341Lcd::BLACK, 2);
     rendered.temperature = out.temperature;
     rendered.tempValid = true;
+}
+
+void MainView::renderSdInfo(Ili9341Lcd& lcd, const LcdOutput& out, LcdOutput& rendered) {
+    char buf[28];
+    snprintf(buf, sizeof(buf), "%lu / %luMB",
+             (unsigned long)out.sdFreeMB, (unsigned long)out.sdTotalMB);
+    lcd.fillRect(VALUE_X, SD_INFO_Y, 200, 8, Ili9341Lcd::BLACK);
+    lcd.drawString(VALUE_X, SD_INFO_Y, buf, Ili9341Lcd::CYAN, Ili9341Lcd::BLACK, 1);
+
+    lcd.drawString(VALUE_X, SD_STATUS_Y, "exFAT Ready", Ili9341Lcd::GREEN, Ili9341Lcd::BLACK, 1);
+
+    rendered.sdFreeMB = out.sdFreeMB;
+    rendered.sdTotalMB = out.sdTotalMB;
 }
 
 void MainView::renderStorage(Ili9341Lcd& lcd, const LcdOutput& out, LcdOutput& rendered) {

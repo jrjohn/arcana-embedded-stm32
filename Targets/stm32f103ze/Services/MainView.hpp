@@ -17,6 +17,7 @@ public:
 
 private:
     void renderTemp(Ili9341Lcd& lcd, const LcdOutput& out, LcdOutput& rendered);
+    void renderSdInfo(Ili9341Lcd& lcd, const LcdOutput& out, LcdOutput& rendered);
     void renderStorage(Ili9341Lcd& lcd, const LcdOutput& out, LcdOutput& rendered);
     void renderTime(Ili9341Lcd& lcd, const LcdOutput& out, LcdOutput& rendered);
 
@@ -24,6 +25,8 @@ private:
 
     static const uint16_t VALUE_X      = 20;
     static const uint16_t TEMP_VALUE_Y = 42;
+    static const uint16_t SD_INFO_Y    = 82;
+    static const uint16_t SD_STATUS_Y  = 96;
     static const uint16_t SD_RECORDS_Y = 112;
     static const uint16_t SD_RATE_Y    = 124;
     static const uint16_t MQTT_LABEL_Y = 142;
