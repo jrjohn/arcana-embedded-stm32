@@ -9,6 +9,7 @@
 #include "WifiServiceImpl.hpp"
 #include "MqttServiceImpl.hpp"
 #include "BleServiceImpl.hpp"
+#include "OtaServiceImpl.hpp"
 #include "LcdViewModel.hpp"
 #include "MainView.hpp"
 #include "Hc08Ble.hpp"
@@ -26,6 +27,7 @@ Controller::Controller()
     , mWifi(0)
     , mMqtt(0)
     , mBle(0)
+    , mOta(0)
 {
 }
 
@@ -62,6 +64,10 @@ void Controller::wireServices() {
     mWifi      = &wifi::WifiServiceImpl::getInstance();
     mMqtt      = &mqtt::MqttServiceImpl::getInstance();
     mBle       = &ble::BleServiceImpl::getInstance();
+    mOta       = &OtaServiceImpl::getInstance();
+
+    // Wire OTA <- ESP8266
+    static_cast<OtaServiceImpl*>(mOta)->input.esp = &Esp8266::getInstance();
 
     // Wire LED <- Timer
     mLed->input.TimerEvents = mTimer->output.BaseTimer;

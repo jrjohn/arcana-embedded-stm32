@@ -1,0 +1,9 @@
+# Post-build: generate raw binary for OTA
+# This file is included by Debug/makefile via -include ../makefile.targets
+
+arcana-embedded-f103.bin: arcana-embedded-f103.elf
+	arm-none-eabi-objcopy -O binary "arcana-embedded-f103.elf" "arcana-embedded-f103.bin"
+	@echo 'Generated binary for OTA: arcana-embedded-f103.bin'
+	@echo ' '
+
+secondary-outputs: arcana-embedded-f103.bin

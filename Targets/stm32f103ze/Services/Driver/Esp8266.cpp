@@ -36,6 +36,7 @@ Esp8266::Esp8266()
     , mFrameSemBuf()
     , mFrameSem(0)
     , mInitialized(false)
+    , mIpdPassthrough(false)
 {
 }
 
@@ -142,8 +143,10 @@ void Esp8266::isr_onIdle() {
     mRxLen = mRxPos;
 
     // Check for unsolicited incoming data (+IPD or +MQTTSUBRECV)
-    if (strncmp(mRxBuf, "+IPD,", 5) == 0 ||
-        strncmp(mRxBuf, "+MQTTSUBRECV:", 13) == 0) {
+    // In IPD passthrough mode, +IPD stays in mRxBuf for direct access
+    if (!mIpdPassthrough &&
+        (strncmp(mRxBuf, "+IPD,", 5) == 0 ||
+         strncmp(mRxBuf, "+MQTTSUBRECV:", 13) == 0)) {
         uint16_t copyLen = mRxLen < MQTT_BUF_SIZE - 1 ? mRxLen : MQTT_BUF_SIZE - 1;
         memcpy(mMqttBuf, mRxBuf, copyLen);
         mMqttBuf[copyLen] = '\0';

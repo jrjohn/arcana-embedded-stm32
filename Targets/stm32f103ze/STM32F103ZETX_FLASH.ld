@@ -42,12 +42,11 @@ _Min_Heap_Size = 0x200; /* required amount of heap */
 _Min_Stack_Size = 0x400; /* required amount of stack */
 
 /* Memories definition */
-/* Flash layout: 384KB code + 128KB littlefs storage */
+/* Flash layout: 32KB bootloader (0x08000000) + 480KB app (0x08008000) */
 MEMORY
 {
   RAM    (xrw)    : ORIGIN = 0x20000000,   LENGTH = 64K
-  FLASH    (rx)    : ORIGIN = 0x8000000,   LENGTH = 384K
-  STORAGE  (rx)    : ORIGIN = 0x8060000,   LENGTH = 128K
+  FLASH    (rx)    : ORIGIN = 0x8008000,   LENGTH = 480K
 }
 
 /* Sections */

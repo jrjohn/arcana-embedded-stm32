@@ -10,6 +10,7 @@
 #include "WifiService.hpp"
 #include "MqttService.hpp"
 #include "BleService.hpp"
+#include "OtaService.hpp"
 #include "ServiceTypes.hpp"
 
 // Forward declarations for future services
@@ -48,6 +49,7 @@ private:
     wifi::WifiService*               mWifi;
     mqtt::MqttService*               mMqtt;
     ble::BleService*                 mBle;
+    OtaService*                      mOta;
 };
 
 } // namespace arcana

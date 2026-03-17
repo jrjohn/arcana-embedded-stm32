@@ -60,6 +60,7 @@
 "./Services/Service/impl/LedServiceImpl.o"
 "./Services/Service/impl/LightServiceImpl.o"
 "./Services/Service/impl/MqttServiceImpl.o"
+"./Services/Service/impl/OtaServiceImpl.o"
 "./Services/Service/impl/SdBenchmarkServiceImpl.o"
 "./Services/Service/impl/SdStorageServiceImpl.o"
 "./Services/Service/impl/SensorServiceImpl.o"

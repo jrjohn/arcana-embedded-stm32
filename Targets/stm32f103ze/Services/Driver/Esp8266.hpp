@@ -45,6 +45,11 @@ public:
     uint16_t getMqttMsgLen() const { return mMqttLen; }
     void clearMqttMsg() { mMqttReady = false; }
 
+    // IPD passthrough mode: +IPD stays in mRxBuf instead of mMqttBuf
+    // Used by OTA download to handle large +IPD chunks
+    void setIpdPassthrough(bool enable) { mIpdPassthrough = enable; }
+    bool isIpdPassthrough() const { return mIpdPassthrough; }
+
     static const uint16_t RX_BUF_SIZE = 512;
     static const uint16_t MQTT_BUF_SIZE = 256;
 
@@ -67,6 +72,7 @@ private:
     SemaphoreHandle_t mFrameSem;  // Signaled when complete frame received
 
     bool mInitialized;
+    volatile bool mIpdPassthrough;  // When true, +IPD stays in mRxBuf
 };
 
 } // namespace arcana

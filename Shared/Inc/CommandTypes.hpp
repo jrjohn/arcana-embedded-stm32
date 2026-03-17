@@ -62,6 +62,7 @@ namespace SensorCommand {
 namespace DeviceCommand {
     constexpr uint8_t GetModel        = 0x01;
     constexpr uint8_t GetSerialNumber = 0x02;
+    constexpr uint8_t StartOta        = 0x10;
 }
 
 /**
