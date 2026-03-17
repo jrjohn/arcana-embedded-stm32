@@ -375,7 +375,22 @@ void AtsStorageServiceImpl::taskLoop() {
         // 1kHz pacing — 1 record per ms
         vTaskDelayUntil(&nextWake, 1);
 
-        if (!mDbReady) continue;
+        if (!mDbReady) {
+            // DB failed (e.g. rotation error) — retry every 5 seconds
+            static uint32_t retryTick = 0;
+            uint32_t now = xTaskGetTickCount();
+            if (now - retryTick >= pdMS_TO_TICKS(5000)) {
+                retryTick = now;
+                printf("[ATS] DB not ready, retrying open...\r\n");
+                sdio_force_reinit();
+                if (openDailyDb()) {
+                    printf("[ATS] DB recovered!\r\n");
+                } else {
+                    printf("[ATS] DB retry FAILED\r\n");
+                }
+            }
+            continue;
+        }
 
         // Synthetic ECG value from LUT
         uint8_t ecgVal = ECG_LUT[ecgPhase % ECG_LUT_LEN];
