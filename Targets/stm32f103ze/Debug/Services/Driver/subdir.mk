@@ -9,6 +9,7 @@ CPP_SRCS += \
 ../Services/Driver/DhtSensor.cpp \
 ../Services/Driver/EcgDisplay.cpp \
 ../Services/Driver/Esp8266.cpp \
+../Services/Driver/EspFlasher.cpp \
 ../Services/Driver/FatFsFilePort.cpp \
 ../Services/Driver/Hc08Ble.cpp \
 ../Services/Driver/I2cBus.cpp \
@@ -22,6 +23,7 @@ OBJS += \
 ./Services/Driver/DhtSensor.o \
 ./Services/Driver/EcgDisplay.o \
 ./Services/Driver/Esp8266.o \
+./Services/Driver/EspFlasher.o \
 ./Services/Driver/FatFsFilePort.o \
 ./Services/Driver/Hc08Ble.o \
 ./Services/Driver/I2cBus.o \
@@ -35,6 +37,7 @@ CPP_DEPS += \
 ./Services/Driver/DhtSensor.d \
 ./Services/Driver/EcgDisplay.d \
 ./Services/Driver/Esp8266.d \
+./Services/Driver/EspFlasher.d \
 ./Services/Driver/FatFsFilePort.d \
 ./Services/Driver/Hc08Ble.d \
 ./Services/Driver/I2cBus.d \

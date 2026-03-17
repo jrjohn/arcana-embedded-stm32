@@ -13,6 +13,7 @@
 #include "LcdViewModel.hpp"
 #include "MainView.hpp"
 #include "Hc08Ble.hpp"
+#include "EspFlasher.hpp"
 
 namespace arcana {
 
@@ -134,6 +135,10 @@ void Controller::startServices() {
     mSensor->start();
     mLight->start();
     mSdBench->start();
+
+    // Check for ESP8266 firmware on SD → flash if bootloader detected (J83 shorted)
+    EspFlasher::run();
+
     mSdStorage->start();
     mWifi->start();
     mMqtt->start();

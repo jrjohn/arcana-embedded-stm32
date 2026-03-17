@@ -46,6 +46,7 @@
 "./Services/Driver/DhtSensor.o"
 "./Services/Driver/EcgDisplay.o"
 "./Services/Driver/Esp8266.o"
+"./Services/Driver/EspFlasher.o"
 "./Services/Driver/FatFsFilePort.o"
 "./Services/Driver/Hc08Ble.o"
 "./Services/Driver/I2cBus.o"
