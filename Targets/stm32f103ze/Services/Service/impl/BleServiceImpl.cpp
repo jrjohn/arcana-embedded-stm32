@@ -35,6 +35,10 @@ ServiceStatus BleServiceImpl::initHAL() {
 ServiceStatus BleServiceImpl::init() {
     if (input.SensorData) input.SensorData->subscribe(onSensorData, this);
     if (input.LightData)  input.LightData->subscribe(onLightData, this);
+
+    // Register BLE send function with CommandBridge
+    CommandBridge::getInstance().setBleSend(bleSendFn, this);
+
     return ServiceStatus::OK;
 }
 
@@ -52,48 +56,60 @@ void BleServiceImpl::stop() {
 }
 
 // ---------------------------------------------------------------------------
-// BLE transport callback — CommandBridge sends response here
+// Transport send callback — CommandBridge TX task calls this
 // ---------------------------------------------------------------------------
 
-void BleServiceImpl::onBleResponse(const uint8_t* frameBuf, uint16_t frameLen, void* ctx) {
+bool BleServiceImpl::bleSendFn(const uint8_t* data, uint16_t len, void* ctx) {
     BleServiceImpl* self = static_cast<BleServiceImpl*>(ctx);
-    self->mBle.send(frameBuf, frameLen);
+    return self->mBle.send(data, len);
 }
 
 // ---------------------------------------------------------------------------
-// BLE task
+// BLE task — ring buffer drain + sensor JSON push
 // ---------------------------------------------------------------------------
 
 void BleServiceImpl::bleTask(void* param) {
     BleServiceImpl* self = static_cast<BleServiceImpl*>(param);
     vTaskDelay(pdMS_TO_TICKS(2000));
+
+    // Switch HC-08 driver to data (frame reassembly) mode
+    self->mBle.setDataMode(true);
     printf("[BLE] Transport ready\r\n");
+
+    // Start CommandBridge tasks (RX + TX processing)
+    CommandBridge::getInstance().startTasks();
+    printf("[CMD] %u cmds\r\n",
+           (unsigned)CommandBridge::getInstance().getCommandCount());
+
     self->taskLoop();
     vTaskDelete(0);
 }
 
 void BleServiceImpl::taskLoop() {
     while (mRunning) {
-        mBle.clearRx();
-        uint16_t len = mBle.waitForData(pdMS_TO_TICKS(1000));
+        // Wait for IDLE interrupt (new data available) or 1s timeout
+        uint16_t pending = mBle.waitForData(pdMS_TO_TICKS(1000));
 
+        // Drain ring buffer → FrameAssembler → submit complete frames
+        if (pending > 0) {
+            while (mBle.processRxRing()) {
+                CommandBridge::getInstance().submitFrame(
+                    mBle.getFrame(), mBle.getFrameLen(),
+                    CmdFrameItem::BLE);
+                mBle.resetFrame();
+            }
+        }
+
+        // Sensor JSON push at ~1Hz
         if (mSensorDirty) {
             mSensorDirty = false;
             pushSensorJson();
         }
-
-        if (len == 0) continue;
-
-        const uint8_t* raw = (const uint8_t*)mBle.getResponse();
-        printf("[BLE] RX %u bytes\r\n", len);
-
-        // Delegate to shared CommandBridge
-        CommandBridge::getInstance().processFrame(raw, len, onBleResponse, this);
     }
 }
 
 // ---------------------------------------------------------------------------
-// Sensor data → JSON streaming
+// Sensor data → JSON streaming + cache update
 // ---------------------------------------------------------------------------
 
 void BleServiceImpl::onSensorData(SensorDataModel* model, void* ctx) {
@@ -103,6 +119,13 @@ void BleServiceImpl::onSensorData(SensorDataModel* model, void* ctx) {
     self->mAy = model->accelY;
     self->mAz = model->accelZ;
     self->mSensorDirty = true;
+
+    // Update shared sensor cache for commands
+    SensorDataCache& cache = CommandBridge::getInstance().getSensorCache();
+    cache.temp = model->temperature;
+    cache.ax = model->accelX;
+    cache.ay = model->accelY;
+    cache.az = model->accelZ;
 }
 
 void BleServiceImpl::onLightData(LightDataModel* model, void* ctx) {
@@ -110,6 +133,11 @@ void BleServiceImpl::onLightData(LightDataModel* model, void* ctx) {
     self->mAls = model->ambientLight;
     self->mPs  = model->proximity;
     self->mSensorDirty = true;
+
+    // Update shared sensor cache for commands
+    SensorDataCache& cache = CommandBridge::getInstance().getSensorCache();
+    cache.als = model->ambientLight;
+    cache.ps  = model->proximity;
 }
 
 void BleServiceImpl::pushSensorJson() {

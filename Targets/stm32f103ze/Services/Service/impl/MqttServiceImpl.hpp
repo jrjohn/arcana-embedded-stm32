@@ -35,6 +35,9 @@ private:
     // Process incoming MQTT subscription messages
     void processIncomingMsg();
 
+    // MQTT send — used as TransportSendFn by CommandBridge TX task
+    static bool mqttSendFn(const uint8_t* data, uint16_t len, void* ctx);
+
     // Raw MQTT over TCP helpers
     bool tcpSend(const uint8_t* data, uint16_t len);
     bool verifyAtReady();

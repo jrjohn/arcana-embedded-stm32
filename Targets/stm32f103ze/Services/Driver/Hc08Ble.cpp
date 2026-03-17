@@ -25,10 +25,15 @@ extern "C" void USART2_IRQHandler(void) {
 namespace arcana {
 
 Hc08Ble::Hc08Ble()
-    : mRxBuf{}
-    , mRxLen(0)
-    , mFrameSem(0)
-    , mFrameSemBuf()
+    : mAtBuf{}
+    , mAtLen(0)
+    , mRingBuf{}
+    , mRingWr(0)
+    , mRingRd(0)
+    , mAssembler()
+    , mRxSem(0)
+    , mRxSemBuf()
+    , mDataMode(false)
     , mConnected(false)
 {
 }
@@ -79,8 +84,8 @@ void Hc08Ble::initUsart() {
 }
 
 bool Hc08Ble::initHAL() {
-    mFrameSem = xSemaphoreCreateBinaryStatic(&mFrameSemBuf);
-    if (!mFrameSem) return false;
+    mRxSem = xSemaphoreCreateBinaryStatic(&mRxSemBuf);
+    if (!mRxSem) return false;
 
     initGpio();
     initUsart();
@@ -108,18 +113,45 @@ bool Hc08Ble::initHAL() {
 // ---------------------------------------------------------------------------
 
 void Hc08Ble::isr_onRxByte(uint8_t byte) {
-    if (mRxLen < RX_BUF_SIZE - 1) {
-        mRxBuf[mRxLen++] = (char)byte;
-        mRxBuf[mRxLen] = '\0';
+    if (mDataMode) {
+        // Data mode: push into ring buffer
+        uint16_t next = (mRingWr + 1) & (RX_RING_SIZE - 1);
+        if (next != mRingRd) {
+            mRingBuf[mRingWr] = byte;
+            mRingWr = next;
+        }
+        // Full → drop byte (backpressure)
+    } else {
+        // AT mode: linear buffer
+        if (mAtLen < AT_BUF_SIZE - 1) {
+            mAtBuf[mAtLen++] = byte;
+            mAtBuf[mAtLen] = '\0';
+        }
     }
 }
 
 void Hc08Ble::isr_onIdle() {
     BaseType_t woken = pdFALSE;
-    if (mFrameSem) {
-        xSemaphoreGiveFromISR(mFrameSem, &woken);
+    if (mRxSem) {
+        xSemaphoreGiveFromISR(mRxSem, &woken);
         portYIELD_FROM_ISR(woken);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Ring buffer → FrameAssembler
+// ---------------------------------------------------------------------------
+
+bool Hc08Ble::processRxRing() {
+    while (mRingRd != mRingWr) {
+        uint8_t b = mRingBuf[mRingRd];
+        mRingRd = (mRingRd + 1) & (RX_RING_SIZE - 1);
+
+        if (mAssembler.feedByte(b)) {
+            return true;  // complete frame ready — caller calls getFrame()
+        }
+    }
+    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -127,29 +159,29 @@ void Hc08Ble::isr_onIdle() {
 // ---------------------------------------------------------------------------
 
 bool Hc08Ble::sendCmd(const char* cmd, const char* expect, uint32_t timeoutMs) {
-    // Clear RX buffer
-    mRxLen = 0;
-    mRxBuf[0] = '\0';
-    xSemaphoreTake(mFrameSem, 0);  // clear any stale signal
+    mAtLen = 0;
+    mAtBuf[0] = '\0';
+    xSemaphoreTake(mRxSem, 0);  // clear stale
 
-    // Transmit command
     HAL_UART_Transmit(&sHuart2, (uint8_t*)cmd, strlen(cmd), 100);
 
-    // Wait for response frame (IDLE line = end of response)
-    if (xSemaphoreTake(mFrameSem, pdMS_TO_TICKS(timeoutMs)) != pdTRUE) {
-        return false;  // timeout
+    if (xSemaphoreTake(mRxSem, pdMS_TO_TICKS(timeoutMs)) != pdTRUE) {
+        return false;
     }
 
-    // Check for expected string
     if (expect && expect[0]) {
-        return strstr(mRxBuf, expect) != nullptr;
+        return strstr((const char*)mAtBuf, expect) != nullptr;
     }
-    return mRxLen > 0;
+    return mAtLen > 0;
 }
 
 uint16_t Hc08Ble::waitForData(uint32_t timeoutMs) {
-    if (xSemaphoreTake(mFrameSem, pdMS_TO_TICKS(timeoutMs)) == pdTRUE) {
-        return mRxLen;
+    if (xSemaphoreTake(mRxSem, pdMS_TO_TICKS(timeoutMs)) == pdTRUE) {
+        if (mDataMode) {
+            // Return ring buffer pending count
+            return (mRingWr - mRingRd) & (RX_RING_SIZE - 1);
+        }
+        return mAtLen;
     }
     return 0;
 }

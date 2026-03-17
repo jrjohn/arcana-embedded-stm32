@@ -19,6 +19,7 @@ namespace arcana {
 enum class Cluster : uint8_t {
     System = 0x00,
     Sensor = 0x01,
+    Device = 0x02,
 };
 
 /**
@@ -46,11 +47,21 @@ struct CommandKey {
 
 /* Well-known command IDs */
 namespace SystemCommand {
-    constexpr uint8_t Ping = 0x01;
+    constexpr uint8_t Ping             = 0x01;
+    constexpr uint8_t GetFwVersion     = 0x02;
+    constexpr uint8_t GetCompileTime   = 0x03;
 }
 
 namespace SensorCommand {
-    constexpr uint8_t GetCounter = 0x01;
+    constexpr uint8_t GetCounter     = 0x01;
+    constexpr uint8_t GetTemperature = 0x02;
+    constexpr uint8_t GetAccel       = 0x03;
+    constexpr uint8_t GetLight       = 0x04;
+}
+
+namespace DeviceCommand {
+    constexpr uint8_t GetModel        = 0x01;
+    constexpr uint8_t GetSerialNumber = 0x02;
 }
 
 /**
@@ -67,7 +78,7 @@ struct CommandRequest {
  */
 class CommandResponseModel : public Model {
 public:
-    static constexpr uint8_t MAX_DATA_LENGTH = 16;
+    static constexpr uint8_t MAX_DATA_LENGTH = 24;
 
     CommandKey key = {Cluster::System, 0};
     CommandStatus status = CommandStatus::Success;

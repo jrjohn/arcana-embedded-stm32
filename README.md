@@ -100,29 +100,87 @@ ObservableDispatcher (dual priority queue: 8 normal + 4 high)
 
 ### CommandBridge (Transport-Agnostic Commands)
 
-```
-Phone (BLE)          Cloud (MQTT)
-    │ FFE1               │
-    ▼                    ▼
-  HC-08              ESP8266
-    │                    │
-    ▼                    ▼
-BleServiceImpl    MqttServiceImpl
-    │                    │
-    └────────┬───────────┘
-             ▼
-     CommandBridge (shared)
-     ├── PingCommand
-     ├── GetSensorCommand (future)
-     └── SetConfigCommand (future)
-             │
-     ┌───────┴───────┐
-     ▼               ▼
-BLE callback    MQTT callback
-(原路回傳)       (原路回傳)
+```mermaid
+flowchart TB
+    subgraph ISR["ISR Layer"]
+        BLE_ISR["USART2 ISR<br/>(byte-by-byte)"]
+    end
+
+    subgraph RX["RX Pipeline"]
+        RING["Ring Buffer<br/>128 bytes, lock-free"]
+        ASM["FrameAssembler<br/>state machine"]
+        SUBMIT_BLE["submitFrame(BLE)"]
+        SUBMIT_MQTT["submitFrame(MQTT)"]
+        RXQ["RX Frame Queue<br/>(8 slots)"]
+    end
+
+    subgraph BRIDGE["CommandBridge"]
+        TASK_RX["bridgeTask<br/>xQueueReceive (blocking)"]
+        DEFRAME["FrameCodec::deframe()<br/>CRC-16 verify + sid extract"]
+        EXEC["Command Execute<br/>8 registered commands"]
+        FRAME["FrameCodec::frame()<br/>echo request sid"]
+    end
+
+    subgraph TX["TX Pipeline"]
+        TXQ["TX Queue<br/>(8 slots)"]
+        TASK_TX["txTask<br/>route by transport"]
+    end
+
+    subgraph TRANSPORT["Transport Layer"]
+        HC08["HC-08 BLE<br/>USART2 @ 9600"]
+        ESP["ESP8266 MQTT<br/>USART3 AT cmd"]
+    end
+
+    subgraph PHONE["External"]
+        APP["Phone App<br/>(BLE FFE1)"]
+        CLOUD["MQTT Broker"]
+    end
+
+    BLE_ISR -->|"isr_onRxByte()"| RING
+    RING -->|"processRxRing()"| ASM
+    ASM -->|"complete frame"| SUBMIT_BLE
+    ESP -->|"MQTT PUBLISH payload"| SUBMIT_MQTT
+    SUBMIT_BLE --> RXQ
+    SUBMIT_MQTT --> RXQ
+    RXQ --> TASK_RX
+    TASK_RX --> DEFRAME
+    DEFRAME --> EXEC
+    EXEC --> FRAME
+    FRAME --> TXQ
+    TXQ --> TASK_TX
+    TASK_TX -->|"BLE"| HC08
+    TASK_TX -->|"MQTT"| ESP
+    HC08 <--> APP
+    ESP <--> CLOUD
 ```
 
-Same FrameCodec wire protocol (magic 0xAC DA + CRC-16) for both transports.
+#### Frame Reassembly (BLE MTU=20)
+
+HC-08 BLE 4.0 splits frames larger than 20 bytes across multiple UART IDLE events.
+`FrameAssembler` is a byte-level state machine that handles both fragmentation and concatenation:
+
+| Problem | Solution |
+|---------|----------|
+| **Fragmentation** (MTU splits) | State machine accumulates bytes across multiple IDLE events |
+| **Concatenation** (multi-frame) | Scans for `0xAC DA` magic, loops to extract all frames |
+| **Corruption** (bad CRC) | `FrameCodec::deframe()` rejects, logs `[CMD] Bad frame` |
+| **Out-of-order** | Response echoes request `sid` — phone matches by sequence |
+| **Backpressure** | Ring buffer drops bytes when full; TX queue drops when full |
+
+#### Registered Commands
+
+| Cluster | ID | Command | Response |
+|---------|-----|---------|----------|
+| System 0x00 | 0x01 | Ping | tick:4LE |
+| System 0x00 | 0x02 | GetFirmwareVersion | `__DATE__` string |
+| System 0x00 | 0x03 | GetCompileDateTime | `__DATE__ __TIME__` |
+| Device 0x02 | 0x01 | GetDeviceModel | "STM32F103ZE" |
+| Device 0x02 | 0x02 | GetSerialNumber | UID 12-byte hex |
+| Sensor 0x01 | 0x02 | GetTemperature | temp*10:2LE |
+| Sensor 0x01 | 0x03 | GetAccel | ax:2LE ay:2LE az:2LE |
+| Sensor 0x01 | 0x04 | GetLight | als:2LE ps:2LE |
+
+Same FrameCodec wire protocol (magic `0xAC DA` + CRC-16) for both transports.
 New commands register once in CommandBridge, available on BLE + MQTT simultaneously.
 
 BLE also streams sensor JSON at 1Hz (no framing, plain text):
@@ -161,6 +219,8 @@ Targets/stm32f103ze/
 │   │       ├── CommandBridge.cpp       (shared command processing)
 │   │       ├── BleServiceImpl.hpp/.cpp (HC-08 BLE transport)
 │   │       └── Wifi/Mqtt/Led/Light/Sensor/SdStorage ServiceImpl
+│   ├── Command/        # Command implementations
+│   │   └── Commands.hpp          (header-only: 8 ICommand classes)
 │   ├── Driver/         # Hardware abstraction
 │   │   ├── Ili9341Lcd.hpp/.cpp     (FSMC LCD)
 │   │   ├── SdCard.hpp/.cpp         (SDIO DMA)
@@ -178,7 +238,7 @@ Targets/stm32f103ze/
 └── Middlewares/        # FreeRTOS, FatFs (exFAT), FlashDB
 
 Shared/
-├── Inc/                # Observable.hpp, Models.hpp, Crc16, FrameCodec
+├── Inc/                # Observable, Models, Crc16, FrameCodec, FrameAssembler
 │   └── ats/            # ArcanaTS headers (ArcanaTsDb, Schema, Types)
 └── Src/                # Observable.cpp, ArcanaTsDb.cpp
 ```
@@ -198,20 +258,21 @@ Shared/
 | **SDIO Recovery** | Proactive reinit every 200 writes + reactive on failure |
 | **Event-Driven LCD** | xTaskNotify render (no timer polling), dirty flag optimization |
 | **BLE 4.0** | HC-08 transparent UART, sensor JSON streaming + FrameCodec commands |
-| **CommandBridge** | Shared command registry — BLE + MQTT use same command handlers |
+| **Frame Reassembly** | FrameAssembler state machine handles BLE MTU=20 fragmentation + concatenation |
+| **CommandBridge** | RX/TX queue architecture — BLE + MQTT share one command registry, 8 commands |
 | **NTP Clock** | ESP8266 UDP NTP, RTC restore from device.ats on boot |
 
 ### F103 Build Output
 
 ```
    text    data     bss     dec     hex  filename
-  79072     140   57744  136956   216fc  arcana-embedded-f103.elf
+  84416     184   62952  147552   24060  arcana-embedded-f103.elf
 ```
 
 | Resource | Used | Total | % |
 |----------|------|-------|---|
-| Flash | 79KB | 512KB | 15% |
-| RAM (bss) | 57KB | 64KB | 89% |
+| Flash | 82KB | 512KB | 16% |
+| RAM (bss) | 61KB | 64KB | 94% |
 
 ---
 
@@ -263,7 +324,8 @@ python3 read_serial.py    # /dev/tty.usbserial-1120 @ 115200
 | **SDIO proactive reinit** | Every 200 polling writes prevents bus degradation |
 | **1kHz zero-fail writes** | ArcanaTS + periodic flush + SDIO recovery = sustained throughput |
 | **Cross-platform ArcanaTS** | PAL interfaces work on STM32/ESP32/Linux |
-| **Shared CommandBridge** | BLE + MQTT transports share one command registry — register once, works everywhere |
+| **Shared CommandBridge** | RX/TX queue decoupling — bridgeTask processes, txTask sends, zero blocking |
+| **BLE frame reassembly** | Ring buffer (ISR) → FrameAssembler (task) → submitFrame — lock-free pipeline |
 | **BLE sensor streaming** | 1Hz JSON push via HC-08 FFE1, phone receives automatically |
 | **Static allocation** | No malloc, predictable memory, no fragmentation |
 
@@ -304,6 +366,8 @@ python3 read_serial.py    # /dev/tty.usbserial-1120 @ 115200
 - [x] Proper MVVM wiring (View → ViewModel → Service)
 - [x] HC-08 BLE 4.0 driver + sensor JSON streaming
 - [x] Shared CommandBridge (BLE + MQTT use same commands)
+- [x] BLE frame reassembly + ring buffer + RX/TX queue architecture
+- [x] 8 registered commands (System/Device/Sensor clusters)
 - [ ] arcana-android BLE integration (sensor dashboard)
 - [ ] Real ADS1298 SPI ECG (replace synthetic LUT)
 - [ ] ECG Observable (decouple AtsStorage → View)

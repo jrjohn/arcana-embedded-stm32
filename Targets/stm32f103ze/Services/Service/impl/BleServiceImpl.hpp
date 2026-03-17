@@ -10,7 +10,7 @@ namespace ble {
 
 /**
  * BLE transport — HC-08 transparent UART.
- * Receives framed commands → delegates to shared CommandBridge.
+ * Receives bytes → FrameAssembler → submitFrame to CommandBridge.
  * Streams sensor JSON to phone at 1Hz.
  */
 class BleServiceImpl : public BleService {
@@ -22,6 +22,9 @@ public:
     ServiceStatus start() override;
     void stop() override;
 
+    /** BLE send — used as TransportSendFn by CommandBridge TX task */
+    static bool bleSendFn(const uint8_t* data, uint16_t len, void* ctx);
+
 private:
     BleServiceImpl();
     ~BleServiceImpl();
@@ -31,10 +34,7 @@ private:
     static void bleTask(void* param);
     void taskLoop();
 
-    // BLE → CommandBridge response callback
-    static void onBleResponse(const uint8_t* frameBuf, uint16_t frameLen, void* ctx);
-
-    // Sensor Observable callbacks → JSON push
+    // Sensor Observable callbacks → JSON push + cache update
     static void onSensorData(SensorDataModel* model, void* ctx);
     static void onLightData(LightDataModel* model, void* ctx);
     void pushSensorJson();
@@ -46,7 +46,7 @@ private:
     TaskHandle_t mTaskHandle;
     bool mRunning;
 
-    // Cached latest readings
+    // Cached latest readings (for JSON push)
     float mTemp;
     int16_t mAx, mAy, mAz;
     uint16_t mAls, mPs;

@@ -3,6 +3,7 @@
 #include "Credentials.hpp"
 #include "Esp8266.hpp"
 #include "Ili9341Lcd.hpp"
+#include "CommandBridge.hpp"
 #include <cstdio>
 #include <cstring>
 
@@ -184,6 +185,7 @@ void MqttServiceImpl::runTask() {
         // --- Phase 4: Connected ---
         lcdStatus("[MQTT] Connected!");
         mMqttConnected = true;
+        CommandBridge::getInstance().setMqttSend(mqttSendFn, this);
         mConnModel.connected = true;
         mConnModel.updateTimestamp();
         mConnObs.publish(&mConnModel);
@@ -455,14 +457,47 @@ void MqttServiceImpl::processIncomingMsg() {
     uint16_t available = bufLen - (uint16_t)(p - buf);
     if (payloadLen > available) payloadLen = available;
 
+    // Submit to CommandBridge frame queue (MQTT payload is a complete FrameCodec frame)
+    if (payloadLen > 0 && payloadLen <= CmdFrameItem::MAX_DATA) {
+        CommandBridge::getInstance().submitFrame(
+            reinterpret_cast<const uint8_t*>(p), payloadLen,
+            CmdFrameItem::MQTT);
+    }
+
+    // Also publish via observable for legacy subscribers
     if (payloadLen > MqttCommandModel::MAX_DATA) {
         payloadLen = MqttCommandModel::MAX_DATA;
     }
-
     memcpy(mCmdModel.data, p, payloadLen);
     mCmdModel.length = (uint8_t)payloadLen;
     mCmdModel.updateTimestamp();
     mCmdObs.publish(&mCmdModel);
+}
+
+// --- MQTT response send function for CommandBridge ---
+
+bool MqttServiceImpl::mqttSendFn(const uint8_t* data, uint16_t len, void* ctx) {
+    MqttServiceImpl* self = static_cast<MqttServiceImpl*>(ctx);
+    if (!self->mMqttConnected) return false;
+
+    // Wrap frame data as MQTT PUBLISH to arcana/response topic
+    uint8_t pkt[128];
+    const char* topic = "arcana/rsp";
+    uint16_t topicLen = strlen(topic);
+    uint16_t remainLen = 2 + topicLen + 1 + len;
+    uint16_t pos = 0;
+
+    pkt[pos++] = 0x30;  // PUBLISH QoS 0
+    pkt[pos++] = (uint8_t)remainLen;
+    pkt[pos++] = (uint8_t)(topicLen >> 8);
+    pkt[pos++] = (uint8_t)(topicLen & 0xFF);
+    memcpy(pkt + pos, topic, topicLen);
+    pos += topicLen;
+    pkt[pos++] = 0x00;  // Properties Length: 0
+    memcpy(pkt + pos, data, len);
+    pos += len;
+
+    return self->tcpSend(pkt, pos);
 }
 
 } // namespace mqtt
