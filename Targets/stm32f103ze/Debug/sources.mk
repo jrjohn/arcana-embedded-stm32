@@ -49,7 +49,7 @@ Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM3 \
 Middlewares/Third_Party/FreeRTOS/Source/portable/MemMang \
 Services/Controller \
 Services/Driver \
-Services/Service \
+Services/Service/impl \
 Services/View \
 Shared/Src \
 Shared/Src/ats \
