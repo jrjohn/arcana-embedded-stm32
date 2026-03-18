@@ -415,6 +415,12 @@ bool ArcanaTsDb::flush() {
         if (!flushSlowBuffer()) ok = false;
     }
 
+    // Update file header with current stats (survives power loss)
+    if (ok) {
+        updateFileHeader();
+        mCfg.file->sync();
+    }
+
     return ok;
 }
 
