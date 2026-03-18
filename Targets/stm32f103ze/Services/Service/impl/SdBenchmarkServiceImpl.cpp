@@ -86,9 +86,25 @@ void SdBenchmarkServiceImpl::benchmarkTask(void* param) {
     vTaskDelete(0);
 }
 
+static FRESULT texfat_format(void) {
+    MKFS_PARM opt;
+    memset(&opt, 0, sizeof(opt));
+    opt.fmt = FM_EXFAT;
+    opt.n_fat = 2;
+    // Reuse FatFS static buffer (sFatFs.win is 512B, enough for f_mkfs)
+    return f_mkfs("", &opt, &sFatFs, sizeof(sFatFs));
+}
+
 void SdBenchmarkServiceImpl::runBenchmark() {
     char msg[40];
     FRESULT fr;
+
+#define TEXFAT_FORCE_FORMAT 0  /* Set to 1 to format SD with TexFAT */
+#if TEXFAT_FORCE_FORMAT
+    printf("[SD] TexFAT force format (n_fat=2)...\r\n");
+    fr = texfat_format();
+    printf("[SD] Format %s (err=%d)\r\n", fr == FR_OK ? "OK" : "FAIL", (int)fr);
+#endif
 
     static const int MAX_RETRIES = 3;
     bool mounted = false;
@@ -130,9 +146,21 @@ void SdBenchmarkServiceImpl::runBenchmark() {
     }
 
     if (!mounted) {
+        // Format with TexFAT dual-FAT (n_fat=2) as last resort
+        printf("[SD] Formatting TexFAT (n_fat=2)...\r\n");
+        fr = texfat_format();
+        if (fr == FR_OK) {
+            printf("[SD] Format OK, mounting...\r\n");
+            fr = f_mount(&sFatFs, "", 1);
+            if (fr == FR_OK) mounted = true;
+        } else {
+            printf("[SD] Format FAILED err=%d\r\n", (int)fr);
+        }
 
-        printf("[SD] FAILED after %d attempts\r\n", MAX_RETRIES);
-        return;
+        if (!mounted) {
+            printf("[SD] FAILED after %d attempts\r\n", MAX_RETRIES);
+            return;
+        }
     }
 
     // Filesystem mounted — signal MQTT

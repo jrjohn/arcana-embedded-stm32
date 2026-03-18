@@ -167,12 +167,15 @@ uint32_t FatFsFilePort::size() {
 
 bool FatFsFilePort::truncate() {
     if (!mIsOpen) return false;
-    // Skip actual truncation — on exFAT after unclean power-off, f_truncate
-    // corrupts the cluster chain at the cut point, making subsequent writes
-    // at EOF impossible (FR_INT_ERR).  By keeping the original file size,
-    // blocks at the write position use already-allocated clusters.
-    // ArcanaTsDb recovery handles stale data (skips invalid blocks on next scan).
     mFil.err = 0;
+
+    // TexFAT (n_fats==2): safe to truncate — the committed FAT has a
+    // correct cluster chain, so f_truncate won't corrupt anything.
+    // Single FAT (n_fats==1): skip truncate — broken cluster chain at
+    // cut point would make subsequent writes impossible.
+    if (mFil.obj.fs->n_fats == 2) {
+        return f_truncate(&mFil) == FR_OK;
+    }
     return f_sync(&mFil) == FR_OK;
 }
 
