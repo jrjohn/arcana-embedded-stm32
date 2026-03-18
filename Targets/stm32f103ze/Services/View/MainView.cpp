@@ -104,11 +104,16 @@ void MainView::onEnter(Ili9341Lcd& lcd) {
     lcd.drawHLine(10, 62, 220, Ili9341Lcd::DARKGRAY);
     lcd.drawString(VALUE_X, 68, "SD Storage (ArcanaTS)", Ili9341Lcd::WHITE, Ili9341Lcd::BLACK, 1);
     lcd.drawString(VALUE_X, SD_RECORDS_Y, "Records:", Ili9341Lcd::GRAY, Ili9341Lcd::BLACK, 1);
+    lcd.drawString(VALUE_X + 54, SD_RECORDS_Y, "---", Ili9341Lcd::GRAY, Ili9341Lcd::BLACK, 1);
     lcd.drawString(VALUE_X, SD_RATE_Y, "Rate:", Ili9341Lcd::GRAY, Ili9341Lcd::BLACK, 1);
+    lcd.drawString(VALUE_X + 36, SD_RATE_Y, "---", Ili9341Lcd::GRAY, Ili9341Lcd::BLACK, 1);
 
     lcd.drawHLine(10, 136, 220, Ili9341Lcd::DARKGRAY);
     lcd.drawString(VALUE_X, MQTT_LABEL_Y, "WiFi / MQTT", Ili9341Lcd::WHITE, Ili9341Lcd::BLACK, 1);
     lcd.drawString(VALUE_X, MQTT_STATUS_Y, "Idle", Ili9341Lcd::GRAY, Ili9341Lcd::BLACK, 1);
+
+    lcd.drawString(78, CLOCK_DATE_Y, "UPTIME", Ili9341Lcd::YELLOW, Ili9341Lcd::BLACK, 2);
+    lcd.drawString(72, CLOCK_TIME_Y, "00:00:00", Ili9341Lcd::YELLOW, Ili9341Lcd::BLACK, 2);
 
     lcd.drawHLine(0, ECG_TOP_Y - 2, 240, Ili9341Lcd::DARKGRAY);
     lcd.drawString(2, ECG_TOP_Y - 12, "ECG", Ili9341Lcd::GREEN, Ili9341Lcd::BLACK, 1);

@@ -865,32 +865,56 @@ bool ArcanaTsDb::recoverFromExisting() {
     if (!readFileHeader()) return false;
     if (!readChannelDescriptors()) return false;
 
-    // Scan forward from last known block to find valid end
+    // Scan forward — skip bad blocks instead of truncating at first one
     mNextBlockOffset = DATA_START_OFFSET;
     mIndexCount = 0;
 
     uint32_t fileSize = mCfg.file->size();
     uint32_t validBlocks = 0;
     uint32_t totalRecords = 0;
+    uint32_t skippedBlocks = 0;
+    uint32_t lastValidEnd = DATA_START_OFFSET;  // truncation point
+    uint32_t consecutiveBad = 0;
 
-    while (mNextBlockOffset + BLOCK_SIZE <= fileSize) {
+    uint32_t offset = DATA_START_OFFSET;
+    while (offset + BLOCK_SIZE <= fileSize) {
         AtsBlockHeader hdr;
-        if (!validateBlock(mNextBlockOffset / BLOCK_SIZE, hdr)) break;
+        if (!validateBlock(offset / BLOCK_SIZE, hdr)) {
+            skippedBlocks++;
+            consecutiveBad++;
+            offset += BLOCK_SIZE;
+            // Stop after 4 consecutive bad blocks (end of written region)
+            if (consecutiveBad >= 4) break;
+            continue;
+        }
+        consecutiveBad = 0;
 
-        addIndexEntry(mNextBlockOffset / BLOCK_SIZE, hdr.channelId,
-                      hdr.recordCount, hdr.firstTimestamp, hdr.lastTimestamp);
+        if (mIndexCount < MAX_INDEX_ENTRIES) {
+            addIndexEntry(offset / BLOCK_SIZE, hdr.channelId,
+                          hdr.recordCount, hdr.firstTimestamp, hdr.lastTimestamp);
+        }
 
         totalRecords += hdr.recordCount;
-        mNextSeqNo = hdr.blockSeqNo + 1;
-        mNextBlockOffset += BLOCK_SIZE;
+        if (hdr.blockSeqNo >= mNextSeqNo) {
+            mNextSeqNo = hdr.blockSeqNo + 1;
+        }
         validBlocks++;
+        offset += BLOCK_SIZE;
+        lastValidEnd = offset;  // after this valid block
     }
 
-    // Truncate at invalid block boundary
-    if (mNextBlockOffset < fileSize) {
-        mCfg.file->seek(mNextBlockOffset);
+    // Set write position past the last valid block
+    mNextBlockOffset = lastValidEnd;
+
+    // Truncate only the tail beyond last valid block
+    if (lastValidEnd < fileSize) {
+        mCfg.file->seek(lastValidEnd);
         mCfg.file->truncate();
         mStats.recoveryTruncations++;
+    }
+
+    if (skippedBlocks > 0) {
+        mStats.blocksFailed += skippedBlocks;
     }
 
     mStats.blocksWritten = validBlocks;

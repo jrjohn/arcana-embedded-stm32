@@ -101,6 +101,7 @@ private:
     uint32_t mWindowStartTick;
     uint16_t mWritesInWindow;
     uint16_t mLastRate;
+    uint32_t mBaselineBlocksFailed;  // historical fail count at boot
 };
 
 } // namespace atsstorage

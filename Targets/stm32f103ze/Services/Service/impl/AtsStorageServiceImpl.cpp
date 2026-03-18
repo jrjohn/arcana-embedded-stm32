@@ -74,6 +74,7 @@ AtsStorageServiceImpl::AtsStorageServiceImpl()
     , mWindowStartTick(0)
     , mWritesInWindow(0)
     , mLastRate(0)
+    , mBaselineBlocksFailed(0)
 {
     input.SensorData = 0;
     output.StatsEvents = &mStatsObs;
@@ -151,7 +152,10 @@ void AtsStorageServiceImpl::storageTask(void* param) {
 
     // Clean up corrupt files from previous crashes
     f_unlink("sensor_bad.ats");
-    printf("[ATS] SD cleanup done\r\n");
+
+    // Proactive SDIO reinit — ensures stable reads during DB recovery
+    sdio_force_reinit();
+    printf("[ATS] SD cleanup + SDIO reinit done\r\n");
 
     // Open device.ats (permanent lifecycle DB) + restore RTC
     if (self->openDeviceDb()) {
@@ -163,6 +167,13 @@ void AtsStorageServiceImpl::storageTask(void* param) {
     printf("[ATS] Opening sensor DB...\r\n");
     if (!self->openDailyDb()) {
         printf("[ATS] Open FAILED\r\n");
+        // Publish zero stats so LCD shows "0" instead of blank
+        self->mStatsModel.recordCount = 0;
+        self->mStatsModel.writesPerSec = 0;
+        self->mStatsModel.totalKB = 0;
+        self->mStatsModel.kbPerSec = 0;
+        self->mStatsModel.updateTimestamp();
+        self->mStatsObs.publish(&self->mStatsModel);
         vTaskDelete(0);
         return;
     }
@@ -196,6 +207,12 @@ void AtsStorageServiceImpl::storageTask(void* param) {
             printf("[ATS] Recreating...\r\n");
             if (!self->openDailyDb()) {
                 printf("[ATS] Recreate FAILED\r\n");
+                self->mStatsModel.recordCount = 0;
+                self->mStatsModel.writesPerSec = 0;
+                self->mStatsModel.totalKB = 0;
+                self->mStatsModel.kbPerSec = 0;
+                self->mStatsModel.updateTimestamp();
+                self->mStatsObs.publish(&self->mStatsModel);
                 vTaskDelete(0);
                 return;
             }
@@ -204,6 +221,15 @@ void AtsStorageServiceImpl::storageTask(void* param) {
             printf("[ATS] Write test OK\r\n");
         }
     }
+
+    // Publish initial stats immediately so LCD shows recovered state
+    // (don't wait 1 second for first taskLoop report)
+    self->mStatsModel.recordCount = self->mTotalRecords;
+    self->mStatsModel.writesPerSec = 0;
+    self->mStatsModel.totalKB = (self->mDb.getStats().blocksWritten + 1) * 4;
+    self->mStatsModel.kbPerSec = 0;
+    self->mStatsModel.updateTimestamp();
+    self->mStatsObs.publish(&self->mStatsModel);
 
     printf("[ATS] Ready, 1kHz mode\r\n");
     self->taskLoop();
@@ -238,7 +264,11 @@ bool AtsStorageServiceImpl::openDailyDb() {
             return false;
         }
     }
-    printf("[ATS] db.open OK (started=%d)\r\n", mDb.isOpen() && mDb.getChannelCount() > 0);
+    printf("[ATS] db.open OK (started=%d, blk=%lu, rec=%lu, trunc=%lu)\r\n",
+           mDb.isOpen() && mDb.getChannelCount() > 0,
+           (unsigned long)mDb.getStats().blocksWritten,
+           (unsigned long)mDb.getStats().totalRecords,
+           (unsigned long)mDb.getStats().recoveryTruncations);
 
     // If recovery loaded channels, skip addChannel/start
     if (!mDb.isReadOnly() && mDb.getChannelCount() == 0) {
@@ -258,7 +288,9 @@ bool AtsStorageServiceImpl::openDailyDb() {
 
     mDbReady = true;
     mTotalRecords = mDb.getStats().totalRecords;
-    printf("[ATS] Ready, resuming at %lu rec\r\n", (unsigned long)mTotalRecords);
+    mBaselineBlocksFailed = mDb.getStats().blocksFailed;
+    printf("[ATS] Ready, resuming at %lu rec (hist_fail=%lu)\r\n",
+           (unsigned long)mTotalRecords, (unsigned long)mBaselineBlocksFailed);
     return true;
 }
 
@@ -444,11 +476,12 @@ void AtsStorageServiceImpl::taskLoop() {
             mStatsModel.updateTimestamp();
             mStatsObs.publish(&mStatsModel);
 
+            uint32_t sessionFail = mDb.getStats().blocksFailed - mBaselineBlocksFailed;
             printf("[ATS] %lu rec, %lu/s, blk=%lu (%luKB) fail=%lu drop=%lu\r\n",
                    (unsigned long)mTotalRecords, (unsigned long)windowOk,
                    (unsigned long)mDb.getStats().blocksWritten,
                    (unsigned long)mStatsModel.totalKB,
-                   (unsigned long)mDb.getStats().blocksFailed,
+                   (unsigned long)sessionFail,
                    (unsigned long)mDb.getStats().overflowDrops);
 
             windowOk = 0;
