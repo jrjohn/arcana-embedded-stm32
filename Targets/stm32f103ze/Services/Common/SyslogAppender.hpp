@@ -52,15 +52,15 @@ public:
 
         if (event.param != 0) {
             snprintf(mRing[mHead], MSG_MAX_LEN,
-                     "<%u>arcana: [%c][%s] 0x%04X p=%lu",
-                     (unsigned)pri, lvl, src,
-                     (unsigned)event.code,
+                     "<%u>arcana[%lu]: [%c][%s] 0x%04X p=%lu",
+                     (unsigned)pri, (unsigned long)event.timestamp,
+                     lvl, src, (unsigned)event.code,
                      (unsigned long)event.param);
         } else {
             snprintf(mRing[mHead], MSG_MAX_LEN,
-                     "<%u>arcana: [%c][%s] 0x%04X",
-                     (unsigned)pri, lvl, src,
-                     (unsigned)event.code);
+                     "<%u>arcana[%lu]: [%c][%s] 0x%04X",
+                     (unsigned)pri, (unsigned long)event.timestamp,
+                     lvl, src, (unsigned)event.code);
         }
 
         mHead = next;
@@ -124,11 +124,13 @@ public:
      * Enqueue a periodic stats message (bypasses Logger level filter).
      * Call from ATS taskLoop every 1 second.
      */
-    void sendStats(uint32_t records, uint16_t rate, uint32_t kb) {
+    void sendStats(uint32_t records, uint16_t rate, uint32_t kb,
+                   uint32_t epoch = 0) {
         uint8_t next = (mHead + 1) & RING_MASK;
         if (next == mTail) return;
         snprintf(mRing[mHead], MSG_MAX_LEN,
-                 "<14>arcana: rec=%lu r=%u KB=%lu",
+                 "<14>arcana[%lu]: rec=%lu r=%u KB=%lu",
+                 (unsigned long)epoch,
                  (unsigned long)records, (unsigned)rate, (unsigned long)kb);
         mHead = next;
     }

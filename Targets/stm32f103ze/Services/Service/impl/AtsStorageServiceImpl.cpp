@@ -648,7 +648,8 @@ void AtsStorageServiceImpl::taskLoop() {
 
             // Send stats to syslog (picked up by MQTT task)
             log::SyslogAppender::getInstance().sendStats(
-                mTotalRecords, (uint16_t)windowOk, mStatsModel.totalKB);
+                mTotalRecords, (uint16_t)windowOk, mStatsModel.totalKB,
+                atsGetTime());
 
             windowOk = 0;
             windowFail = 0;
