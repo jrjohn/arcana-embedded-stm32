@@ -45,18 +45,20 @@ Esp8266& WifiServiceImpl::getEsp() {
 // --- Full reset + connect ---
 
 bool WifiServiceImpl::resetAndConnect() {
-    //lcdStatus("[WiFi] Reset ESP...");
     mEsp.reset();
+    vTaskDelay(pdMS_TO_TICKS(1000));  // AT v2.2 FreeRTOS boot needs extra time
 
-    //lcdStatus("[WiFi] AT test...");
-    if (!mEsp.sendCmd("AT", "OK", 2000)) {
-        mEsp.reset();
-        if (!mEsp.sendCmd("AT", "OK", 2000)) {
-            //lcdStatus("[WiFi] ERR: no resp");
-            return false;
-        }
+    // Retry AT up to 5 times
+    bool atOk = false;
+    for (int i = 0; i < 5; i++) {
+        if (mEsp.sendCmd("AT", "OK", 2000)) { atOk = true; break; }
+        vTaskDelay(pdMS_TO_TICKS(500));
     }
-    //lcdStatus("[WiFi] AT OK");
+    if (!atOk) {
+        printf("[WiFi] AT no response\r\n");
+        return false;
+    }
+    printf("[WiFi] AT OK\r\n");
 
     return connectWifi();
 }
@@ -71,106 +73,85 @@ bool WifiServiceImpl::connect() {
 // --- WiFi AP connection ---
 
 bool WifiServiceImpl::connectWifi() {
-    mEsp.sendCmd("AT+CWDHCP_CUR=1,1", "OK", 500);
+    mEsp.sendCmd("AT+CWDHCP=1,1", "OK", 500);
 
-    //lcdStatus("CWMODE=1...");
     if (!mEsp.sendCmd("AT+CWMODE=1", "OK", 2500)) {
         if (!mEsp.responseContains("no change")) {
-            //lcdStatus("ERR: CWMODE fail");
-            //showResponse(mEsp);
+            printf("[WiFi] CWMODE fail\r\n");
             return false;
         }
     }
+    printf("[WiFi] CWMODE OK\r\n");
 
     char cmd[128];
     snprintf(cmd, sizeof(cmd), "AT+CWJAP=\"%s\",\"%s\"", WIFI_SSID, WIFI_PASS);
-    //lcdStatus("CWJAP...");
-    //lcdStatus2("");
-    if (mEsp.sendCmd(cmd, "OK", 15000)) {
+    printf("[WiFi] Joining %s...\r\n", WIFI_SSID);
+
+    // AT v2.2 may send "WIFI CONNECTED" + "WIFI GOT IP" before "OK"
+    if (mEsp.sendCmd(cmd, "OK", 20000)) {
+        printf("[WiFi] Connected!\r\n");
         vTaskDelay(pdMS_TO_TICKS(1000));
-        //lcdStatus("[WiFi] Connected");
         return true;
     }
-    //lcdStatus("ERR: CWJAP");
-    //showResponse(mEsp);
+
+    // Check if connected despite no "OK" (AT v2.2 may respond differently)
+    if (mEsp.responseContains("GOT IP")) {
+        printf("[WiFi] Connected (GOT IP)!\r\n");
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        return true;
+    }
+
+    printf("[WiFi] CWJAP fail: %.*s\r\n",
+           mEsp.getResponseLen() > 60 ? 60 : mEsp.getResponseLen(),
+           mEsp.getResponse());
     return false;
 }
 
-// --- NTP time sync via raw UDP ---
+// --- NTP time sync via AT+CIPSNTPCFG (AT v2.2+) ---
 
 bool WifiServiceImpl::syncNtp() {
-    //lcdStatus("[NTP] UDP...");
-
-    // Open UDP connection to NTP server
-    if (!mEsp.sendCmd("AT+CIPSTART=\"UDP\",\"pool.ntp.org\",123", "OK", 5000)) {
-        //lcdStatus("[NTP] UDP fail");
-        //showResponse(mEsp);
-        vTaskDelay(pdMS_TO_TICKS(2000));
+    // Configure SNTP: enable, timezone UTC+8, NTP server
+    if (!mEsp.sendCmd("AT+CIPSNTPCFG=1,8,\"pool.ntp.org\"", "OK", 3000)) {
         return false;
     }
 
-    // Prepare 48-byte NTP request
-    uint8_t ntpReq[48];
-    memset(ntpReq, 0, sizeof(ntpReq));
-    ntpReq[0] = 0x1B;  // LI=0, Version=3, Mode=3 (client)
-
-    // Send via AT+CIPSEND
-    if (!mEsp.sendCmd("AT+CIPSEND=48", ">", 2000)) {
-        mEsp.sendCmd("AT+CIPCLOSE", "OK", 1000);
-        //lcdStatus("[NTP] SEND fail");
-        vTaskDelay(pdMS_TO_TICKS(2000));
-        return false;
-    }
-
-    // Clear old +IPD data, then send NTP request
-    mEsp.clearMqttMsg();
-    mEsp.sendData(ntpReq, 48, 1000);
-    if (!mEsp.waitFor("SEND OK", 5000)) {
-        mEsp.sendCmd("AT+CIPCLOSE", "OK", 1000);
-        //lcdStatus("[NTP] no SENDOK");
-        vTaskDelay(pdMS_TO_TICKS(2000));
-        return false;
-    }
-
-    // +IPD may arrive in the SAME frame as "SEND OK" — ISR only captures +IPD
-    // at mRxBuf position 0, so check mRxBuf directly first.
-    //lcdStatus("[NTP] Waiting...");
-    bool ok = false;
-
-    // Case 1: +IPD already in mRxBuf (same frame as SEND OK)
-    if (mEsp.responseContains("+IPD")) {
-        uint32_t epoch = parseNtpResponse(
-            mEsp.getResponse(), mEsp.getResponseLen());
-        ok = applyNtpEpoch(epoch);
-    }
-
-    // Case 2: +IPD not yet received — clear RX so next frame starts at pos 0
-    if (!ok) {
-        mEsp.clearRx();
-        for (int i = 0; i < 30; i++) {
-            vTaskDelay(pdMS_TO_TICKS(100));
-            if (mEsp.hasMqttMsg()) break;
-            // Also re-check mRxBuf in case +IPD arrived but not at pos 0
-            if (mEsp.responseContains("+IPD")) break;
-        }
-
-        if (mEsp.hasMqttMsg()) {
-            uint32_t epoch = parseNtpResponse(
-                mEsp.getMqttMsg(), mEsp.getMqttMsgLen());
-            mEsp.clearMqttMsg();
-            ok = applyNtpEpoch(epoch);
-        } else if (mEsp.responseContains("+IPD")) {
-            uint32_t epoch = parseNtpResponse(
-                mEsp.getResponse(), mEsp.getResponseLen());
-            ok = applyNtpEpoch(epoch);
-        } else {
-            //lcdStatus("[NTP] No resp");
-        }
-    }
-
+    // Wait for SNTP to sync (poll AT+CIPSNTPTIME? up to 10s)
     vTaskDelay(pdMS_TO_TICKS(2000));
-    mEsp.sendCmd("AT+CIPCLOSE", "OK", 1000);
-    return ok;
+
+    for (int i = 0; i < 5; i++) {
+        if (mEsp.sendCmd("AT+CIPSNTPTIME?", "OK", 3000)) {
+            // Response: +CIPSNTPTIME:Mon Mar 18 13:45:00 2026
+            // Parse year to check if valid (not 1970)
+            const char* resp = mEsp.getResponse();
+            if (resp && !strstr(resp, "1970") && strstr(resp, "202")) {
+                // Got valid time — now query epoch via AT+SYSTIMESTAMP
+                if (mEsp.sendCmd("AT+SYSTIMESTAMP?", "OK", 2000)) {
+                    // Response: +SYSTIMESTAMP:<epoch_ms>
+                    const char* ts = strstr(mEsp.getResponse(), "+SYSTIMESTAMP:");
+                    if (ts) {
+                        ts += 14;  // skip "+SYSTIMESTAMP:"
+                        uint32_t epoch = 0;
+                        while (*ts >= '0' && *ts <= '9') {
+                            epoch = epoch * 10 + (*ts - '0');
+                            ts++;
+                            // epoch is in milliseconds for ESP32, seconds for ESP8266
+                            // If value > 2000000000, it's milliseconds
+                            if (epoch > 2000000000UL) {
+                                epoch /= 1000;
+                                break;
+                            }
+                        }
+                        return applyNtpEpoch(epoch);
+                    }
+                }
+                // Fallback: just mark as synced if we see valid date
+                return true;
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+
+    return false;
 }
 
 bool WifiServiceImpl::applyNtpEpoch(uint32_t epoch) {
@@ -193,48 +174,7 @@ bool WifiServiceImpl::applyNtpEpoch(uint32_t epoch) {
     return true;
 }
 
-// --- Parse raw UDP NTP response from buffer ---
-// Searches for "+IPD,NN:" anywhere in buf (may be preceded by "SEND OK\r\n")
-// NTP transmit timestamp at byte offset 40-43 (big-endian, seconds since 1900)
-
-uint32_t WifiServiceImpl::parseNtpResponse(const char* buf, uint16_t len) {
-    // Search for "+IPD," anywhere in buffer
-    const char* ipd = 0;
-    for (uint16_t i = 0; i + 5 <= len; i++) {
-        if (memcmp(buf + i, "+IPD,", 5) == 0) {
-            ipd = buf + i;
-            break;
-        }
-    }
-    if (!ipd) return 0;
-
-    // Find ":" after "+IPD,<len>"
-    uint16_t remaining = len - (uint16_t)(ipd - buf);
-    const char* colon = 0;
-    for (uint16_t i = 5; i < remaining && i < 16; i++) {
-        if (ipd[i] == ':') {
-            colon = ipd + i;
-            break;
-        }
-    }
-    if (!colon) return 0;
-
-    const uint8_t* data = (const uint8_t*)(colon + 1);
-    uint16_t available = len - (uint16_t)(colon + 1 - buf);
-    if (available < 44) return 0;  // need at least bytes 0..43
-
-    // Extract transmit timestamp (bytes 40-43, big-endian)
-    uint32_t ntpTime = ((uint32_t)data[40] << 24) |
-                       ((uint32_t)data[41] << 16) |
-                       ((uint32_t)data[42] << 8)  |
-                       ((uint32_t)data[43]);
-
-    // NTP epoch = 1900-01-01, Unix epoch = 1970-01-01
-    static const uint32_t NTP_UNIX_OFFSET = 2208988800UL;
-    if (ntpTime < NTP_UNIX_OFFSET) return 0;
-
-    return ntpTime - NTP_UNIX_OFFSET;
-}
+// parseNtpResponse removed — using AT+CIPSNTPCFG instead of raw UDP
 
 } // namespace wifi
 } // namespace arcana

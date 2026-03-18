@@ -7,6 +7,13 @@
 namespace arcana {
 namespace mqtt {
 
+/**
+ * @brief MQTT service using ESP8266 AT+MQTT commands (AT v2.2+)
+ *
+ * No manual MQTT packet building — ESP8266 handles the protocol:
+ * AT+MQTTUSERCFG → AT+MQTTCONN → AT+MQTTSUB → AT+MQTTPUB
+ * Keepalive, QoS, and reconnect handled by ESP8266 internally.
+ */
 class MqttServiceImpl : public MqttService {
 public:
     static MqttService& getInstance();
@@ -24,26 +31,22 @@ private:
     static void mqttTask(void* param);
     void runTask();
 
-    // MQTT connection
-    bool connectMqtt();
-    bool subscribeTopic();
-    bool quickReconnect();
+    // AT+MQTT helpers
+    bool mqttConfig();
+    bool mqttConnect();
+    bool mqttSubscribe(const char* topic, uint8_t qos = 0);
+    bool mqttPublish(const char* topic, const char* payload, uint8_t qos = 0);
+    bool mqttDisconnect();
+    bool isMqttConnected();
 
-    // Publish sensor data as JSON to MQTT
+    // Publish sensor data as JSON
     bool publishSensorData(SensorDataModel* model);
 
-    // Process incoming MQTT subscription messages
+    // Process incoming +MQTTSUBRECV messages
     void processIncomingMsg();
 
     // MQTT send — used as TransportSendFn by CommandBridge TX task
     static bool mqttSendFn(const uint8_t* data, uint16_t len, void* ctx);
-
-    // Raw MQTT over TCP helpers
-    bool tcpSend(const uint8_t* data, uint16_t len);
-    bool verifyAtReady();
-    static uint16_t mqttBuildConnect(uint8_t* buf, const char* clientId);
-    static uint16_t mqttBuildSubscribe(uint8_t* buf, const char* topic, uint16_t packetId);
-    static uint16_t mqttBuildPublish(uint8_t* buf, const char* topic, const char* payload);
 
     // Observer callbacks
     static void onSensorData(SensorDataModel* model, void* ctx);
@@ -55,6 +58,7 @@ private:
     static const char* MQTT_CLIENT_ID;
     static const char* TOPIC_SENSOR;
     static const char* TOPIC_CMD;
+    static const char* TOPIC_RSP;
 
     static const uint16_t TASK_STACK_SIZE = 512;
 

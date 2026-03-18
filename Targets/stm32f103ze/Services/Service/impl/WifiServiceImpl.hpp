@@ -26,9 +26,6 @@ private:
 
     bool connectWifi();
 
-    // Parse raw UDP NTP response — searches for "+IPD," anywhere in buffer
-    static uint32_t parseNtpResponse(const char* buf, uint16_t len);
-
     // Apply parsed epoch to SystemClock (returns false if epoch invalid)
     bool applyNtpEpoch(uint32_t epoch);
 
