@@ -1088,6 +1088,14 @@ static FRESULT move_window (	/* Returns FR_OK or FR_DISK_ERR */
 #endif
 		if (res == FR_OK) {			/* Fill sector window with new data */
 			if (disk_read(fs->pdrv, fs->win, sect, 1) != RES_OK) {
+#if FF_FS_EXFAT
+				/* TexFAT fallback: if FAT#1 sector read fails, try FAT#2 */
+				if (fs->n_fats == 2 && sect >= fs->fatbase && sect < fs->fatbase + fs->fsize
+					&& disk_read(fs->pdrv, fs->win, sect + fs->fsize, 1) == RES_OK) {
+					fs->winsect = sect;		/* Recovered from FAT#2 */
+					return FR_OK;
+				}
+#endif
 				sect = (LBA_t)0 - 1;	/* Invalidate window if read data is not valid */
 				res = FR_DISK_ERR;
 			}
@@ -3465,7 +3473,7 @@ static FRESULT mount_volume (	/* FR_OK(0): successful, !=0: an error occurred */
 		fs->fsize = ld_dword(fs->win + BPB_FatSzEx);	/* Number of sectors per FAT */
 
 		fs->n_fats = fs->win[BPB_NumFATsEx];			/* Number of FATs */
-		if (fs->n_fats != 1) return FR_NO_FILESYSTEM;	/* (Supports only 1 FAT) */
+		if (fs->n_fats != 1 && fs->n_fats != 2) return FR_NO_FILESYSTEM;	/* (Supports 1 or 2 FATs — TexFAT) */
 
 		fs->csize = 1 << fs->win[BPB_SecPerClusEx];		/* Cluster size */
 		if (fs->csize == 0)	return FR_NO_FILESYSTEM;	/* (Must be 1..32768 sectors) */
@@ -6040,7 +6048,7 @@ FRESULT f_mkfs (
 		}
 		b_fat = b_vol + 32;										/* FAT start at offset 32 */
 		sz_fat = (DWORD)((sz_vol / sz_au + 2) * 4 + ss - 1) / ss;	/* Number of FAT sectors */
-		b_data = (b_fat + sz_fat + sz_blk - 1) & ~((LBA_t)sz_blk - 1);	/* Align data area to the erase block boundary */
+		b_data = (b_fat + sz_fat * n_fat + sz_blk - 1) & ~((LBA_t)sz_blk - 1);	/* Align data area (TexFAT: reserve space for n_fat FATs) */
 		if (b_data - b_vol >= sz_vol / 2) LEAVE_MKFS(FR_MKFS_ABORTED);	/* Too small volume? */
 		n_clst = (DWORD)((sz_vol - (b_data - b_vol)) / sz_au);	/* Number of clusters */
 		if (n_clst <16) LEAVE_MKFS(FR_MKFS_ABORTED);			/* Too few clusters? */
@@ -6098,26 +6106,29 @@ FRESULT f_mkfs (
 			sect += n; nsect -= n;
 		} while (nsect);
 
-		/* Initialize the FAT */
-		sect = b_fat; nsect = sz_fat;	/* Start of FAT and number of FAT sectors */
-		j = nbit = clu = 0;
-		do {
-			memset(buf, 0, sz_buf * ss); i = 0;	/* Clear work area and reset write offset */
-			if (clu == 0) {	/* Initialize FAT [0] and FAT[1] */
-				st_dword(buf + i, 0xFFFFFFF8); i += 4; clu++;
-				st_dword(buf + i, 0xFFFFFFFF); i += 4; clu++;
-			}
-			do {			/* Create chains of bitmap, up-case and root dir */
-				while (nbit != 0 && i < sz_buf * ss) {	/* Create a chain */
-					st_dword(buf + i, (nbit > 1) ? clu + 1 : 0xFFFFFFFF);
-					i += 4; clu++; nbit--;
+		/* Initialize the FAT(s) — TexFAT: repeat for each FAT copy */
+		{	DWORD fat_i;
+		for (fat_i = 0; fat_i < (DWORD)n_fat; fat_i++) {
+			sect = b_fat + sz_fat * fat_i; nsect = sz_fat;
+			j = nbit = clu = 0;
+			do {
+				memset(buf, 0, sz_buf * ss); i = 0;
+				if (clu == 0) {	/* Initialize FAT [0] and FAT[1] */
+					st_dword(buf + i, 0xFFFFFFF8); i += 4; clu++;
+					st_dword(buf + i, 0xFFFFFFFF); i += 4; clu++;
 				}
-				if (nbit == 0 && j < 3) nbit = clen[j++];	/* Get next chain length */
-			} while (nbit != 0 && i < sz_buf * ss);
-			n = (nsect > sz_buf) ? sz_buf : nsect;	/* Write the buffered data */
-			if (disk_write(pdrv, buf, sect, n) != RES_OK) LEAVE_MKFS(FR_DISK_ERR);
-			sect += n; nsect -= n;
-		} while (nsect);
+				do {			/* Create chains of bitmap, up-case and root dir */
+					while (nbit != 0 && i < sz_buf * ss) {
+						st_dword(buf + i, (nbit > 1) ? clu + 1 : 0xFFFFFFFF);
+						i += 4; clu++; nbit--;
+					}
+					if (nbit == 0 && j < 3) nbit = clen[j++];
+				} while (nbit != 0 && i < sz_buf * ss);
+				n = (nsect > sz_buf) ? sz_buf : nsect;
+				if (disk_write(pdrv, buf, sect, n) != RES_OK) LEAVE_MKFS(FR_DISK_ERR);
+				sect += n; nsect -= n;
+			} while (nsect);
+		}	}
 
 		/* Initialize the root directory */
 		memset(buf, 0, sz_buf * ss);
@@ -6154,7 +6165,7 @@ FRESULT f_mkfs (
 			st_word(buf + BPB_FSVerEx, 0x100);						/* Filesystem version (1.00) */
 			for (buf[BPB_BytsPerSecEx] = 0, i = ss; i >>= 1; buf[BPB_BytsPerSecEx]++) ;	/* Log2 of sector size [byte] */
 			for (buf[BPB_SecPerClusEx] = 0, i = sz_au; i >>= 1; buf[BPB_SecPerClusEx]++) ;	/* Log2 of cluster size [sector] */
-			buf[BPB_NumFATsEx] = 1;					/* Number of FATs */
+			buf[BPB_NumFATsEx] = (BYTE)n_fat;		/* Number of FATs (TexFAT: 2) */
 			buf[BPB_DrvNumEx] = 0x80;				/* Drive number (for int13) */
 			st_word(buf + BS_BootCodeEx, 0xFEEB);	/* Boot code (x86) */
 			st_word(buf + BS_55AA, 0xAA55);			/* Signature (placed here regardless of sector size) */
