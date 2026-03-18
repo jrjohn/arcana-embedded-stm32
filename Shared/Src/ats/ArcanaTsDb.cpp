@@ -245,6 +245,20 @@ bool ArcanaTsDb::close() {
     mOpen = false;
     mStarted = false;
     mReadOnly = false;
+
+    // Reset channel state so addChannel() works after close() + open()
+    for (uint8_t i = 0; i < MAX_CHANNELS; i++) {
+        mChannels[i] = ChannelState();
+    }
+    mChannelCount = 0;
+    mNextSeqNo = 1;
+    mNextBlockOffset = DATA_START_OFFSET;
+    mIndexCount = 0;
+    memset(&mStats, 0, sizeof(mStats));
+    memset(&mPrimary, 0, sizeof(mPrimary));
+    memset(&mSlow, 0, sizeof(mSlow));
+    memset(mIndex, 0, sizeof(mIndex));
+
     return true;
 }
 
