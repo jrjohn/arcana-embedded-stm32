@@ -136,10 +136,6 @@ void Controller::startServices() {
     mSensor->start();
     mLight->start();
     mSdBench->start();
-
-    // ESP8266 flasher — runs in dedicated 4KB task if esp_fw/ found on SD
-    EspFlasher::run();
-
     mSdStorage->start();
     mWifi->start();
     mMqtt->start();
@@ -148,6 +144,9 @@ void Controller::startServices() {
     // View layer start (render task + ViewModel subscriptions)
     sMainView.start();
     sViewModel.init(sMainView.renderTaskHandle());
+
+    // ESP8266 flasher — must run AFTER ViewModel.init() to not block SD stats event
+    EspFlasher::run();
 }
 
 } // namespace arcana

@@ -177,14 +177,23 @@ void AtsStorageServiceImpl::storageTask(void* param) {
         self->mDb.flush();
         uint32_t blkAfter = self->mDb.getStats().blocksWritten;
         if (blkAfter <= blkBefore) {
-            // Flush failed — file is corrupted, rename and recreate
-            printf("[ATS] Write test FAILED, renaming corrupt file...\r\n");
+            // Flush failed — may be stale SDIO state from debugger reset
+            // Try SDIO reinit + retry before giving up
+            printf("[ATS] Write test FAILED, SDIO reinit + retry...\r\n");
+            sdio_force_reinit();
+            self->mDb.append(0, testRec);
+            blkBefore = self->mDb.getStats().blocksWritten;
+            self->mDb.flush();
+            blkAfter = self->mDb.getStats().blocksWritten;
+        }
+        if (blkAfter <= blkBefore) {
+            // Still failed after reinit — truly corrupted, rename and recreate
+            printf("[ATS] Write test FAILED after reinit, renaming...\r\n");
             self->mDb.close();
             self->mDbReady = false;
             f_rename("sensor.ats", "sensor_bad.ats");
-            // Force SDIO reinit after heavy recovery reads degraded the bus
             sdio_force_reinit();
-            printf("[ATS] SDIO reinit done, recreating...\r\n");
+            printf("[ATS] Recreating...\r\n");
             if (!self->openDailyDb()) {
                 printf("[ATS] Recreate FAILED\r\n");
                 vTaskDelete(0);
