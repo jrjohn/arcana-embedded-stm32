@@ -96,6 +96,12 @@ bool Hc08Ble::initHAL() {
     if (sendCmd("AT")) {
         printf("[BLE] HC-08 AT OK\r\n");
 
+        // Query firmware version (response is version string, not "OK")
+        sendCmd("AT+VERSION", "", 500);
+        if (mAtLen > 0) {
+            printf("[BLE] FW: %s\r\n", mAtBuf);
+        }
+
         // Set device name
         sendCmd("AT+NAME=ArcanaBLE", "OK");
         printf("[BLE] Name=ArcanaBLE\r\n");
