@@ -17,7 +17,7 @@ namespace ats {
 
 class FatFsFilePort : public IFilePort {
 public:
-    FatFsFilePort() : mIsOpen(false) {}
+    FatFsFilePort() : mIsOpen(false), mFaMode(0) { mPath[0] = '\0'; }
 
     bool open(const char* path, uint8_t mode) override;
     bool close() override;
@@ -33,6 +33,8 @@ public:
 private:
     FIL  mFil;
     bool mIsOpen;
+    BYTE mFaMode;       // saved FatFS open flags for reopen after truncate
+    char mPath[32];     // saved path for reopen after truncate
 };
 
 } // namespace ats

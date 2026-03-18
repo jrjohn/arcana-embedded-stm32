@@ -4,6 +4,7 @@
 #include "Esp8266.hpp"
 #include "Ili9341Lcd.hpp"
 #include "CommandBridge.hpp"
+#include "SyslogAppender.hpp"
 #include <cstdio>
 #include <cstring>
 
@@ -216,6 +217,9 @@ void MqttServiceImpl::runTask() {
         mConnModel.updateTimestamp();
         mConnObs.publish(&mConnModel);
 
+        // Open UDP to syslog server (coexists with AT+MQTT)
+        log::SyslogAppender::getInstance().openUdp(esp);
+
         uint32_t lastNtpTick = xTaskGetTickCount();
 
         // --- Phase 5: Main loop ---
@@ -245,10 +249,23 @@ void MqttServiceImpl::runTask() {
                 esp.clearMqttMsg();
             }
 
+            // Flush pending syslog messages via UDP (max 4 per cycle)
+            {
+                auto& syslog = log::SyslogAppender::getInstance();
+                if (syslog.pending() > 0) {
+                    syslog.flushViaUdp(esp);
+                    // If UDP broke, try reopen next cycle
+                    if (syslog.pending() > 0) {
+                        syslog.openUdp(esp);
+                    }
+                }
+            }
+
             vTaskDelay(pdMS_TO_TICKS(100));
         }
 
         // --- Phase 6: Disconnected ---
+        log::SyslogAppender::getInstance().closeUdp(esp);
         mqttDisconnect();
         mMqttConnected = false;
         mConnModel.connected = false;

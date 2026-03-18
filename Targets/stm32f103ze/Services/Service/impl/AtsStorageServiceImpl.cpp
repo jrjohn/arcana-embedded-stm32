@@ -8,6 +8,12 @@
 #include "ff.h"
 #include <cstring>
 #include <cstdio>
+#include "Log.hpp"
+#include "EventCodes.hpp"
+#include "SerialAppender.hpp"
+#include "AtsAppender.hpp"
+#include "DeviceAppender.hpp"
+#include "SyslogAppender.hpp"
 
 // Synthetic ECG waveform LUT (one heartbeat, 250 samples @ 250Hz = 1 sec = 60 BPM)
 // Values 0-99: 0=top of ECG area, 70=baseline, 99=bottom. Like Lead II.
@@ -53,6 +59,13 @@ static uint32_t atsGetTime() {
     }
     return (uint32_t)xTaskGetTickCount();
 }
+
+// Logger platform helpers (function pointers for LogConfig)
+static void logEnterCritical()  { taskENTER_CRITICAL(); }
+static void logExitCritical()   { taskEXIT_CRITICAL(); }
+static uint32_t logEnterCriticalISR() { return portSET_INTERRUPT_MASK_FROM_ISR(); }
+static void logExitCriticalISR(uint32_t mask) { portCLEAR_INTERRUPT_MASK_FROM_ISR(mask); }
+static uint32_t logGetTick() { return (uint32_t)xTaskGetTickCount(); }
 
 AtsStorageServiceImpl::AtsStorageServiceImpl()
     : mDb()
@@ -144,6 +157,23 @@ void AtsStorageServiceImpl::onSensorData(SensorDataModel* model, void* context) 
 void AtsStorageServiceImpl::storageTask(void* param) {
     AtsStorageServiceImpl* self = static_cast<AtsStorageServiceImpl*>(param);
 
+    // Initialize Logger with SerialAppender (works before SD is ready)
+    static log::SerialAppender sSerialApp;
+    static log::AtsAppender    sAtsApp;
+    static log::DeviceAppender sDevApp;
+
+    log::LogConfig logCfg;
+    memset(&logCfg, 0, sizeof(logCfg));
+    logCfg.enterCritical    = logEnterCritical;
+    logCfg.exitCritical     = logExitCritical;
+    logCfg.enterCriticalISR = logEnterCriticalISR;
+    logCfg.exitCriticalISR  = logExitCriticalISR;
+    logCfg.getTime          = atsGetTime;
+    logCfg.getTick          = logGetTick;
+    log::Logger::getInstance().init(logCfg);
+    log::Logger::getInstance().addAppender(&sSerialApp);
+    log::Logger::getInstance().addAppender(&log::SyslogAppender::getInstance());
+
     // Wait for exFAT filesystem
     while (!g_exfat_ready && self->mRunning) {
         vTaskDelay(pdMS_TO_TICKS(100));
@@ -155,18 +185,23 @@ void AtsStorageServiceImpl::storageTask(void* param) {
 
     // Proactive SDIO reinit — ensures stable reads during DB recovery
     sdio_force_reinit();
-    printf("[ATS] SD cleanup + SDIO reinit done\r\n");
+    LOG_I(ats::ErrorSource::Sdio, evt::SDIO_REINIT);
+    log::Logger::getInstance().drain(8);
 
     // Open device.ats (permanent lifecycle DB) + restore RTC
     if (self->openDeviceDb()) {
+        sDevApp.attach(&self->mDeviceDb);
+        log::Logger::getInstance().addAppender(&sDevApp);
         self->restoreTimeFromDeviceDb();
         self->writeLifecycleEvent(
             static_cast<uint8_t>(ats::LifecycleEventType::PowerOn), 0);
     }
+    log::Logger::getInstance().drain(8);
 
     printf("[ATS] Opening sensor DB...\r\n");
     if (!self->openDailyDb()) {
-        printf("[ATS] Open FAILED\r\n");
+        LOG_F(ats::ErrorSource::Tsdb, evt::ATS_DB_OPEN_FAIL);
+        log::Logger::getInstance().drain(8);
         // Publish zero stats so LCD shows "0" instead of blank
         self->mStatsModel.recordCount = 0;
         self->mStatsModel.writesPerSec = 0;
@@ -188,9 +223,7 @@ void AtsStorageServiceImpl::storageTask(void* param) {
         self->mDb.flush();
         uint32_t blkAfter = self->mDb.getStats().blocksWritten;
         if (blkAfter <= blkBefore) {
-            // Flush failed — may be stale SDIO state from debugger reset
-            // Try SDIO reinit + retry before giving up
-            printf("[ATS] Write test FAILED, SDIO reinit + retry...\r\n");
+            LOG_W(ats::ErrorSource::Tsdb, evt::ATS_WRITE_TEST_FAIL);
             sdio_force_reinit();
             self->mDb.append(0, testRec);
             blkBefore = self->mDb.getStats().blocksWritten;
@@ -198,15 +231,57 @@ void AtsStorageServiceImpl::storageTask(void* param) {
             blkAfter = self->mDb.getStats().blocksWritten;
         }
         if (blkAfter <= blkBefore) {
-            // Still failed after reinit — truly corrupted, rename and recreate
-            printf("[ATS] Write test FAILED after reinit, renaming...\r\n");
+            // Write at EOF failed — corrupted cluster chain.
+            // Compact: raw-copy valid blocks to a new file (clean clusters).
+            // Uses mFilePort for reading (no extra FIL on stack).
+            uint32_t validBlocks = self->mDb.getStats().blocksWritten;
+            uint32_t validSize = (validBlocks + 1) * ats::BLOCK_SIZE;
             self->mDb.close();
             self->mDbReady = false;
-            f_rename("sensor.ats", "sensor_bad.ats");
             sdio_force_reinit();
-            printf("[ATS] Recreating...\r\n");
+
+            bool compacted = false;
+            if (self->mFilePort.open("sensor.ats", ats::ATS_MODE_READ)) {
+                static FIL sDst;  // static — too large for 4KB task stack
+                if (f_open(&sDst, "sensor_new.ats",
+                           FA_WRITE | FA_CREATE_ALWAYS) == FR_OK) {
+                    uint32_t copied = 0;
+                    bool ok = true;
+                    while (copied < validSize && ok) {
+                        int32_t rd = self->mFilePort.read(
+                            sSlowBuf, ats::BLOCK_SIZE);
+                        if (rd <= 0) { ok = false; break; }
+                        UINT wr = 0;
+                        if (f_write(&sDst, sSlowBuf, (UINT)rd, &wr)
+                            != FR_OK || wr != (UINT)rd)
+                            { ok = false; break; }
+                        copied += wr;
+                    }
+                    f_close(&sDst);
+                    self->mFilePort.close();
+                    if (ok && copied >= validSize) {
+                        f_unlink("sensor.ats");
+                        f_rename("sensor_new.ats", "sensor.ats");
+                        compacted = true;
+                        LOG_W(ats::ErrorSource::Tsdb, evt::ATS_RECREATE,
+                              validBlocks);
+                    } else {
+                        f_unlink("sensor_new.ats");
+                    }
+                } else {
+                    self->mFilePort.close();
+                }
+            }
+
+            if (!compacted) {
+                LOG_E(ats::ErrorSource::Tsdb, evt::ATS_WRITE_TEST_FAIL);
+                f_rename("sensor.ats", "sensor_bad.ats");
+            }
+
+            sdio_force_reinit();
             if (!self->openDailyDb()) {
-                printf("[ATS] Recreate FAILED\r\n");
+                LOG_F(ats::ErrorSource::Tsdb, evt::ATS_DB_OPEN_FAIL);
+                log::Logger::getInstance().drain(16);
                 self->mStatsModel.recordCount = 0;
                 self->mStatsModel.writesPerSec = 0;
                 self->mStatsModel.totalKB = 0;
@@ -216,11 +291,13 @@ void AtsStorageServiceImpl::storageTask(void* param) {
                 vTaskDelete(0);
                 return;
             }
-            printf("[ATS] Fresh DB created\r\n");
-        } else {
-            printf("[ATS] Write test OK\r\n");
         }
     }
+    log::Logger::getInstance().drain(8);
+
+    // Attach ATS appender now that sensor DB is confirmed writable
+    sAtsApp.attach(&self->mDb, 1);
+    log::Logger::getInstance().addAppender(&sAtsApp);
 
     // Log recovery event to both device.ats and sensor.ats
     {
@@ -240,7 +317,8 @@ void AtsStorageServiceImpl::storageTask(void* param) {
     self->mStatsModel.updateTimestamp();
     self->mStatsObs.publish(&self->mStatsModel);
 
-    printf("[ATS] Ready, 1kHz mode\r\n");
+    LOG_I(ats::ErrorSource::Tsdb, evt::ATS_READY, self->mTotalRecords);
+    log::Logger::getInstance().drain(8);
     self->taskLoop();
     vTaskDelete(0);
 }
@@ -263,18 +341,15 @@ bool AtsStorageServiceImpl::openDailyDb() {
     cfg.slowBuf = sSlowBuf;
     cfg.readCache = sReadCache;
 
-    printf("[ATS] db.open...\r\n");
     if (!mDb.open("sensor.ats", cfg)) {
-        // Recovery failed — delete corrupt file and retry fresh
-        printf("[ATS] db.open failed, deleting corrupt file...\r\n");
+        LOG_W(ats::ErrorSource::Tsdb, evt::ATS_DB_OPEN_FAIL);
         f_unlink("sensor.ats");
         if (!mDb.open("sensor.ats", cfg)) {
-            printf("[ATS] db.open FAILED\r\n");
+            LOG_E(ats::ErrorSource::Tsdb, evt::ATS_DB_OPEN_FAIL);
             return false;
         }
     }
-    printf("[ATS] db.open OK (started=%d, blk=%lu, rec=%lu, trunc=%lu)\r\n",
-           mDb.isOpen() && mDb.getChannelCount() > 0,
+    printf("[ATS] db.open OK (blk=%lu, rec=%lu, trunc=%lu)\r\n",
            (unsigned long)mDb.getStats().blocksWritten,
            (unsigned long)mDb.getStats().totalRecords,
            (unsigned long)mDb.getStats().recoveryTruncations);
@@ -283,20 +358,20 @@ bool AtsStorageServiceImpl::openDailyDb() {
     if (!mDb.isReadOnly() && mDb.getChannelCount() == 0) {
         ats::ArcanaTsSchema sensor = ats::ArcanaTsSchema::mpu6050();
         if (!mDb.addChannel(0, sensor)) {
-            printf("[ATS] addChannel(0) FAILED\r\n");
+            LOG_E(ats::ErrorSource::Tsdb, evt::ATS_CHANNEL_FAIL, 0);
             mDb.close();
             return false;
         }
 
         ats::ArcanaTsSchema errLog = ats::ArcanaTsSchema::errorLog();
         if (!mDb.addChannel(1, errLog)) {
-            printf("[ATS] addChannel(1) FAILED\r\n");
+            LOG_E(ats::ErrorSource::Tsdb, evt::ATS_CHANNEL_FAIL, 1);
             mDb.close();
             return false;
         }
 
         if (!mDb.start()) {
-            printf("[ATS] db.start FAILED\r\n");
+            LOG_E(ats::ErrorSource::Tsdb, evt::ATS_START_FAIL);
             mDb.close();
             return false;
         }
@@ -305,13 +380,12 @@ bool AtsStorageServiceImpl::openDailyDb() {
     mDbReady = true;
     mTotalRecords = mDb.getStats().totalRecords;
     mBaselineBlocksFailed = mDb.getStats().blocksFailed;
-    printf("[ATS] Ready, resuming at %lu rec (hist_fail=%lu)\r\n",
-           (unsigned long)mTotalRecords, (unsigned long)mBaselineBlocksFailed);
+    LOG_I(ats::ErrorSource::Tsdb, evt::ATS_DB_OPEN_OK, mTotalRecords);
     return true;
 }
 
 void AtsStorageServiceImpl::rotateDailyDb(uint32_t lastDay) {
-    printf("[ATS] Rotating day %lu\r\n", (unsigned long)lastDay);
+    LOG_I(ats::ErrorSource::Tsdb, evt::ATS_ROTATE_OK, lastDay);
 
     // Close current DB (flushes, writes index, syncs)
     mDb.close();
@@ -324,10 +398,8 @@ void AtsStorageServiceImpl::rotateDailyDb(uint32_t lastDay) {
     f_rename(oldName, newName);
 
     // Open fresh DB
-    if (openDailyDb()) {
-        printf("[ATS] New day DB opened\r\n");
-    } else {
-        printf("[ATS] New day DB FAILED\r\n");
+    if (!openDailyDb()) {
+        LOG_E(ats::ErrorSource::Tsdb, evt::ATS_ROTATE_FAIL, lastDay);
     }
 }
 
@@ -351,15 +423,13 @@ bool AtsStorageServiceImpl::openDeviceDb() {
     cfg.slowBuf = sDevSlowBuf;
     cfg.readCache = 0;  // device.ats writes rarely, can share slowBuf for reads
 
-    printf("[DEV] Opening device.ats...\r\n");
     f_unlink("device_bad.ats");  // clean up from previous crash
 
     if (!mDeviceDb.open("device.ats", cfg)) {
-        // Preserve corrupted file for forensics — never delete device history
-        printf("[DEV] Open failed, renaming to device_bad.ats\r\n");
+        LOG_W(ats::ErrorSource::Tsdb, evt::ATS_DB_OPEN_FAIL);
         f_rename("device.ats", "device_bad.ats");
         if (!mDeviceDb.open("device.ats", cfg)) {
-            printf("[DEV] Recreate FAILED\r\n");
+            LOG_E(ats::ErrorSource::Tsdb, evt::ATS_DB_OPEN_FAIL);
             return false;
         }
     }
@@ -372,12 +442,12 @@ bool AtsStorageServiceImpl::openDeviceDb() {
     if (mDeviceDb.getChannelCount() == 0) {
         ats::ArcanaTsSchema lc = ats::ArcanaTsSchema::lifecycleEvent();
         if (!mDeviceDb.addChannel(0, lc)) {
-            printf("[DEV] addChannel FAILED\r\n");
+            LOG_E(ats::ErrorSource::Tsdb, evt::ATS_CHANNEL_FAIL);
             mDeviceDb.close();
             return false;
         }
         if (!mDeviceDb.start()) {
-            printf("[DEV] start FAILED\r\n");
+            LOG_E(ats::ErrorSource::Tsdb, evt::ATS_START_FAIL);
             mDeviceDb.close();
             return false;
         }
@@ -394,7 +464,7 @@ bool AtsStorageServiceImpl::openDeviceDb() {
         mDeviceDb.flush();
         uint32_t blkAfter = mDeviceDb.getStats().blocksWritten;
         if (blkAfter <= blkBefore) {
-            printf("[DEV] Write test FAILED, SDIO reinit + retry\r\n");
+            LOG_W(ats::ErrorSource::Sdio, evt::SDIO_REINIT);
             sdio_force_reinit();
             mDeviceDb.append(0, testRec);
             mDeviceDb.flush();
@@ -402,8 +472,8 @@ bool AtsStorageServiceImpl::openDeviceDb() {
     }
 
     mDeviceDbReady = true;
-    printf("[DEV] device.ats OK, %lu rec\r\n",
-           (unsigned long)mDeviceDb.getStats().totalRecords);
+    LOG_I(ats::ErrorSource::Tsdb, evt::ATS_DB_OPEN_OK,
+          mDeviceDb.getStats().totalRecords);
     return true;
 }
 
@@ -420,7 +490,7 @@ void AtsStorageServiceImpl::restoreTimeFromDeviceDb() {
         memcpy(&lastEpoch, buf, 4);
         if (lastEpoch > 1577836800) {  // > 2020-01-01
             SystemClock::getInstance().sync(lastEpoch);
-            printf("[DEV] RTC restored: %lu\r\n", (unsigned long)lastEpoch);
+            LOG_I(ats::ErrorSource::System, evt::SYS_BOOT_RTC_RESTORE, lastEpoch);
         }
     }
 }
@@ -439,8 +509,17 @@ void AtsStorageServiceImpl::writeLifecycleEvent(uint8_t eventType, uint32_t para
 
     mDeviceDb.append(0, rec);
     mDeviceDb.flush();  // lifecycle events must persist immediately
-    printf("[DEV] event type=0x%02X param=%lu\r\n",
-           (unsigned)eventType, (unsigned long)param);
+
+    // Map LifecycleEventType → event code for Logger
+    uint16_t logCode = evt::ATS_LIFECYCLE_ON;
+    switch (eventType) {
+        case 0x01: logCode = evt::ATS_LIFECYCLE_ON;    break;
+        case 0x02: logCode = evt::ATS_LIFECYCLE_OFF;   break;
+        case 0x03: logCode = evt::ATS_LIFECYCLE_RECOV; break;
+        case 0x10: logCode = evt::ATS_LIFECYCLE_FWUPD; break;
+        default:   logCode = evt::ATS_LIFECYCLE_ON;    break;
+    }
+    LOG_W(ats::ErrorSource::Tsdb, logCode, param);
 }
 
 void AtsStorageServiceImpl::writeRecoveryEvents(
@@ -458,9 +537,7 @@ void AtsStorageServiceImpl::writeRecoveryEvents(
         memcpy(rec + 8, &recoveredRec, 4);
         mDeviceDb.append(0, rec);
         mDeviceDb.flush();
-        printf("[DEV] Recovery: %lu rec, trunc=%u, skip=%u\r\n",
-               (unsigned long)recoveredRec, (unsigned)truncations,
-               (unsigned)skippedBlocks);
+        LOG_W(ats::ErrorSource::Tsdb, evt::ATS_RECOVERY_OK, recoveredRec);
     }
 
     // 2. sensor.ats — ERROR_LOG ch1 (if channel exists)
@@ -495,18 +572,23 @@ void AtsStorageServiceImpl::taskLoop() {
         // 1kHz pacing — 1 record per ms
         vTaskDelayUntil(&nextWake, 1);
 
+        // Drain log events (1 per ms = up to 1000 events/s)
+        if (log::Logger::getInstance().pending() > 0) {
+            log::Logger::getInstance().drain(1);
+        }
+
         if (!mDbReady) {
             // DB failed (e.g. rotation error) — retry every 5 seconds
             static uint32_t retryTick = 0;
             uint32_t now = xTaskGetTickCount();
             if (now - retryTick >= pdMS_TO_TICKS(5000)) {
                 retryTick = now;
-                printf("[ATS] DB not ready, retrying open...\r\n");
+                LOG_W(ats::ErrorSource::Tsdb, evt::ATS_DB_RETRY_FAIL);
                 sdio_force_reinit();
                 if (openDailyDb()) {
-                    printf("[ATS] DB recovered!\r\n");
+                    LOG_I(ats::ErrorSource::Tsdb, evt::ATS_DB_RECOVERED);
                 } else {
-                    printf("[ATS] DB retry FAILED\r\n");
+                    LOG_E(ats::ErrorSource::Tsdb, evt::ATS_DB_RETRY_FAIL);
                 }
             }
             continue;
@@ -545,7 +627,8 @@ void AtsStorageServiceImpl::taskLoop() {
             if (!flushed) {
                 sdio_force_reinit();
                 flushed = mDb.flush();
-                if (!flushed) printf("[ATS] flush FAILED (after reinit)\r\n");
+                if (!flushed) LOG_E(ats::ErrorSource::Tsdb, evt::ATS_FLUSH_FAIL,
+                                    mDb.getStats().blocksFailed);
             }
 
             mStatsModel.recordCount = mTotalRecords;
@@ -562,6 +645,10 @@ void AtsStorageServiceImpl::taskLoop() {
                    (unsigned long)mStatsModel.totalKB,
                    (unsigned long)sessionFail,
                    (unsigned long)mDb.getStats().overflowDrops);
+
+            // Send stats to syslog (picked up by MQTT task)
+            log::SyslogAppender::getInstance().sendStats(
+                mTotalRecords, (uint16_t)windowOk, mStatsModel.totalKB);
 
             windowOk = 0;
             windowFail = 0;

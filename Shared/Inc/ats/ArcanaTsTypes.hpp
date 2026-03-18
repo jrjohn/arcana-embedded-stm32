@@ -215,6 +215,11 @@ enum class ErrorSource : uint8_t {
     Crypto = 0x05,
     Tsdb   = 0x06,
     Ntp    = 0x07,
+    Mqtt   = 0x08,
+    Ble    = 0x09,
+    Ota    = 0x0A,
+    Cmd    = 0x0B,
+    Lcd    = 0x0C,
 };
 
 enum class LifecycleEventType : uint8_t {

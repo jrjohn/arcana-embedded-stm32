@@ -33,6 +33,9 @@ bool FatFsFilePort::open(const char* path, uint8_t mode) {
     FRESULT fr = f_open(&mFil, path, fa);
     if (fr == FR_OK) {
         mIsOpen = true;
+        mFaMode = fa;
+        strncpy(mPath, path, sizeof(mPath) - 1);
+        mPath[sizeof(mPath) - 1] = '\0';
         return true;
     }
     printf("[FP] open '%s' fa=0x%02X err=%d\r\n", path, (int)fa, (int)fr);
@@ -106,9 +109,39 @@ bool FatFsFilePort::seek(uint32_t offset) {
             sdio_force_reinit();
         }
     }
+
+    // f_lseek beyond EOF failed (FR_INT_ERR on damaged exFAT cluster chain).
+    // Fallback: seek to EOF, write zeros to extend, arrive at target offset.
+    uint32_t curSize = (uint32_t)f_size(&mFil);
+    if (offset >= curSize) {
+        mFil.err = 0;
+        if (f_lseek(&mFil, curSize) != FR_OK) {
+            printf("[FP] seek FAIL off=%lu err=%d fsz=%lu\r\n",
+                   (unsigned long)offset, (int)lastErr, (unsigned long)curSize);
+            return false;
+        }
+        // Zero-fill from EOF to target offset
+        uint8_t zeros[64];
+        memset(zeros, 0, sizeof(zeros));
+        uint32_t remaining = offset - curSize;
+        while (remaining > 0) {
+            UINT chunk = (remaining > sizeof(zeros))
+                         ? (UINT)sizeof(zeros) : (UINT)remaining;
+            UINT written = 0;
+            mFil.err = 0;
+            if (f_write(&mFil, zeros, chunk, &written) != FR_OK
+                || written != chunk) {
+                printf("[FP] extend FAIL off=%lu fsz=%lu\r\n",
+                       (unsigned long)offset, (unsigned long)curSize);
+                return false;
+            }
+            remaining -= written;
+        }
+        return true;  // fptr now at target offset
+    }
+
     printf("[FP] seek FAIL off=%lu err=%d fsz=%lu\r\n",
-           (unsigned long)offset, (int)lastErr,
-           (unsigned long)f_size(&mFil));
+           (unsigned long)offset, (int)lastErr, (unsigned long)curSize);
     return false;
 }
 
@@ -134,8 +167,13 @@ uint32_t FatFsFilePort::size() {
 
 bool FatFsFilePort::truncate() {
     if (!mIsOpen) return false;
+    // Skip actual truncation — on exFAT after unclean power-off, f_truncate
+    // corrupts the cluster chain at the cut point, making subsequent writes
+    // at EOF impossible (FR_INT_ERR).  By keeping the original file size,
+    // blocks at the write position use already-allocated clusters.
+    // ArcanaTsDb recovery handles stale data (skips invalid blocks on next scan).
     mFil.err = 0;
-    return f_truncate(&mFil) == FR_OK;
+    return f_sync(&mFil) == FR_OK;
 }
 
 } // namespace ats
