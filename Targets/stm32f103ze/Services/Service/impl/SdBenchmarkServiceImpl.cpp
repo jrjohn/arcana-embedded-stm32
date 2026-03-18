@@ -123,39 +123,10 @@ void SdBenchmarkServiceImpl::runBenchmark() {
             printf("%s\r\n", msg);
         }
 
-        // Mount failed or FS corrupt — format as exFAT
-        snprintf(msg, sizeof(msg), "[SD] No FS (%d), formatting", (int)fr);
-        printf("%s\r\n", msg);
-        vTaskDelay(pdMS_TO_TICKS(1000));
-
-        MKFS_PARM mkfs_opt;
-        memset(&mkfs_opt, 0, sizeof(mkfs_opt));
-        mkfs_opt.fmt = FM_EXFAT;
-        mkfs_opt.au_size = 0;
-
-
-        printf("[SD] Formatting exFAT...\r\n");
-        fr = f_mkfs("", &mkfs_opt, mMkfsBuf, MKFS_BUF_SIZE);
-        if (fr != FR_OK) {
-            snprintf(msg, sizeof(msg), "[SD] mkfs ERR: %d", (int)fr);
-
-            printf("%s\r\n", msg);
-            continue;  // Retry with HAL reinit
-        }
-
-        printf("[SD] Format OK!\r\n");
-        vTaskDelay(pdMS_TO_TICKS(500));
-
-        // Mount the freshly formatted filesystem
-        fr = f_mount(&sFatFs, "", 1);
-        if (fr == FR_OK) {
-            mounted = true;
-        } else {
-            snprintf(msg, sizeof(msg), "[SD] mount ERR: %d", (int)fr);
-
-            printf("%s\r\n", msg);
-            // Will retry with HAL reinit on next iteration
-        }
+        // Auto-format DISABLED — medical/defense data must not be lost
+        // TODO: LCD error display + user confirmation before format
+        printf("[SD] Mount failed (%d), retrying...\r\n", (int)fr);
+        vTaskDelay(pdMS_TO_TICKS(2000));
     }
 
     if (!mounted) {
