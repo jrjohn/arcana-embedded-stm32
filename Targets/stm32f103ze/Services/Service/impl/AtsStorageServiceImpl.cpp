@@ -525,7 +525,7 @@ bool AtsStorageServiceImpl::openDeviceDb() {
     cfg.overflow = ats::OverflowPolicy::Drop;
     cfg.primaryChannel = 0xFF;
     cfg.slowBuf = sDevSlowBuf;
-    cfg.readCache = 0;  // device.ats writes rarely, can share slowBuf for reads
+    cfg.readCache = sReadCache;  // Share with sensor (same task, sequential access)
 
     f_unlink("device_bad.ats");  // clean up from previous crash
 
