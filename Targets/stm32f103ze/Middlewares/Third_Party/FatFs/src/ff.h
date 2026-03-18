@@ -136,6 +136,10 @@ typedef struct {
 	BYTE	n_fats;			/* Number of FATs (1 or 2) */
 	BYTE	wflag;			/* win[] status (b0:dirty) */
 	BYTE	fsi_flag;		/* FSINFO status (b7:disabled, b0:dirty) */
+#if FF_FS_EXFAT
+	BYTE	active_fat;		/* TexFAT: active FAT index (0=FAT#1, 1=FAT#2) */
+	BYTE	texfat_dirty;	/* TexFAT: staging FAT has uncommitted writes */
+#endif
 	WORD	id;				/* Volume mount ID */
 	WORD	n_rootdir;		/* Number of root directory entries (FAT12/16) */
 	WORD	csize;			/* Cluster size [sectors] */

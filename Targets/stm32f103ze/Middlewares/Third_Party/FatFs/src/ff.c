@@ -1060,6 +1060,23 @@ static FRESULT sync_window (	/* Returns FR_OK or FR_DISK_ERR */
 
 
 	if (fs->wflag) {	/* Is the disk access window dirty? */
+#if FF_FS_EXFAT
+		/* TexFAT: write FAT sectors to staging (non-active) FAT only.
+		 * The active FAT remains untouched until sync_fs flips ActiveFat. */
+		if (fs->fs_type == FS_EXFAT && fs->n_fats == 2
+			&& fs->winsect >= fs->fatbase && fs->winsect - fs->fatbase < fs->fsize) {
+			LBA_t staging = (fs->active_fat == 0)
+				? fs->winsect + fs->fsize		/* Active=FAT#1, stage to FAT#2 */
+				: fs->winsect - fs->fsize;		/* Active=FAT#2, stage to FAT#1 */
+			if (disk_write(fs->pdrv, fs->win, staging, 1) == RES_OK) {
+				fs->wflag = 0;
+				fs->texfat_dirty = 1;
+			} else {
+				res = FR_DISK_ERR;
+			}
+			return res;
+		}
+#endif
 		if (disk_write(fs->pdrv, fs->win, fs->winsect, 1) == RES_OK) {	/* Write it back into the volume */
 			fs->wflag = 0;	/* Clear window dirty flag */
 			if (fs->winsect - fs->fatbase < fs->fsize) {	/* Is it in the 1st FAT? */
@@ -1089,11 +1106,13 @@ static FRESULT move_window (	/* Returns FR_OK or FR_DISK_ERR */
 		if (res == FR_OK) {			/* Fill sector window with new data */
 			if (disk_read(fs->pdrv, fs->win, sect, 1) != RES_OK) {
 #if FF_FS_EXFAT
-				/* TexFAT fallback: if FAT#1 sector read fails, try FAT#2 */
-				if (fs->n_fats == 2 && sect >= fs->fatbase && sect < fs->fatbase + fs->fsize
-					&& disk_read(fs->pdrv, fs->win, sect + fs->fsize, 1) == RES_OK) {
-					fs->winsect = sect;		/* Recovered from FAT#2 */
-					return FR_OK;
+				/* TexFAT fallback: if active FAT sector read fails, try the other FAT */
+				if (fs->n_fats == 2 && sect >= fs->fatbase && sect < fs->fatbase + fs->fsize) {
+					LBA_t other = (fs->active_fat == 0) ? sect + fs->fsize : sect - fs->fsize;
+					if (disk_read(fs->pdrv, fs->win, other, 1) == RES_OK) {
+						fs->winsect = sect;
+						return FR_OK;
+					}
 				}
 #endif
 				sect = (LBA_t)0 - 1;	/* Invalidate window if read data is not valid */
@@ -1122,6 +1141,37 @@ static FRESULT sync_fs (	/* Returns FR_OK or FR_DISK_ERR */
 
 	res = sync_window(fs);
 	if (res == FR_OK) {
+#if FF_FS_EXFAT
+		/* TexFAT commit: sync staging FAT to disk, then flip ActiveFat */
+		if (fs->fs_type == FS_EXFAT && fs->n_fats == 2 && fs->texfat_dirty) {
+			if (disk_ioctl(fs->pdrv, CTRL_SYNC, 0) != RES_OK) return FR_DISK_ERR;
+
+			/* Flip active_fat and adjust fatbase */
+			fs->active_fat ^= 1;
+			if (fs->active_fat == 1) {
+				fs->fatbase += fs->fsize;	/* Now reading from FAT#2 */
+			} else {
+				fs->fatbase -= fs->fsize;	/* Now reading from FAT#1 */
+			}
+
+			/* Update VolFlags.ActiveFat (bit 0) in main VBR + backup VBR.
+			 * VBR checksum excludes VolFlags — no recalc needed. */
+			{
+				fs->winsect = (LBA_t)0 - 1;	/* Invalidate cached window */
+				if (disk_read(fs->pdrv, fs->win, fs->volbase, 1) == RES_OK) {
+					WORD vf = ld_word(fs->win + BPB_VolFlagEx);
+					vf = (vf & ~0x0001) | fs->active_fat;
+					st_word(fs->win + BPB_VolFlagEx, vf);
+					disk_write(fs->pdrv, fs->win, fs->volbase, 1);		/* Main VBR */
+					disk_write(fs->pdrv, fs->win, fs->volbase + 12, 1);	/* Backup VBR */
+				}
+				fs->winsect = (LBA_t)0 - 1;	/* Force window reload */
+			}
+			fs->texfat_dirty = 0;
+			if (disk_ioctl(fs->pdrv, CTRL_SYNC, 0) != RES_OK) return FR_DISK_ERR;
+			return FR_OK;
+		}
+#endif
 		if (fs->fs_type == FS_FAT32 && fs->fsi_flag == 1) {	/* FAT32: Update FSInfo sector if needed */
 			/* Create FSInfo structure */
 			memset(fs->win, 0, sizeof fs->win);
@@ -3475,6 +3525,13 @@ static FRESULT mount_volume (	/* FR_OK(0): successful, !=0: an error occurred */
 		fs->n_fats = fs->win[BPB_NumFATsEx];			/* Number of FATs */
 		if (fs->n_fats != 1 && fs->n_fats != 2) return FR_NO_FILESYSTEM;	/* (Supports 1 or 2 FATs — TexFAT) */
 
+		/* TexFAT: read ActiveFat from VolFlags bit 0 */
+		fs->active_fat = 0;
+		fs->texfat_dirty = 0;
+		if (fs->n_fats == 2) {
+			fs->active_fat = (ld_word(fs->win + BPB_VolFlagEx) & 0x0001) ? 1 : 0;
+		}
+
 		fs->csize = 1 << fs->win[BPB_SecPerClusEx];		/* Cluster size */
 		if (fs->csize == 0)	return FR_NO_FILESYSTEM;	/* (Must be 1..32768 sectors) */
 
@@ -3486,6 +3543,7 @@ static FRESULT mount_volume (	/* FR_OK(0): successful, !=0: an error occurred */
 		fs->volbase = bsect;
 		fs->database = bsect + ld_dword(fs->win + BPB_DataOfsEx);
 		fs->fatbase = bsect + ld_dword(fs->win + BPB_FatOfsEx);
+		if (fs->active_fat == 1) fs->fatbase += fs->fsize;	/* TexFAT: point to active FAT */
 		if (maxlba < (QWORD)fs->database + nclst * fs->csize) return FR_NO_FILESYSTEM;	/* (Volume size must not be smaller than the size required) */
 		fs->dirbase = ld_dword(fs->win + BPB_RootClusEx);
 
