@@ -622,6 +622,15 @@ void AtsStorageServiceImpl::taskLoop() {
     uint32_t ecgPhase = 0;  // LUT index for synthetic ECG
     uint8_t key2Hold = 0;   // KEY2 hold counter (seconds)
 
+    // Enable internal pull-up for KEY2 (PC13) — board has no external pull-up
+    {
+        GPIO_InitTypeDef gpio = {};
+        gpio.Pin = GPIO_PIN_13;
+        gpio.Mode = GPIO_MODE_INPUT;
+        gpio.Pull = GPIO_PULLUP;
+        HAL_GPIO_Init(GPIOC, &gpio);
+    }
+
     while (mRunning) {
         // 1kHz pacing — 1 record per ms
         vTaskDelayUntil(&nextWake, 1);
