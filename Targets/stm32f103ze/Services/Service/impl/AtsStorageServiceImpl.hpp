@@ -90,6 +90,7 @@ private:
     bool mRunning;
     bool mDbReady;
     bool mDeviceDbReady;
+    volatile bool mFormatRequested;
 
     // Pending write data
     SensorDataModel mPendingData;

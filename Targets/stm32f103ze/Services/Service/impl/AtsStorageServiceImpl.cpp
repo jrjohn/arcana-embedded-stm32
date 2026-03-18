@@ -41,6 +41,7 @@ extern "C" {
     extern volatile uint8_t g_exfat_ready;
     void sdio_force_reinit(void);
     void ats_safe_eject(void);
+    FRESULT texfat_format(void);
 }
 
 // Called from MQTT task when "eject" command received
@@ -52,6 +53,7 @@ void ats_safe_eject(void) {
 }
 
 namespace arcana {
+namespace sdbench { extern FATFS sFatFs; }
 
 // Defined in Controller.cpp
 extern lcd::MainView* g_mainView;
@@ -96,6 +98,7 @@ AtsStorageServiceImpl::AtsStorageServiceImpl()
     , mRunning(false)
     , mDbReady(false)
     , mDeviceDbReady(false)
+    , mFormatRequested(false)
     , mPendingData()
     , mWriteSemBuffer()
     , mWriteSem(0)
@@ -353,25 +356,73 @@ void AtsStorageServiceImpl::storageTask(void* param) {
 
     LOG_I(ats::ErrorSource::Tsdb, evt::ATS_READY, self->mTotalRecords);
     log::Logger::getInstance().drain(8);
-    self->taskLoop();
 
-    // --- Safe eject: close DBs + sync dual FAT + unmount ---
-    printf("[SD] Shutting down...\r\n");
-    if (self->mDbReady) {
-        self->mDb.close();
-        self->mDbReady = false;
+    for (;;) {
+        self->taskLoop();
+
+        // --- Close DBs ---
+        printf("[SD] Shutting down...\r\n");
+        sAtsApp.detach();
+        if (self->mDbReady) {
+            self->mDb.close();
+            self->mDbReady = false;
+        }
+        if (self->mDeviceDbReady) {
+            self->writeLifecycleEvent(
+                static_cast<uint8_t>(ats::LifecycleEventType::PowerOff), 0);
+            self->mDeviceDb.close();
+            self->mDeviceDbReady = false;
+        }
+        sDevApp.detach();
+        log::Logger::getInstance().drain(8);
+        syncDualFat();
+
+        if (!self->mFormatRequested) {
+            // --- Safe eject ---
+            f_mount(0, "", 0);
+            printf("[SD] Safe to remove card\r\n");
+            lcdStatus("[SD] Safe to remove", 0x07E0);
+            break;
+        }
+
+        // --- Runtime format + restart ---
+        self->mFormatRequested = false;
+        lcdStatus("[SD] Formatting...", 0xFD20);
+        f_mount(0, "", 0);
+
+        FRESULT fr = texfat_format();
+        if (fr != FR_OK) {
+            lcdStatus("[SD] Format FAILED!", 0xF800);
+            printf("[SD] Format FAILED (err=%d)\r\n", (int)fr);
+            break;
+        }
+
+        // Remount (reuse SdBenchmark's FATFS)
+        if (f_mount(&::arcana::sdbench::sFatFs, "", 1) != FR_OK) {
+            lcdStatus("[SD] Mount FAILED!", 0xF800);
+            break;
+        }
+        lcdStatus("[SD] Format OK!", 0x07E0);
+        printf("[SD] Format OK, restarting...\r\n");
+        vTaskDelay(pdMS_TO_TICKS(1000));
+
+        // Reopen DBs
+        if (self->openDeviceDb()) {
+            sDevApp.attach(&self->mDeviceDb);
+            self->writeLifecycleEvent(
+                static_cast<uint8_t>(ats::LifecycleEventType::PowerOn), 0);
+        }
+        if (self->openDailyDb()) {
+            sAtsApp.attach(&self->mDb, 1);
+        }
+
+        self->mTotalRecords = 0;
+        self->mBaselineBlocksFailed = 0;
+        self->mRunning = true;
+        LOG_I(ats::ErrorSource::Tsdb, evt::ATS_READY, 0);
+        log::Logger::getInstance().drain(8);
+        // Loop back to taskLoop
     }
-    if (self->mDeviceDbReady) {
-        self->writeLifecycleEvent(
-            static_cast<uint8_t>(ats::LifecycleEventType::PowerOff), 0);
-        self->mDeviceDb.close();
-        self->mDeviceDbReady = false;
-    }
-    log::Logger::getInstance().drain(8);
-    syncDualFat();
-    f_mount(0, "", 0);
-    printf("[SD] Safe to remove card\r\n");
-    lcdStatus("[SD] Safe to remove", 0x07E0);  // green
 
     vTaskDelete(0);
 }
@@ -620,6 +671,7 @@ void AtsStorageServiceImpl::taskLoop() {
     uint8_t rec[RECORD_SIZE];
     memset(rec, 0, RECORD_SIZE);
     uint32_t ecgPhase = 0;  // LUT index for synthetic ECG
+    uint8_t key1Hold = 0;   // KEY1 hold counter (seconds)
     uint8_t key2Hold = 0;   // KEY2 hold counter (seconds)
 
     // Enable internal pull-up for KEY2 (PC13) — board has no external pull-up
@@ -726,6 +778,21 @@ void AtsStorageServiceImpl::taskLoop() {
                     rotateDailyDb(lastDay);
                 }
                 lastDay = today;
+            }
+
+            // KEY1 (PA0) runtime format — detect 2-second hold (active-HIGH)
+            if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET) {
+                if (key1Hold == 0) {
+                    lcdStatus("[SD] KEY1: Format?", 0xFD20);
+                }
+                if (++key1Hold >= 2) {
+                    printf("[SD] KEY1 runtime format triggered\r\n");
+                    mRunning = false;
+                    mFormatRequested = true;
+                }
+            } else {
+                if (key1Hold > 0) lcdStatus("");
+                key1Hold = 0;
             }
 
             // KEY2 (PC13) safe eject — detect 2-second hold

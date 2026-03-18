@@ -23,7 +23,7 @@ namespace arcana {
 namespace sdbench {
 
 // FatFS static objects
-static FATFS sFatFs;
+FATFS sFatFs;  // Non-static: shared with AtsStorageServiceImpl for remount after format
 
 SdBenchmarkServiceImpl::SdBenchmarkServiceImpl()
     : mSd(SdCard::getInstance())
@@ -93,7 +93,9 @@ void SdBenchmarkServiceImpl::benchmarkTask(void* param) {
     vTaskDelete(0);
 }
 
-static FRESULT texfat_format(void) {
+extern "C" FRESULT texfat_format(void);
+
+FRESULT texfat_format(void) {
     MKFS_PARM opt;
     memset(&opt, 0, sizeof(opt));
     opt.fmt = FM_EXFAT;
