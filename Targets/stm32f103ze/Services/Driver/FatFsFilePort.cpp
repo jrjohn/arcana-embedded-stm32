@@ -1,9 +1,9 @@
 /**
  * @file FatFsFilePort.cpp
- * @brief IFilePort → FatFS implementation with 3-retry logic
+ * @brief IFilePort → FatFS implementation with retry + SDIO reinit
  *
  * FIL.err sticky flag cleared before every operation (SdFalAdapter pattern).
- * vTaskDelay(1) between retries for SDIO transient failures.
+ * On persistent FR_DISK_ERR: SDIO force reinit + second retry round.
  */
 
 #include "FatFsFilePort.hpp"
@@ -12,6 +12,8 @@
 #include "task.h"
 #include <cstring>
 #include <cstdio>
+
+extern "C" { void sdio_force_reinit(void); }
 
 namespace arcana {
 namespace ats {
@@ -47,14 +49,19 @@ bool FatFsFilePort::close() {
 int32_t FatFsFilePort::read(uint8_t* buf, uint32_t size) {
     if (!mIsOpen) return -1;
 
-    for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
-        mFil.err = 0;
-        UINT bytesRead = 0;
-        FRESULT fr = f_read(&mFil, buf, size, &bytesRead);
-        if (fr == FR_OK) {
-            return static_cast<int32_t>(bytesRead);
+    for (int round = 0; round < 2; round++) {
+        for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
+            mFil.err = 0;
+            UINT bytesRead = 0;
+            FRESULT fr = f_read(&mFil, buf, size, &bytesRead);
+            if (fr == FR_OK) {
+                return static_cast<int32_t>(bytesRead);
+            }
+            vTaskDelay(1);
         }
-        vTaskDelay(1);
+        if (round == 0) {
+            sdio_force_reinit();
+        }
     }
     return -1;
 }
@@ -62,19 +69,23 @@ int32_t FatFsFilePort::read(uint8_t* buf, uint32_t size) {
 int32_t FatFsFilePort::write(const uint8_t* buf, uint32_t size) {
     if (!mIsOpen) return -1;
 
-    for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
-        mFil.err = 0;
-        UINT bytesWritten = 0;
-        FRESULT fr = f_write(&mFil, buf, size, &bytesWritten);
-        if (fr == FR_OK && bytesWritten == size) {
-            return static_cast<int32_t>(bytesWritten);
+    for (int round = 0; round < 2; round++) {
+        for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
+            mFil.err = 0;
+            UINT bytesWritten = 0;
+            FRESULT fr = f_write(&mFil, buf, size, &bytesWritten);
+            if (fr == FR_OK && bytesWritten == size) {
+                return static_cast<int32_t>(bytesWritten);
+            }
+            vTaskDelay(1);
         }
-        if (attempt == MAX_RETRIES - 1) {
+        if (round == 0) {
+            sdio_force_reinit();
+        } else {
             printf("[FP] write FAIL sz=%lu wr=%lu err=%d fpos=%lu\r\n",
-                   (unsigned long)size, (unsigned long)bytesWritten,
-                   (int)fr, (unsigned long)f_tell(&mFil));
+                   (unsigned long)size, (unsigned long)0,
+                   (int)0, (unsigned long)f_tell(&mFil));
         }
-        vTaskDelay(1);
     }
     return -1;
 }
@@ -82,24 +93,32 @@ int32_t FatFsFilePort::write(const uint8_t* buf, uint32_t size) {
 bool FatFsFilePort::seek(uint32_t offset) {
     if (!mIsOpen) return false;
 
-    for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
-        mFil.err = 0;
-        FRESULT fr = f_lseek(&mFil, offset);
-        if (fr == FR_OK) return true;
-        if (attempt == MAX_RETRIES - 1) {
+    for (int round = 0; round < 2; round++) {
+        for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
+            mFil.err = 0;
+            FRESULT fr = f_lseek(&mFil, offset);
+            if (fr == FR_OK) return true;
+            vTaskDelay(1);
+        }
+        if (round == 0) {
+            sdio_force_reinit();
+        } else {
             printf("[FP] seek FAIL off=%lu err=%d fsz=%lu\r\n",
-                   (unsigned long)offset, (int)fr,
+                   (unsigned long)offset, (int)0,
                    (unsigned long)f_size(&mFil));
         }
-        vTaskDelay(1);
     }
     return false;
 }
 
 bool FatFsFilePort::sync() {
     if (!mIsOpen) return false;
-    mFil.err = 0;
-    return f_sync(&mFil) == FR_OK;
+    for (int round = 0; round < 2; round++) {
+        mFil.err = 0;
+        if (f_sync(&mFil) == FR_OK) return true;
+        sdio_force_reinit();
+    }
+    return false;
 }
 
 uint32_t FatFsFilePort::tell() {
