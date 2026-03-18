@@ -56,7 +56,7 @@
 
 #define FF_FS_TINY	0
 #define FF_FS_EXFAT	1	/* Enable exFAT support */
-#define FF_FS_NORTC	1	/* No RTC — use fixed timestamp */
+#define FF_FS_NORTC	0	/* Use RTC — get_fattime() reads STM32 RTC counter */
 #define FF_NORTC_MON	3
 #define FF_NORTC_MDAY	9
 #define FF_NORTC_YEAR	2026

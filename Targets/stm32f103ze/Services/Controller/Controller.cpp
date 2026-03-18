@@ -136,8 +136,8 @@ void Controller::startServices() {
     mLight->start();
     mSdBench->start();
 
-    // Check for ESP8266 firmware on SD → flash if bootloader detected (J83 shorted)
-    EspFlasher::run();
+    // ESP8266 flasher disabled — needs dedicated task with larger stack
+    // EspFlasher::run();
 
     mSdStorage->start();
     mWifi->start();

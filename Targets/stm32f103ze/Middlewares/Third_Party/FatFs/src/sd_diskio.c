@@ -279,3 +279,45 @@ DRESULT disk_ioctl(BYTE pdrv, BYTE cmd, void *buff)
 
     return res;
 }
+
+/*-----------------------------------------------------------------------*/
+/* Get current time for FatFS timestamps (from STM32F103 RTC counter)    */
+/*-----------------------------------------------------------------------*/
+DWORD get_fattime(void)
+{
+    /* Read RTC counter (epoch seconds) */
+    uint16_t h1 = RTC->CNTH;
+    uint16_t l  = RTC->CNTL;
+    uint16_t h2 = RTC->CNTH;
+    if (h1 != h2) { l = RTC->CNTL; h1 = h2; }
+    uint32_t epoch = ((uint32_t)h1 << 16) | l;
+
+    /* If RTC not set (< year 2020), return fixed date */
+    if (epoch < 1577836800U) {
+        return ((DWORD)(2026 - 1980) << 25) | ((DWORD)3 << 21) | ((DWORD)18 << 16);
+    }
+
+    /* Howard Hinnant civil_from_days algorithm */
+    uint32_t z = epoch / 86400 + 719468;
+    uint32_t era = z / 146097;
+    uint32_t doe = z - era * 146097;
+    uint32_t yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    uint32_t y = yoe + era * 400;
+    uint32_t doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    uint32_t mp = (5 * doy + 2) / 153;
+    uint32_t day = doy - (153 * mp + 2) / 5 + 1;
+    uint32_t mon = mp < 10 ? mp + 3 : mp - 9;
+    if (mon <= 2) y++;
+
+    uint32_t daySec = epoch % 86400;
+    uint32_t hour = daySec / 3600;
+    uint32_t min  = (daySec % 3600) / 60;
+    uint32_t sec  = daySec % 60;
+
+    return ((DWORD)(y - 1980) << 25) |
+           ((DWORD)mon << 21) |
+           ((DWORD)day << 16) |
+           ((DWORD)hour << 11) |
+           ((DWORD)min << 5) |
+           ((DWORD)(sec / 2));
+}
