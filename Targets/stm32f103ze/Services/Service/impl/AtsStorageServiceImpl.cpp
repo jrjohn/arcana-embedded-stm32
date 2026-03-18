@@ -39,6 +39,15 @@ static const uint16_t ECG_LUT_LEN = sizeof(ECG_LUT);
 extern "C" {
     extern volatile uint8_t g_exfat_ready;
     void sdio_force_reinit(void);
+    void ats_safe_eject(void);
+}
+
+// Called from MQTT task when "eject" command received
+void ats_safe_eject(void) {
+    arcana::atsstorage::AtsStorageServiceImpl& svc =
+        static_cast<arcana::atsstorage::AtsStorageServiceImpl&>(
+            arcana::atsstorage::AtsStorageServiceImpl::getInstance());
+    svc.stop();
 }
 
 namespace arcana {
@@ -160,23 +169,9 @@ void AtsStorageServiceImpl::stop() {
     mRunning = false;
     if (mTaskHandle) {
         xSemaphoreGive(mWriteSem);
-        vTaskDelay(pdMS_TO_TICKS(50));
+        vTaskDelay(pdMS_TO_TICKS(200));  // Wait for storageTask to do cleanup
         mTaskHandle = 0;
     }
-    if (mDbReady) {
-        mDb.close();
-        mDbReady = false;
-    }
-    if (mDeviceDbReady) {
-        writeLifecycleEvent(
-            static_cast<uint8_t>(ats::LifecycleEventType::PowerOff), 0);
-        mDeviceDb.close();
-        mDeviceDbReady = false;
-    }
-    // Sync both FATs so Windows/macOS can read the card cleanly
-    syncDualFat();
-    f_mount(0, "", 0);  // Unmount
-    printf("[SD] Safe to remove card\r\n");
 }
 
 void AtsStorageServiceImpl::onSensorData(SensorDataModel* model, void* context) {
@@ -351,6 +346,24 @@ void AtsStorageServiceImpl::storageTask(void* param) {
     LOG_I(ats::ErrorSource::Tsdb, evt::ATS_READY, self->mTotalRecords);
     log::Logger::getInstance().drain(8);
     self->taskLoop();
+
+    // --- Safe eject: close DBs + sync dual FAT + unmount ---
+    printf("[SD] Shutting down...\r\n");
+    if (self->mDbReady) {
+        self->mDb.close();
+        self->mDbReady = false;
+    }
+    if (self->mDeviceDbReady) {
+        self->writeLifecycleEvent(
+            static_cast<uint8_t>(ats::LifecycleEventType::PowerOff), 0);
+        self->mDeviceDb.close();
+        self->mDeviceDbReady = false;
+    }
+    log::Logger::getInstance().drain(8);
+    syncDualFat();
+    f_mount(0, "", 0);
+    printf("[SD] Safe to remove card\r\n");
+
     vTaskDelete(0);
 }
 
@@ -598,6 +611,7 @@ void AtsStorageServiceImpl::taskLoop() {
     uint8_t rec[RECORD_SIZE];
     memset(rec, 0, RECORD_SIZE);
     uint32_t ecgPhase = 0;  // LUT index for synthetic ECG
+    uint8_t key2Hold = 0;   // KEY2 hold counter (seconds)
 
     while (mRunning) {
         // 1kHz pacing — 1 record per ms
@@ -694,6 +708,18 @@ void AtsStorageServiceImpl::taskLoop() {
                     rotateDailyDb(lastDay);
                 }
                 lastDay = today;
+            }
+
+            // KEY2 (PC13) safe eject — detect 2-second hold
+            if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_RESET) {
+                if (++key2Hold >= 2) {
+                    printf("[SD] KEY2 safe eject triggered\r\n");
+                    LOG_W(ats::ErrorSource::System, evt::SYS_BOOT_OK,
+                          mTotalRecords);
+                    mRunning = false;
+                }
+            } else {
+                key2Hold = 0;
             }
         }
     }

@@ -9,6 +9,7 @@
 #include <cstring>
 
 extern "C" volatile uint8_t g_exfat_ready;
+extern "C" void ats_safe_eject(void);
 
 static void lcdStatus(const char* msg) {
     arcana::lcd::Ili9341Lcd disp;
@@ -311,6 +312,13 @@ void MqttServiceImpl::processIncomingMsg() {
     if (commas < 3) return;
 
     uint16_t payloadLen = bufLen - (uint16_t)(p - buf);
+
+    // Safe eject command
+    if (payloadLen == 5 && memcmp(p, "eject", 5) == 0) {
+        printf("[MQTT] Eject command received\r\n");
+        ats_safe_eject();
+        return;
+    }
 
     // Submit to CommandBridge frame queue
     if (payloadLen > 0 && payloadLen <= CmdFrameItem::MAX_DATA) {
