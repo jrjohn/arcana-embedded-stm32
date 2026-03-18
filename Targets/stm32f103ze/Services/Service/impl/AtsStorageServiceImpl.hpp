@@ -71,6 +71,8 @@ private:
     bool openDeviceDb();
     void restoreTimeFromDeviceDb();
     void writeLifecycleEvent(uint8_t eventType, uint32_t param);
+    void writeRecoveryEvents(uint32_t recoveredRec, uint16_t truncations,
+                             uint16_t skippedBlocks);
 
     // Buffers (static, no heap)
     static uint8_t sSlowBuf[ats::BLOCK_SIZE];

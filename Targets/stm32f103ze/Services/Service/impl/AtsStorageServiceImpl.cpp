@@ -222,6 +222,15 @@ void AtsStorageServiceImpl::storageTask(void* param) {
         }
     }
 
+    // Log recovery event to both device.ats and sensor.ats
+    {
+        const ats::StorageStats& st = self->mDb.getStats();
+        self->writeRecoveryEvents(
+            st.totalRecords,
+            (uint16_t)st.recoveryTruncations,
+            (uint16_t)(st.blocksFailed - self->mBaselineBlocksFailed));
+    }
+
     // Publish initial stats immediately so LCD shows recovered state
     // (don't wait 1 second for first taskLoop report)
     self->mStatsModel.recordCount = self->mTotalRecords;
@@ -274,7 +283,14 @@ bool AtsStorageServiceImpl::openDailyDb() {
     if (!mDb.isReadOnly() && mDb.getChannelCount() == 0) {
         ats::ArcanaTsSchema sensor = ats::ArcanaTsSchema::mpu6050();
         if (!mDb.addChannel(0, sensor)) {
-            printf("[ATS] addChannel FAILED\r\n");
+            printf("[ATS] addChannel(0) FAILED\r\n");
+            mDb.close();
+            return false;
+        }
+
+        ats::ArcanaTsSchema errLog = ats::ArcanaTsSchema::errorLog();
+        if (!mDb.addChannel(1, errLog)) {
+            printf("[ATS] addChannel(1) FAILED\r\n");
             mDb.close();
             return false;
         }
@@ -336,13 +352,22 @@ bool AtsStorageServiceImpl::openDeviceDb() {
     cfg.readCache = 0;  // device.ats writes rarely, can share slowBuf for reads
 
     printf("[DEV] Opening device.ats...\r\n");
+    f_unlink("device_bad.ats");  // clean up from previous crash
+
     if (!mDeviceDb.open("device.ats", cfg)) {
-        f_unlink("device.ats");
+        // Preserve corrupted file for forensics — never delete device history
+        printf("[DEV] Open failed, renaming to device_bad.ats\r\n");
+        f_rename("device.ats", "device_bad.ats");
         if (!mDeviceDb.open("device.ats", cfg)) {
-            printf("[DEV] Open FAILED\r\n");
+            printf("[DEV] Recreate FAILED\r\n");
             return false;
         }
     }
+
+    printf("[DEV] db.open OK (blk=%lu, rec=%lu, trunc=%lu)\r\n",
+           (unsigned long)mDeviceDb.getStats().blocksWritten,
+           (unsigned long)mDeviceDb.getStats().totalRecords,
+           (unsigned long)mDeviceDb.getStats().recoveryTruncations);
 
     if (mDeviceDb.getChannelCount() == 0) {
         ats::ArcanaTsSchema lc = ats::ArcanaTsSchema::lifecycleEvent();
@@ -355,6 +380,24 @@ bool AtsStorageServiceImpl::openDeviceDb() {
             printf("[DEV] start FAILED\r\n");
             mDeviceDb.close();
             return false;
+        }
+    }
+
+    // Write test — verify device.ats is writable
+    {
+        uint8_t testRec[12] = {};
+        uint32_t ts = atsGetTime();
+        memcpy(testRec, &ts, 4);
+        testRec[4] = 0xFF;  // test event type
+        mDeviceDb.append(0, testRec);
+        uint32_t blkBefore = mDeviceDb.getStats().blocksWritten;
+        mDeviceDb.flush();
+        uint32_t blkAfter = mDeviceDb.getStats().blocksWritten;
+        if (blkAfter <= blkBefore) {
+            printf("[DEV] Write test FAILED, SDIO reinit + retry\r\n");
+            sdio_force_reinit();
+            mDeviceDb.append(0, testRec);
+            mDeviceDb.flush();
         }
     }
 
@@ -398,6 +441,42 @@ void AtsStorageServiceImpl::writeLifecycleEvent(uint8_t eventType, uint32_t para
     mDeviceDb.flush();  // lifecycle events must persist immediately
     printf("[DEV] event type=0x%02X param=%lu\r\n",
            (unsigned)eventType, (unsigned long)param);
+}
+
+void AtsStorageServiceImpl::writeRecoveryEvents(
+        uint32_t recoveredRec, uint16_t truncations, uint16_t skippedBlocks) {
+    // 1. device.ats — LIFECYCLE Recovery event
+    //    evtTyp=Recovery, evtCod=truncations, param=recoveredRec
+    if (mDeviceDbReady) {
+        uint8_t rec[12];
+        uint32_t ts = atsGetTime();
+        memcpy(rec, &ts, 4);
+        rec[4] = static_cast<uint8_t>(ats::LifecycleEventType::Recovery);
+        uint16_t code = truncations;
+        memcpy(rec + 5, &code, 2);
+        rec[7] = (uint8_t)skippedBlocks;
+        memcpy(rec + 8, &recoveredRec, 4);
+        mDeviceDb.append(0, rec);
+        mDeviceDb.flush();
+        printf("[DEV] Recovery: %lu rec, trunc=%u, skip=%u\r\n",
+               (unsigned long)recoveredRec, (unsigned)truncations,
+               (unsigned)skippedBlocks);
+    }
+
+    // 2. sensor.ats — ERROR_LOG ch1 (if channel exists)
+    //    sev=INFO(1), src=ATS(0x10), errCod=truncations, param=recoveredRec
+    if (mDbReady && mDb.getChannelCount() > 1) {
+        uint8_t rec[12];
+        uint32_t ts = atsGetTime();
+        memcpy(rec, &ts, 4);
+        rec[4] = 0x01;   // severity: INFO
+        rec[5] = 0x10;   // source: ATS recovery
+        uint16_t code = truncations;
+        memcpy(rec + 6, &code, 2);
+        memcpy(rec + 8, &recoveredRec, 4);
+        mDb.append(1, rec);
+        // flush happens in taskLoop's first 1-second window
+    }
 }
 
 // ---------------------------------------------------------------------------

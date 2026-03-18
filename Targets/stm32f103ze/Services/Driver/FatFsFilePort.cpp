@@ -69,45 +69,46 @@ int32_t FatFsFilePort::read(uint8_t* buf, uint32_t size) {
 int32_t FatFsFilePort::write(const uint8_t* buf, uint32_t size) {
     if (!mIsOpen) return -1;
 
+    FRESULT lastErr = FR_OK;
+    UINT lastWr = 0;
     for (int round = 0; round < 2; round++) {
         for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
             mFil.err = 0;
-            UINT bytesWritten = 0;
-            FRESULT fr = f_write(&mFil, buf, size, &bytesWritten);
-            if (fr == FR_OK && bytesWritten == size) {
-                return static_cast<int32_t>(bytesWritten);
+            lastWr = 0;
+            lastErr = f_write(&mFil, buf, size, &lastWr);
+            if (lastErr == FR_OK && lastWr == size) {
+                return static_cast<int32_t>(lastWr);
             }
             vTaskDelay(1);
         }
         if (round == 0) {
             sdio_force_reinit();
-        } else {
-            printf("[FP] write FAIL sz=%lu wr=%lu err=%d fpos=%lu\r\n",
-                   (unsigned long)size, (unsigned long)0,
-                   (int)0, (unsigned long)f_tell(&mFil));
         }
     }
+    printf("[FP] write FAIL sz=%lu wr=%lu err=%d fpos=%lu\r\n",
+           (unsigned long)size, (unsigned long)lastWr,
+           (int)lastErr, (unsigned long)f_tell(&mFil));
     return -1;
 }
 
 bool FatFsFilePort::seek(uint32_t offset) {
     if (!mIsOpen) return false;
 
+    FRESULT lastErr = FR_OK;
     for (int round = 0; round < 2; round++) {
         for (int attempt = 0; attempt < MAX_RETRIES; attempt++) {
             mFil.err = 0;
-            FRESULT fr = f_lseek(&mFil, offset);
-            if (fr == FR_OK) return true;
+            lastErr = f_lseek(&mFil, offset);
+            if (lastErr == FR_OK) return true;
             vTaskDelay(1);
         }
         if (round == 0) {
             sdio_force_reinit();
-        } else {
-            printf("[FP] seek FAIL off=%lu err=%d fsz=%lu\r\n",
-                   (unsigned long)offset, (int)0,
-                   (unsigned long)f_size(&mFil));
         }
     }
+    printf("[FP] seek FAIL off=%lu err=%d fsz=%lu\r\n",
+           (unsigned long)offset, (int)lastErr,
+           (unsigned long)f_size(&mFil));
     return false;
 }
 

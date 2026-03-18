@@ -220,6 +220,7 @@ enum class ErrorSource : uint8_t {
 enum class LifecycleEventType : uint8_t {
     PowerOn  = 0x01,
     PowerOff = 0x02,
+    Recovery = 0x03,  // power-loss recovery completed
     FwUpdate = 0x10,
     HwChange = 0x11,
     Calibrate = 0x20,
