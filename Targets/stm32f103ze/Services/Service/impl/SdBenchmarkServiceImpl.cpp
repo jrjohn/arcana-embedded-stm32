@@ -99,12 +99,16 @@ void SdBenchmarkServiceImpl::runBenchmark() {
     char msg[40];
     FRESULT fr;
 
-#define TEXFAT_FORCE_FORMAT 0  /* Set to 1 to format SD with TexFAT */
-#if TEXFAT_FORCE_FORMAT
-    printf("[SD] TexFAT force format (n_fat=2)...\r\n");
-    fr = texfat_format();
-    printf("[SD] Format %s (err=%d)\r\n", fr == FR_OK ? "OK" : "FAIL", (int)fr);
-#endif
+    // KEY1 (PA0) held at boot → TexFAT format
+    if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_RESET) {
+        vTaskDelay(pdMS_TO_TICKS(2000));  // Debounce: hold 2 sec to confirm
+        if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_RESET) {
+            printf("[SD] KEY1 held — TexFAT format (n_fat=2)...\r\n");
+            fr = texfat_format();
+            printf("[SD] Format %s (err=%d)\r\n",
+                   fr == FR_OK ? "OK" : "FAIL", (int)fr);
+        }
+    }
 
     static const int MAX_RETRIES = 3;
     bool mounted = false;
