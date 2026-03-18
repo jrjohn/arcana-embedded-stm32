@@ -1,9 +1,16 @@
 #include "SdBenchmarkServiceImpl.hpp"
 #include "ff.h"
 #include "diskio.h"
+#include "Ili9341Lcd.hpp"
 #include <cstring>
 #include <cstdio>
 #include "stm32f1xx_hal.h"
+
+static void lcdMsg(const char* msg, uint16_t color = 0xFFFF) {
+    arcana::lcd::Ili9341Lcd disp;
+    disp.fillRect(20, 154, 200, 8, 0x0000);
+    disp.drawString(20, 154, msg, color, 0x0000, 1);
+}
 
 /* Global flag: set to 1 after exFAT format+mount succeeds.
  * MQTT task waits for this before connecting. */
@@ -101,12 +108,21 @@ void SdBenchmarkServiceImpl::runBenchmark() {
 
     // KEY1 (PA0) held at boot → TexFAT format
     if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_RESET) {
+        lcdMsg("[SD] KEY1: Formatting...", 0xFD20);  // orange
         vTaskDelay(pdMS_TO_TICKS(2000));  // Debounce: hold 2 sec to confirm
         if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_RESET) {
             printf("[SD] KEY1 held — TexFAT format (n_fat=2)...\r\n");
             fr = texfat_format();
-            printf("[SD] Format %s (err=%d)\r\n",
-                   fr == FR_OK ? "OK" : "FAIL", (int)fr);
+            if (fr == FR_OK) {
+                lcdMsg("[SD] Format OK!", 0x07E0);  // green
+                printf("[SD] Format OK\r\n");
+            } else {
+                lcdMsg("[SD] Format FAILED!", 0xF800);  // red
+                printf("[SD] Format FAILED (err=%d)\r\n", (int)fr);
+            }
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        } else {
+            lcdMsg("");  // Clear — KEY1 released early
         }
     }
 

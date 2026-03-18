@@ -9,6 +9,7 @@
 #include "diskio.h"
 #include <cstring>
 #include <cstdio>
+#include "Ili9341Lcd.hpp"
 #include "Log.hpp"
 #include "EventCodes.hpp"
 #include "SerialAppender.hpp"
@@ -68,6 +69,13 @@ static uint32_t atsGetTime() {
         return SystemClock::getInstance().now();
     }
     return (uint32_t)xTaskGetTickCount();
+}
+
+// LCD status line (same position as MQTT status: y=154)
+static void lcdStatus(const char* msg, uint16_t color = 0xFFFF) {
+    lcd::Ili9341Lcd disp;
+    disp.fillRect(20, 154, 200, 8, 0x0000);
+    disp.drawString(20, 154, msg, color, 0x0000, 1);
 }
 
 // Logger platform helpers (function pointers for LogConfig)
@@ -363,6 +371,7 @@ void AtsStorageServiceImpl::storageTask(void* param) {
     syncDualFat();
     f_mount(0, "", 0);
     printf("[SD] Safe to remove card\r\n");
+    lcdStatus("[SD] Safe to remove", 0x07E0);  // green
 
     vTaskDelete(0);
 }
@@ -712,6 +721,9 @@ void AtsStorageServiceImpl::taskLoop() {
 
             // KEY2 (PC13) safe eject — detect 2-second hold
             if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_RESET) {
+                if (key2Hold == 0) {
+                    lcdStatus("[SD] Ejecting...", 0xFD20);
+                }
                 if (++key2Hold >= 2) {
                     printf("[SD] KEY2 safe eject triggered\r\n");
                     LOG_W(ats::ErrorSource::System, evt::SYS_BOOT_OK,
@@ -719,6 +731,7 @@ void AtsStorageServiceImpl::taskLoop() {
                     mRunning = false;
                 }
             } else {
+                if (key2Hold > 0) lcdStatus("");
                 key2Hold = 0;
             }
         }
