@@ -106,11 +106,11 @@ void SdBenchmarkServiceImpl::runBenchmark() {
     char msg[40];
     FRESULT fr;
 
-    // KEY1 (PA0) held at boot → TexFAT format
-    if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_RESET) {
+    // KEY1 (PA0) held at boot → TexFAT format (active-HIGH: pull-down)
+    if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET) {
         lcdMsg("[SD] KEY1: Formatting...", 0xFD20);  // orange
         vTaskDelay(pdMS_TO_TICKS(2000));  // Debounce: hold 2 sec to confirm
-        if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_RESET) {
+        if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET) {
             printf("[SD] KEY1 held — TexFAT format (n_fat=2)...\r\n");
             fr = texfat_format();
             if (fr == FR_OK) {
