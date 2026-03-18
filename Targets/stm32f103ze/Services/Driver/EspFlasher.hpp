@@ -3,16 +3,12 @@
  * @file EspFlasher.hpp
  * @brief Flash ESP8266 firmware from SD card via USART3 bootloader protocol
  *
- * Implements ESP8266 ROM bootloader SLIP protocol:
- * SYNC → FLASH_BEGIN → FLASH_DATA × N → FLASH_END
+ * SLIP protocol: SYNC -> FLASH_BEGIN -> FLASH_DATA x N -> FLASH_END
  *
  * Usage:
- * 1. Place esp_fw/*.bin files on SD card
+ * 1. Place esp_fw/ files on SD card (bootloader.bin, esp-at.bin, etc.)
  * 2. Short J83 Pin 3-4 (GPIO0=GND) on board
- * 3. Call EspFlasher::run() at boot — it tries SYNC, if ESP8266
- *    responds in bootloader mode, flashes all partitions
- *
- * Requires: USART3 initialized, SD card mounted (FatFS)
+ * 3. Call EspFlasher::run() after SD mounted - runs in dedicated 4KB task
  */
 
 #include <cstdint>
@@ -22,16 +18,19 @@ namespace arcana {
 class EspFlasher {
 public:
     /**
-     * @brief Check for ESP8266 firmware on SD and flash if bootloader detected
-     * @return true if flashing was performed (success or fail), false if skipped
+     * @brief Check for ESP firmware on SD, flash if bootloader detected
+     * Spawns a dedicated FreeRTOS task (4KB stack) to avoid overflow.
+     * Blocks until complete or skipped.
+     * @return true if flashing attempted, false if skipped
      */
     static bool run();
 
-    static constexpr uint16_t BLOCK_SIZE = 1024;  /* 1KB per FLASH_DATA */
-
-    static bool flashPartition(const char* path, uint32_t offset);
+    static constexpr uint16_t BLOCK_SIZE = 512;  /* Reduced to save RAM */
 
 private:
+    static bool doFlash();
+    static bool flashPartition(const char* path, uint32_t offset);
+
     /* SLIP framing */
     static void slipBegin();
     static void slipSend(const uint8_t* data, uint16_t len);

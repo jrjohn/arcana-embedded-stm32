@@ -48,7 +48,7 @@ UART_HandleTypeDef huart1;
 osThreadId_t defaultTaskHandle;
 const osThreadAttr_t defaultTask_attributes = {
   .name = "defaultTask",
-  .stack_size = 256 * 4,
+  .stack_size = 384 * 4,  /* 1.5KB — needed for EspFlasher f_open depth */
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* USER CODE BEGIN PV */

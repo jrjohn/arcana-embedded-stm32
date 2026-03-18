@@ -8,12 +8,16 @@
 #include "ff.h"
 #include "FreeRTOS.h"
 #include "task.h"
+#include "semphr.h"
 #include <cstdio>
 #include <cstring>
 
 extern "C" volatile uint8_t g_exfat_ready;
 
-/* USART3 register access — same UART as Esp8266 driver */
+/* Static I/O buffer — 512 bytes to save RAM */
+static uint8_t sIoBuf[512] __attribute__((aligned(4)));
+
+/* No separate task needed — I/O buffer is static, doFlash() fits in default task stack */
 
 namespace arcana {
 
@@ -178,16 +182,18 @@ bool EspFlasher::sync() {
 bool EspFlasher::flashBegin(uint32_t eraseSize, uint32_t numBlocks,
                              uint32_t blockSize, uint32_t offset) {
     uint8_t payload[16];
-    /* All little-endian u32 */
     memcpy(payload + 0,  &eraseSize, 4);
     memcpy(payload + 4,  &numBlocks, 4);
     memcpy(payload + 8,  &blockSize, 4);
     memcpy(payload + 12, &offset,    4);
 
+    printf("[ESPFW] >> sendCmd FLASH_BEGIN\r\n");
     sendCommand(CMD_FLASH_BEGIN, payload, 16, 0);
-    /* Erase can take several seconds for large regions */
     uint32_t timeout = 10000 + (eraseSize / 1024) * 100;
-    return recvResponse(CMD_FLASH_BEGIN, timeout);
+    printf("[ESPFW] >> recvResp (timeout=%lu)\r\n", (unsigned long)timeout);
+    bool ok = recvResponse(CMD_FLASH_BEGIN, timeout);
+    printf("[ESPFW] >> recvResp=%d\r\n", ok);
+    return ok;
 }
 
 /* ---- FLASH_DATA ---- */
@@ -250,39 +256,42 @@ void EspFlasher::espReset() {
 /* ---- Flash one partition file from SD ---- */
 
 bool EspFlasher::flashPartition(const char* path, uint32_t offset) {
+    printf("[ESPFW] >> open %s\r\n", path);
     FIL f;
-    if (f_open(&f, path, FA_READ) != FR_OK) {
-        printf("[ESPFW] File not found: %s\r\n", path);
+    FRESULT fr = f_open(&f, path, FA_READ);
+    if (fr != FR_OK) {
+        printf("[ESPFW] File not found: %s err=%d\r\n", path, fr);
         return false;
     }
 
     uint32_t fileSize = f_size(&f);
     uint32_t numBlocks = (fileSize + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
-    printf("[ESPFW] %s → 0x%05lX (%lu bytes, %lu blocks)\r\n",
+    printf("[ESPFW] %s → 0x%05lX (%lu bytes, %lu blk)\r\n",
            path, (unsigned long)offset, (unsigned long)fileSize, (unsigned long)numBlocks);
 
     /* FLASH_BEGIN — triggers erase */
+    printf("[ESPFW] >> FLASH_BEGIN\r\n");
     if (!flashBegin(fileSize, numBlocks, BLOCK_SIZE, offset)) {
         printf("[ESPFW] FLASH_BEGIN failed\r\n");
         f_close(&f);
         return false;
     }
+    printf("[ESPFW] >> FLASH_BEGIN OK\r\n");
 
-    /* FLASH_DATA — send file in BLOCK_SIZE chunks */
-    uint8_t buf[BLOCK_SIZE];
+    /* FLASH_DATA — send file in BLOCK_SIZE chunks (using static buffer) */
     uint32_t seq = 0;
 
     while (seq < numBlocks) {
         UINT br;
-        memset(buf, 0xFF, sizeof(buf));  /* Pad with 0xFF */
-        if (f_read(&f, buf, sizeof(buf), &br) != FR_OK) {
+        memset(sIoBuf, 0xFF, BLOCK_SIZE);  /* Pad with 0xFF */
+        if (f_read(&f, sIoBuf, BLOCK_SIZE, &br) != FR_OK) {
             printf("[ESPFW] Read error at block %lu\r\n", (unsigned long)seq);
             f_close(&f);
             return false;
         }
 
-        if (!flashData(buf, BLOCK_SIZE, seq)) {
+        if (!flashData(sIoBuf, BLOCK_SIZE, seq)) {
             printf("[ESPFW] FLASH_DATA failed at block %lu\r\n", (unsigned long)seq);
             f_close(&f);
             return false;
@@ -323,27 +332,30 @@ static const EspPartition partitions[] = {
 static const int NUM_PARTITIONS = sizeof(partitions) / sizeof(partitions[0]);
 
 bool EspFlasher::run() {
-    /* Wait for SD card to be mounted (max 10s) */
-    printf("[ESPFW] Waiting for SD...\r\n");
-    for (int i = 0; i < 100 && !g_exfat_ready; i++) {
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
+    /* Wait for SD mount */
     if (!g_exfat_ready) {
-        printf("[ESPFW] SD not ready, skipping\r\n");
-        return false;
+        for (int i = 0; i < 150 && !g_exfat_ready; i++) {
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+        if (!g_exfat_ready) return false;
     }
 
-    /* Check if esp_fw/esp-at.bin exists on SD */
     FILINFO fno;
-    if (f_stat("esp_fw/esp-at.bin", &fno) != FR_OK) {
-        printf("[ESPFW] No esp_fw/esp-at.bin on SD\r\n");
-        return false;  /* No ESP firmware on SD — skip */
+    bool hasMain = (f_stat("esp_fw/esp-at.bin", &fno) == FR_OK);
+    bool hasParam = (f_stat("esp_fw/factory_param.bin", &fno) == FR_OK);
+    if (!hasMain && !hasParam) {
+        return false;  /* No ESP firmware on SD — skip silently */
     }
 
     printf("\r\n[ESPFW] === ESP8266 Firmware Update ===\r\n");
     printf("[ESPFW] Found esp_fw/ on SD card\r\n");
 
-    /* Reset ESP8266 into bootloader (J83 must be shorted for GPIO0=LOW) */
+    return doFlash();
+}
+
+/* ---- Main flash logic — runs in dedicated 4KB task ---- */
+
+bool EspFlasher::doFlash() {
     /* Disable USART3 ISR — Esp8266 driver's IRQ steals RX bytes */
     HAL_NVIC_DisableIRQ(USART3_IRQn);
     uartFlushRx();
@@ -351,13 +363,12 @@ bool EspFlasher::run() {
     printf("[ESPFW] Resetting ESP8266...\r\n");
     espReset();
 
-    /* Try SYNC — if ESP8266 is in bootloader mode, it will respond */
+    /* Try SYNC */
     printf("[ESPFW] Syncing with bootloader...\r\n");
     bool synced = false;
     for (int i = 0; i < 10; i++) {
         if (sync()) {
             synced = true;
-            /* Consume extra SYNC responses */
             for (int j = 0; j < 3; j++) {
                 recvResponse(CMD_SYNC, 200);
             }
@@ -374,10 +385,11 @@ bool EspFlasher::run() {
 
     printf("[ESPFW] Bootloader connected!\r\n");
 
-    /* List all files in esp_fw for debug */
+    /* List files in esp_fw */
+    FILINFO fno;
     DIR dir;
     if (f_opendir(&dir, "esp_fw") == FR_OK) {
-        printf("[ESPFW] Files on SD:\r\n");
+        printf("[ESPFW] Files:\r\n");
         while (1) {
             if (f_readdir(&dir, &fno) != FR_OK || fno.fname[0] == 0) break;
             printf("[ESPFW]   %s (%lu)\r\n", fno.fname, (unsigned long)fno.fsize);
@@ -387,7 +399,6 @@ bool EspFlasher::run() {
 
     /* Flash each partition */
     int ok = 0, fail = 0;
-    /* Essential files (indices 0,1,2,3 = bootloader, partitions, ota_data, at_customize, esp-at) */
     for (int i = 0; i < NUM_PARTITIONS; i++) {
         FRESULT fr = f_stat(partitions[i].path, &fno);
         if (fr != FR_OK) {
@@ -399,25 +410,23 @@ bool EspFlasher::run() {
         } else {
             fail++;
             printf("[ESPFW] FAILED: %s\r\n", partitions[i].path);
-            break;  /* Stop on first failure */
+            break;
         }
     }
 
-    /* FLASH_END — reboot ESP8266 */
     flashEnd(true);
 
-    /* Re-enable USART3 ISR for normal Esp8266 driver operation */
     uartFlushRx();
     HAL_NVIC_EnableIRQ(USART3_IRQn);
 
-    if (fail == 0) {
+    if (fail == 0 && ok > 0) {
         printf("[ESPFW] === SUCCESS: %d partitions flashed ===\r\n", ok);
-        printf("[ESPFW] Remove J83 jumpers, then reset board.\r\n");
+        printf("[ESPFW] Remove J83 jumper, then reset board.\r\n");
     } else {
         printf("[ESPFW] === FAILED: %d OK, %d failed ===\r\n", ok, fail);
     }
 
-    return true;
+    return (fail == 0 && ok > 0);
 }
 
 } // namespace arcana

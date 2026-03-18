@@ -14,6 +14,7 @@
 #include "MainView.hpp"
 #include "Hc08Ble.hpp"
 #include "EspFlasher.hpp"
+#include <cstdio>
 
 namespace arcana {
 
@@ -110,6 +111,21 @@ void Controller::initHAL() {
     mWifi->initHAL();
     mMqtt->initHAL();
 
+    // Query ESP8266 AT version (AT v2.2 FreeRTOS boot takes ~3s)
+    { Esp8266& e = Esp8266::getInstance(); e.reset();
+      bool ok = false;
+      for (int i = 0; i < 5; i++) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        if (e.sendCmd("AT", "OK", 2000)) { ok = true; break; }
+        printf("[ESP] AT retry %d...\r\n", i + 1);
+      }
+      if (ok) {
+        if (e.sendCmd("AT+GMR", "OK", 3000))
+          printf("[ESP] %.*s\r\n", e.getResponseLen(), e.getResponse());
+        else printf("[ESP] AT+GMR failed\r\n");
+      } else printf("[ESP] AT not responding after 5 retries\r\n");
+    }
+
     // BLE (HC-08 on USART2)
     Hc08Ble::getInstance().initHAL();
 }
@@ -136,8 +152,8 @@ void Controller::startServices() {
     mLight->start();
     mSdBench->start();
 
-    // ESP8266 flasher disabled — needs dedicated task with larger stack
-    // EspFlasher::run();
+    // ESP8266 flasher — runs in dedicated 4KB task if esp_fw/ found on SD
+    EspFlasher::run();
 
     mSdStorage->start();
     mWifi->start();
