@@ -673,15 +673,7 @@ void AtsStorageServiceImpl::taskLoop() {
     uint32_t ecgPhase = 0;  // LUT index for synthetic ECG
     uint8_t key1Hold = 0;   // KEY1 hold counter (seconds)
     uint8_t key2Hold = 0;   // KEY2 hold counter (seconds)
-
-    // Enable internal pull-up for KEY2 (PC13) — board has no external pull-up
-    {
-        GPIO_InitTypeDef gpio = {};
-        gpio.Pin = GPIO_PIN_13;
-        gpio.Mode = GPIO_MODE_INPUT;
-        gpio.Pull = GPIO_PULLUP;
-        HAL_GPIO_Init(GPIOC, &gpio);
-    }
+    bool key2Seen = false;  // KEY2 must be seen released (HIGH) before first detect
 
     while (mRunning) {
         // 1kHz pacing — 1 record per ms
@@ -796,7 +788,13 @@ void AtsStorageServiceImpl::taskLoop() {
             }
 
             // KEY2 (PC13) safe eject — detect 2-second hold
-            if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_RESET) {
+            // PC13 is backup-domain pin: internal pull-up unreliable.
+            // Require seeing HIGH (released) at least once before accepting LOW.
+            if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_SET) {
+                key2Seen = true;  // Pin is working, not floating
+                if (key2Hold > 0) lcdStatus("");
+                key2Hold = 0;
+            } else if (key2Seen) {
                 if (key2Hold == 0) {
                     lcdStatus("[SD] Ejecting...", 0xFD20);
                 }
@@ -806,9 +804,6 @@ void AtsStorageServiceImpl::taskLoop() {
                           mTotalRecords);
                     mRunning = false;
                 }
-            } else {
-                if (key2Hold > 0) lcdStatus("");
-                key2Hold = 0;
             }
         }
     }
