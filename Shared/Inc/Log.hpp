@@ -92,11 +92,13 @@ public:
     Level getLevel() const { return mLevel; }
     void setLevel(Level level) { mLevel = level; }
 
-    /** Log from task context (uses enterCritical/exitCritical). */
+    /** Log from task context (uses enterCritical/exitCritical).
+     *  __attribute__((noinline)) — prevents compiler from inlining at every
+     *  call site. 80 call sites × ~200B inlined = 16KB waste.
+     *  With noinline: 80 × ~30B call + 1 × 200B body = ~2.6KB. */
+    __attribute__((noinline))
     void log(Level level, ats::ErrorSource source,
              uint16_t code, uint32_t param = 0) {
-        if (level < mLevel) return;
-
         LogEvent ev;
         ev.timestamp = mConfig.getTime ? mConfig.getTime() : 0;
         ev.tickMs    = mConfig.getTick
@@ -113,10 +115,9 @@ public:
     }
 
     /** Log from ISR context (uses enterCriticalISR/exitCriticalISR). */
+    __attribute__((noinline))
     void logFromISR(Level level, ats::ErrorSource source,
                     uint16_t code, uint32_t param = 0) {
-        if (level < mLevel) return;
-
         LogEvent ev;
         ev.timestamp = mConfig.getTime ? mConfig.getTime() : 0;
         ev.tickMs    = mConfig.getTick
@@ -204,34 +205,19 @@ private:
 // Convenience macros — lazy evaluation (level check before building event)
 // ---------------------------------------------------------------------------
 
-#define LOG_T(src, code, ...) do { \
-    if (::arcana::log::Logger::getInstance().getLevel() <= ::arcana::log::Level::Trace) \
-        ::arcana::log::Logger::getInstance().log(::arcana::log::Level::Trace, src, code, ##__VA_ARGS__); \
+// Single getInstance() per macro + __builtin_expect for branch prediction.
+// Hot path (below threshold): volatile read + branch-not-taken = ~20ns.
+#define _LOG_IMPL(lvl, src, code, ...) do { \
+    ::arcana::log::Logger& _lg = ::arcana::log::Logger::getInstance(); \
+    if (__builtin_expect(_lg.getLevel() <= (lvl), 0)) \
+        _lg.log((lvl), src, code, ##__VA_ARGS__); \
 } while(0)
 
-#define LOG_D(src, code, ...) do { \
-    if (::arcana::log::Logger::getInstance().getLevel() <= ::arcana::log::Level::Debug) \
-        ::arcana::log::Logger::getInstance().log(::arcana::log::Level::Debug, src, code, ##__VA_ARGS__); \
-} while(0)
-
-#define LOG_I(src, code, ...) do { \
-    if (::arcana::log::Logger::getInstance().getLevel() <= ::arcana::log::Level::Info) \
-        ::arcana::log::Logger::getInstance().log(::arcana::log::Level::Info, src, code, ##__VA_ARGS__); \
-} while(0)
-
-#define LOG_W(src, code, ...) do { \
-    if (::arcana::log::Logger::getInstance().getLevel() <= ::arcana::log::Level::Warn) \
-        ::arcana::log::Logger::getInstance().log(::arcana::log::Level::Warn, src, code, ##__VA_ARGS__); \
-} while(0)
-
-#define LOG_E(src, code, ...) do { \
-    if (::arcana::log::Logger::getInstance().getLevel() <= ::arcana::log::Level::Error) \
-        ::arcana::log::Logger::getInstance().log(::arcana::log::Level::Error, src, code, ##__VA_ARGS__); \
-} while(0)
-
-#define LOG_F(src, code, ...) do { \
-    if (::arcana::log::Logger::getInstance().getLevel() <= ::arcana::log::Level::Fatal) \
-        ::arcana::log::Logger::getInstance().log(::arcana::log::Level::Fatal, src, code, ##__VA_ARGS__); \
-} while(0)
+#define LOG_T(src, code, ...) _LOG_IMPL(::arcana::log::Level::Trace, src, code, ##__VA_ARGS__)
+#define LOG_D(src, code, ...) _LOG_IMPL(::arcana::log::Level::Debug, src, code, ##__VA_ARGS__)
+#define LOG_I(src, code, ...) _LOG_IMPL(::arcana::log::Level::Info,  src, code, ##__VA_ARGS__)
+#define LOG_W(src, code, ...) _LOG_IMPL(::arcana::log::Level::Warn,  src, code, ##__VA_ARGS__)
+#define LOG_E(src, code, ...) _LOG_IMPL(::arcana::log::Level::Error, src, code, ##__VA_ARGS__)
+#define LOG_F(src, code, ...) _LOG_IMPL(::arcana::log::Level::Fatal, src, code, ##__VA_ARGS__)
 
 #endif /* ARCANA_LOG_HPP */
