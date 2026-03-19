@@ -517,10 +517,11 @@ bool ArcanaTsDb::writeBlock(uint8_t channelId, const uint8_t* payload,
     uint8_t nonce[12];
     buildNonce(nonce, mNextSeqNo);
 
-    // Encrypt payload in-place
+    // Encrypt full payload area (including 0xFF padding) so read-side
+    // decrypt of BLOCK_PAYLOAD_SIZE restores 0xFF stop markers correctly
     if (mCfg.cipher) {
         mCfg.cipher->crypt(mCfg.key, nonce, 0,
-                           blockBuf + BLOCK_HEADER_SIZE, payloadLen);
+                           blockBuf + BLOCK_HEADER_SIZE, BLOCK_PAYLOAD_SIZE);
     }
 
     // CRC of encrypted payload

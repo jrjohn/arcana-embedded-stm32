@@ -20,7 +20,7 @@ class MainView : public LcdView {
 public:
     struct Input {
         LcdViewModel* viewModel;
-        Ili9341Lcd*    lcd;
+        display::IDisplay* lcd;
     };
     Input input;
 
@@ -36,15 +36,15 @@ public:
     TaskHandle_t renderTaskHandle() const { return mRenderTaskHandle; }
 
     // LcdView interface
-    void onEnter(Ili9341Lcd& lcd) override;
-    void render(Ili9341Lcd& lcd, const LcdOutput& output, LcdOutput& rendered) override;
-    void renderEcgColumn(Ili9341Lcd& lcd, uint8_t x, uint8_t y, uint8_t prevY) override;
+    void onEnter(display::IDisplay& lcd) override;
+    void render(display::IDisplay& lcd, const LcdOutput& output, LcdOutput& rendered) override;
+    void renderEcgColumn(display::IDisplay& lcd, uint8_t x, uint8_t y, uint8_t prevY) override;
 
 private:
-    void renderTemp(Ili9341Lcd& lcd, const LcdOutput& out, LcdOutput& rendered);
-    void renderSdInfo(Ili9341Lcd& lcd, const LcdOutput& out, LcdOutput& rendered);
-    void renderStorage(Ili9341Lcd& lcd, const LcdOutput& out, LcdOutput& rendered);
-    void renderTime(Ili9341Lcd& lcd, const LcdOutput& out, LcdOutput& rendered);
+    void renderTemp(display::IDisplay& lcd, const LcdOutput& out, LcdOutput& rendered);
+    void renderSdInfo(display::IDisplay& lcd, const LcdOutput& out, LcdOutput& rendered);
+    void renderStorage(display::IDisplay& lcd, const LcdOutput& out, LcdOutput& rendered);
+    void renderTime(display::IDisplay& lcd, const LcdOutput& out, LcdOutput& rendered);
 
     static void uint32ToStr(char* buf, uint32_t value);
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Ili9341Lcd.hpp"
+#include "IDisplay.hpp"
 #include "ServiceTypes.hpp"
 
 namespace arcana {
@@ -14,7 +14,7 @@ class LcdService {
 public:
     virtual ~LcdService() {}
     virtual ServiceStatus initHAL() = 0;
-    virtual Ili9341Lcd& getLcd() = 0;
+    virtual display::IDisplay& getDisplay() = 0;
 
 protected:
     LcdService() {}

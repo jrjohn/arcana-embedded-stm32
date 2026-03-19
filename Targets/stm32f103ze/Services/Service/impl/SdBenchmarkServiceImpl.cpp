@@ -1,15 +1,13 @@
 #include "SdBenchmarkServiceImpl.hpp"
 #include "ff.h"
 #include "diskio.h"
-#include "Ili9341Lcd.hpp"
+#include "DisplayStatus.hpp"
 #include <cstring>
 #include <cstdio>
 #include "stm32f1xx_hal.h"
 
 static void lcdMsg(const char* msg, uint16_t color = 0xFFFF) {
-    arcana::lcd::Ili9341Lcd disp;
-    disp.fillRect(20, 154, 200, 8, 0x0000);
-    disp.drawString(20, 154, msg, color, 0x0000, 1);
+    arcana::display::statusLine(msg, color);
 }
 
 /* Global flag: set to 1 after exFAT format+mount succeeds.

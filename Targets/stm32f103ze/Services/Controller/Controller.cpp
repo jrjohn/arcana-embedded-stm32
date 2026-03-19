@@ -12,11 +12,15 @@
 #include "OtaServiceImpl.hpp"
 #include "LcdViewModel.hpp"
 #include "MainView.hpp"
+#include "IDisplay.hpp"
 #include "Hc08Ble.hpp"
 #include "EspFlasher.hpp"
 #include <cstdio>
 
 namespace arcana {
+
+// Global thread-safe display for ad-hoc status callers
+namespace display { IDisplay* g_display = nullptr; }
 
 Controller::Controller()
     : mTimer(0)
@@ -97,7 +101,7 @@ void Controller::wireViews() {
 
     // View ← ViewModel + LCD hardware
     sMainView.input.viewModel = &sViewModel;
-    sMainView.input.lcd       = &mLcd->getLcd();
+    sMainView.input.lcd       = &mLcd->getDisplay();
 }
 
 void Controller::initHAL() {
@@ -106,6 +110,12 @@ void Controller::initHAL() {
     mSensor->initHAL();
     mLight->initHAL();
     mLcd->initHAL();          // LCD hardware init
+
+    // Global display for ad-hoc status callers (statusLine, headerBar)
+    // No MutexDisplay — saves 88B RAM. Ad-hoc callers previously had no
+    // mutex either (throwaway Ili9341Lcd instances). Enable MutexDisplay
+    // when RAM budget allows.
+    display::g_display = &mLcd->getDisplay();
     mSdBench->initHAL();
     mSdStorage->initHAL();
     mWifi->initHAL();

@@ -9,7 +9,7 @@
 #include "diskio.h"
 #include <cstring>
 #include <cstdio>
-#include "Ili9341Lcd.hpp"
+#include "DisplayStatus.hpp"
 #include "Log.hpp"
 #include "EventCodes.hpp"
 #include "SerialAppender.hpp"
@@ -74,11 +74,9 @@ static uint32_t atsGetTime() {
     return (uint32_t)xTaskGetTickCount();
 }
 
-// LCD status line (same position as MQTT status: y=154)
+// LCD status line via global thread-safe display
 static void lcdStatus(const char* msg, uint16_t color = 0xFFFF) {
-    lcd::Ili9341Lcd disp;
-    disp.fillRect(0, 154, 240, 8, 0x0000);
-    disp.drawString(20, 154, msg, color, 0x0000, 1);
+    display::statusLine(msg, color);
 }
 
 // Logger platform helpers (function pointers for LogConfig)

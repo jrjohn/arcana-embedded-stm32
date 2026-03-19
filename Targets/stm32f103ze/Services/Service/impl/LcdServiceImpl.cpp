@@ -3,7 +3,7 @@
 namespace arcana {
 namespace lcd {
 
-LcdServiceImpl::LcdServiceImpl() : mLcd() {}
+LcdServiceImpl::LcdServiceImpl() : mLcd(), mAdapter(mLcd) {}
 LcdServiceImpl::~LcdServiceImpl() {}
 
 LcdService& LcdServiceImpl::getInstance() {

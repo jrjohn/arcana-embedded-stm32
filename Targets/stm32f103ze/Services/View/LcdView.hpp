@@ -1,6 +1,10 @@
 #pragma once
 
-#include "Ili9341Lcd.hpp"
+#include "IDisplay.hpp"
+#include "DisplayConfig.hpp"
+#if DISPLAY_FEATURE_TOUCH
+#include "TouchTypes.hpp"
+#endif
 #include "LcdViewModel.hpp"
 
 namespace arcana {
@@ -22,18 +26,29 @@ public:
     virtual ~LcdView() {}
 
     /** Draw static layout (labels, borders, titles) */
-    virtual void onEnter(Ili9341Lcd& lcd) = 0;
+    virtual void onEnter(display::IDisplay& lcd) = 0;
 
     /** Clean up before switching away */
-    virtual void onExit(Ili9341Lcd& lcd) { (void)lcd; }
+    virtual void onExit(display::IDisplay& lcd) { (void)lcd; }
 
     /** Render changed data from ViewModel output */
-    virtual void render(Ili9341Lcd& lcd, const LcdOutput& output, LcdOutput& rendered) = 0;
+    virtual void render(display::IDisplay& lcd, const LcdOutput& output, LcdOutput& rendered) = 0;
 
     /** Render single ECG column (called at 250Hz from timer) */
-    virtual void renderEcgColumn(Ili9341Lcd& lcd, uint8_t x, uint8_t y, uint8_t prevY) {
+    virtual void renderEcgColumn(display::IDisplay& lcd, uint8_t x, uint8_t y, uint8_t prevY) {
         (void)lcd; (void)x; (void)y; (void)prevY;
     }
+
+#if DISPLAY_FEATURE_TOUCH
+    /** Handle touch event. Returns true if consumed. */
+    virtual bool onTouch(const display::TouchEvent& event) { (void)event; return false; }
+
+    /** Handle gesture (tap, swipe, long-press). Returns true if consumed. */
+    virtual bool onGesture(display::Gesture gesture) { (void)gesture; return false; }
+
+    /** Handle physical key event (KEY1/KEY2). Returns true if consumed. */
+    virtual bool onKey(const display::KeyEvent& event) { (void)event; return false; }
+#endif
 };
 
 } // namespace lcd

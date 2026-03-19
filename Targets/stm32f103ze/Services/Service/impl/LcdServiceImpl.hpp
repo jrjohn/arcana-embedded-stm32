@@ -1,6 +1,7 @@
 #pragma once
 
 #include "LcdService.hpp"
+#include "Ili9341Display.hpp"
 
 namespace arcana {
 namespace lcd {
@@ -10,7 +11,7 @@ public:
     static LcdService& getInstance();
 
     ServiceStatus initHAL() override;
-    Ili9341Lcd& getLcd() override { return mLcd; }
+    display::IDisplay& getDisplay() override { return mAdapter; }
 
 private:
     LcdServiceImpl();
@@ -19,6 +20,7 @@ private:
     LcdServiceImpl& operator=(const LcdServiceImpl&);
 
     Ili9341Lcd mLcd;
+    display::Ili9341Display mAdapter;  // must be after mLcd
 };
 
 } // namespace lcd

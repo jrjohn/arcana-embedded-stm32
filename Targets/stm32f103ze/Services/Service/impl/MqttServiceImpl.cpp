@@ -2,7 +2,7 @@
 #include "WifiService.hpp"
 #include "Credentials.hpp"
 #include "Esp8266.hpp"
-#include "Ili9341Lcd.hpp"
+#include "DisplayStatus.hpp"
 #include "CommandBridge.hpp"
 #include "SyslogAppender.hpp"
 #include <cstdio>
@@ -12,9 +12,7 @@ extern "C" volatile uint8_t g_exfat_ready;
 extern "C" void ats_safe_eject(void);
 
 static void lcdStatus(const char* msg) {
-    arcana::lcd::Ili9341Lcd disp;
-    disp.fillRect(0, 154, 240, 8, 0x0000);
-    disp.drawString(20, 154, msg, 0xFFFF, 0x0000, 1);
+    arcana::display::statusLine(msg);
 }
 
 namespace arcana {

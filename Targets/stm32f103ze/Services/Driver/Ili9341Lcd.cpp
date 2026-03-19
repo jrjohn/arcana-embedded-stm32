@@ -254,5 +254,25 @@ void Ili9341Lcd::drawString(uint16_t x, uint16_t y, const char* str,
     }
 }
 
+void Ili9341Lcd::drawXBitmap(uint16_t x, uint16_t y,
+                              uint16_t w, uint16_t h,
+                              const uint8_t* bitmap,
+                              uint16_t fg, uint16_t bg) {
+    if (x >= WIDTH || y >= HEIGHT) return;
+    if (x + w > WIDTH) w = WIDTH - x;
+    if (y + h > HEIGHT) h = HEIGHT - y;
+
+    setWindow(x, y, x + w - 1, y + h - 1);
+    writeCmd(0x2C);  // Memory Write
+
+    uint16_t bytesPerRow = (w + 7) / 8;
+    for (uint16_t row = 0; row < h; row++) {
+        for (uint16_t col = 0; col < w; col++) {
+            uint8_t byte = bitmap[row * bytesPerRow + (col >> 3)];
+            writeData((byte & (1 << (col & 7))) ? fg : bg);
+        }
+    }
+}
+
 } // namespace lcd
 } // namespace arcana

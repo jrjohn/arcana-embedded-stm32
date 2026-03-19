@@ -1641,48 +1641,52 @@ to `SERVICES_INCLUDES`. No new .cpp entries needed (all new code is header-only)
 
 ## Implementation Order
 
-**Phase A: New files (no existing code broken, all header-only)**
-1. Create `Shared/Inc/display/` directory
-2. Write `DisplayConfig.hpp` (feature flags — all non-core default OFF)
-3. Write `IDisplay.hpp` (with drawXBitmap + drawBitmap16)
-4. Write `TouchTypes.hpp` (TouchEvent + Gesture + KeyEvent) — guarded by `DISPLAY_FEATURE_TOUCH`
-5. Write `Widget.hpp` — guarded by `DISPLAY_FEATURE_WIDGETS`
-6. Write `BitmapButton.hpp` — guarded by `DISPLAY_FEATURE_BUTTON`
-7. Write `FormWidgets.hpp` — guarded by `DISPLAY_FEATURE_FORM`
-8. Write `DialogWidgets.hpp` — guarded by `DISPLAY_FEATURE_DIALOGS`
-9. Write `MutexDisplay.hpp` — guarded by `DISPLAY_FEATURE_MUTEX`
-10. Write `DisplayStatus.hpp` — guarded by `DISPLAY_FEATURE_STATUS`
-11. Write `Ili9341Display.hpp` (Services/Driver/)
-12. Write `ViewManager.hpp` — nav stack guarded by `DISPLAY_FEATURE_NAV_STACK`
+**Phase A: New files (no existing code broken, all header-only)** — DONE 2026-03-19
+1. ~~Create `Shared/Inc/display/` directory~~
+2. ~~Write `DisplayConfig.hpp` (feature flags — all non-core default OFF)~~
+3. ~~Write `IDisplay.hpp` (with drawXBitmap + drawBitmap16 + ORANGE color)~~
+4. ~~Write `TouchTypes.hpp` (TouchEvent + Gesture + KeyEvent) — guarded by `DISPLAY_FEATURE_TOUCH`~~
+5. ~~Write `Widget.hpp` — guarded by `DISPLAY_FEATURE_WIDGETS`~~
+6. ~~Write `BitmapButton.hpp` — guarded by `DISPLAY_FEATURE_BUTTON`~~
+7. ~~Write `FormWidgets.hpp` — guarded by `DISPLAY_FEATURE_FORM`~~
+8. ~~Write `DialogWidgets.hpp` — guarded by `DISPLAY_FEATURE_DIALOGS`~~
+9. ~~Write `MutexDisplay.hpp` — guarded by `DISPLAY_FEATURE_MUTEX`~~
+10. ~~Write `DisplayStatus.hpp` — guarded by `DISPLAY_FEATURE_STATUS`~~
+11. ~~Write `Ili9341Display.hpp` (Services/Driver/)~~
+12. ~~Write `ViewManager.hpp` — nav stack guarded by `DISPLAY_FEATURE_NAV_STACK`~~
 
-**Phase B: Extend existing driver**
-13. Add `drawXBitmap()` to `Ili9341Lcd.hpp` + `Ili9341Lcd.cpp`
+**Phase B: Extend existing driver** — DONE 2026-03-19
+13. ~~Add `drawXBitmap()` to `Ili9341Lcd.hpp` + `Ili9341Lcd.cpp`~~
 
-**Phase C: Update include path**
-14. Update `subdir.mk` — add `-I../../../Shared/Inc/display`
+**Phase C: Update include path** — DONE 2026-03-19
+14. ~~Update `subdir.mk` — add `-I../../../Shared/Inc/display`~~
+    - Note: CubeIDE uses per-directory subdir.mk (6 files updated, not just the consolidated one)
 
-**Phase D: Migrate View layer (Ili9341Lcd → IDisplay)**
-15. Update `LcdView.hpp` — IDisplay + touch/key virtuals (touch guarded by `#if DISPLAY_FEATURE_TOUCH`)
-16. Update `MainView.hpp` — signatures + Input struct
-17. Update `MainView.cpp` — color constants
-18. Update `EcgBuffer.hpp` + `EcgDisplay.cpp` — pointer type + colors
+**Phase D: Migrate View layer (Ili9341Lcd → IDisplay)** — DONE 2026-03-19
+15. ~~Update `LcdView.hpp` — `Ili9341Lcd&` → `display::IDisplay&`~~
+16. ~~Update `MainView.hpp` — signatures + Input struct~~
+17. ~~Update `MainView.cpp` — color constants (~25 replacements)~~
+18. ~~Update `EcgBuffer.hpp` + `EcgDisplay.cpp` — pointer type + colors~~
 
-**Phase E: Migrate Service layer**
-19. Update `LcdService.hpp` — `getLcd()` → `getDisplay()`
-20. Update `LcdServiceImpl.hpp` + `.cpp` — add adapter member
-21. Update `Controller.cpp` — g_display definition, decorator chain, wiring
+**Phase E: Migrate Service layer** — DONE 2026-03-19
+19. ~~Update `LcdService.hpp` — `getLcd()` → `getDisplay()`~~
+20. ~~Update `LcdServiceImpl.hpp` + `.cpp` — add `Ili9341Display mAdapter` member~~
+21. ~~Update `Controller.cpp` — `g_display` definition, wiring~~
+    - MutexDisplay **deferred**: `FreeRtosMutex` costs ~88B RAM, board has only 56B headroom.
+      `g_display` uses raw adapter (same thread-safety as before). Enable when RAM allows.
 
-**Phase F: Unify ad-hoc status**
-22. Update `AtsStorageServiceImpl.cpp` — use `display::statusLine()`
-23. Update `SdBenchmarkServiceImpl.cpp` — same
-24. Update `MqttServiceImpl.cpp` — same
+**Phase F: Unify ad-hoc status** — DONE 2026-03-19
+22. ~~Update `AtsStorageServiceImpl.cpp` — `lcdStatus()` wraps `display::statusLine()`~~
+23. ~~Update `SdBenchmarkServiceImpl.cpp` — `lcdMsg()` wraps `display::statusLine()`~~
+24. ~~Update `MqttServiceImpl.cpp` — `lcdStatus()` wraps `display::statusLine()`~~
 
-## Cost
+## Cost (Measured)
 
 | Resource | Before | After | Delta |
 |----------|--------|-------|-------|
-| Flash | — | +~500B | vtables + adapter + widget vtables |
-| RAM | — | +~20B | g_display ptr + MutexDisplay + adapter (widgets are per-View, not global) |
+| text | 108,984 | 110,592 | +1,608B (vtables + adapter delegation + drawXBitmap) |
+| bss | 65,288 | 65,304 | +16B (g_display ptr + adapter ref) |
+| data | 192 | 192 | 0 |
 | Runtime | — | ~5ns/call | vtable dispatch (immeasurable vs FSMC I/O) |
 
 **UNCHANGED files**: `LcdViewModel.hpp`, `Font5x7.hpp`
@@ -1745,10 +1749,10 @@ Touch types (`TouchEvent`, `Gesture`) and LcdView virtual methods (`onTouch`, `o
 
 | 階段 | 內容 | 馬上需要? |
 |------|------|-----------|
-| **Phase 1** | IDisplay + Adapter + MutexDisplay + DisplayStatus + drawXBitmap | **是** — 解決當前 coupling |
-| **Phase 2** | LcdView/MainView/EcgBuffer 遷移 + Controller wiring | **是** — 完成抽象 |
-| **Phase 3** | TouchTypes + Widget + BitmapButton + ViewManager | 等觸控驅動 |
-| **Phase 4** | FormWidgets + DialogWidgets + Focus/光棒 | 等第二個 View |
-| **Phase 5** | Navigation Stack push/pop | 等 SettingsView |
+| **Phase 1** | IDisplay + Adapter + MutexDisplay + DisplayStatus + drawXBitmap | **DONE 2026-03-19** |
+| **Phase 2** | LcdView/MainView/EcgBuffer 遷移 + Controller wiring | **DONE 2026-03-19** |
+| **Phase 3** | TouchTypes + Widget + BitmapButton + ViewManager | **DONE 2026-03-19** (+24B text) |
+| **Phase 4** | FormWidgets + DialogWidgets + Focus/光棒 | **DONE 2026-03-19** (+0B, gc-sections stripped) |
+| **Phase 5** | Navigation Stack push/pop | **DONE 2026-03-19** (enabled with Phase 3) |
 
-**Phase 1+2 是核心價值**（解決實際問題），Phase 3-5 是未來擴充（設計好介面但可以晚寫）。
+**Phase 1+2 已完成**（text +1.6KB, bss +16B）。MutexDisplay 因 RAM 限制暫緩，g_display 使用 raw adapter。

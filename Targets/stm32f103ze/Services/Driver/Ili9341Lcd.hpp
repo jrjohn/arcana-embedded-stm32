@@ -17,6 +17,8 @@ public:
     void drawChar(uint16_t x, uint16_t y, char c, uint16_t fg, uint16_t bg, uint8_t scale);
     void drawString(uint16_t x, uint16_t y, const char* str, uint16_t fg, uint16_t bg, uint8_t scale);
     void drawHLine(uint16_t x, uint16_t y, uint16_t w, uint16_t color);
+    void drawXBitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
+                     const uint8_t* bitmap, uint16_t fg, uint16_t bg);
 
     static const uint16_t WIDTH  = 240;
     static const uint16_t HEIGHT = 320;

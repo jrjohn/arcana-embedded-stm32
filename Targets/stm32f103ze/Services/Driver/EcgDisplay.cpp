@@ -1,5 +1,4 @@
 #include "EcgBuffer.hpp"
-#include "Ili9341Lcd.hpp"
 
 namespace arcana {
 
@@ -12,7 +11,7 @@ void EcgDisplay::pushAndDraw(uint8_t y) {
     // Erase ahead: clear the next 4 columns (creates the "gap" cursor effect)
     uint16_t eraseX = (cursor + 1) % WIDTH;
     for (int i = 0; i < 4; i++) {
-        lcd->fillRect(eraseX, TOP_Y, 1, HEIGHT, lcd::Ili9341Lcd::BLACK);
+        lcd->fillRect(eraseX, TOP_Y, 1, HEIGHT, display::colors::BLACK);
         eraseX = (eraseX + 1) % WIDTH;
     }
 
@@ -22,7 +21,7 @@ void EcgDisplay::pushAndDraw(uint8_t y) {
     uint16_t lineH = maxY - minY + 1;
     if (lineH < 2) lineH = 2;  // minimum 2px thick for visibility
 
-    lcd->fillRect(cursor, TOP_Y + minY, 1, lineH, lcd::Ili9341Lcd::GREEN);
+    lcd->fillRect(cursor, TOP_Y + minY, 1, lineH, display::colors::GREEN);
 
     prevY = y;
     cursor = (cursor + 1) % WIDTH;

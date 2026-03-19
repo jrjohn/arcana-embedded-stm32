@@ -1,9 +1,7 @@
 #pragma once
 
 #include <cstdint>
-
-// Forward declare LCD class for direct drawing
-namespace arcana { namespace lcd { class Ili9341Lcd; } }
+#include "IDisplay.hpp"
 
 namespace arcana {
 
@@ -17,17 +15,17 @@ struct EcgDisplay {
     static const uint16_t TOP_Y  = 174;
     static const uint16_t HEIGHT = 100;
 
-    lcd::Ili9341Lcd* lcd;
+    display::IDisplay* lcd;
     uint16_t cursor;          // current X position (0-239)
     uint8_t  prevY;           // previous sample Y for line connection
 
-    void init(lcd::Ili9341Lcd* lcdPtr) {
+    void init(display::IDisplay* lcdPtr) {
         lcd = lcdPtr;
         cursor = 0;
         prevY = 70;  // baseline
     }
 
-    void pushAndDraw(uint8_t y);  // implemented in .cpp (needs Ili9341Lcd methods)
+    void pushAndDraw(uint8_t y);  // implemented in .cpp (needs IDisplay methods)
 };
 
 extern EcgDisplay g_ecgDisplay;

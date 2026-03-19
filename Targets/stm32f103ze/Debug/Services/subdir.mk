@@ -9,7 +9,7 @@ SERVICES_INCLUDES = \
 -I../Services/Controller -I../Services/Service -I../Services/Service/impl -I../Services/Driver \
 -I../Services/Model -I../Services/View -I../Services/ViewModel \
 -I../Services/Common -I../Services/Command \
--I../../../Shared/Inc -I../../../Shared/Inc/ats \
+-I../../../Shared/Inc -I../../../Shared/Inc/ats -I../../../Shared/Inc/display \
 -I../Middlewares/Third_Party/FatFs/src -I../Middlewares/Third_Party/FlashDB/inc \
 -I../Drivers/STM32F1xx_HAL_Driver/Inc -I../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy \
 -I../Middlewares/Third_Party/FreeRTOS/Source/include \
