@@ -40,6 +40,7 @@ static const uint16_t ECG_LUT_LEN = sizeof(ECG_LUT);
 extern "C" {
     extern volatile uint8_t g_exfat_ready;
     void sdio_force_reinit(void);
+    void sd_card_full_reinit(void);
     void ats_safe_eject(void);
     FRESULT texfat_format(void);
 }
@@ -395,7 +396,7 @@ void AtsStorageServiceImpl::storageTask(void* param) {
                 lcdStatus("[SD] Mounting...", 0xFD20);
                 printf("[SD] KEY2 resume, mounting...\r\n");
                 vTaskDelay(pdMS_TO_TICKS(1000)); // Debounce + card settle
-                sdio_force_reinit();
+                sd_card_full_reinit();  // Full card re-enumeration after swap
                 f_mount(0, "", 0);  // Clear stale mount state
                 if (f_mount(&::arcana::sdbench::sFatFs, "", 1) != FR_OK) {
                     lcdStatus("[SD] Mount FAILED!", 0xF800);

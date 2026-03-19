@@ -178,6 +178,24 @@ void sdio_force_reinit(void) {
     g_sdio_write_count = 0;
 }
 
+/* Full card re-enumeration after physical card swap (CMD0/CMD8/ACMD41).
+ * Call after removing + reinserting SD card. */
+void sd_card_full_reinit(void) {
+    extern DMA_HandleTypeDef g_hdma_sdio;
+
+    HAL_SD_DeInit(&g_hsd);
+    HAL_Delay(100);
+
+    /* Re-init (card identification + transfer mode) */
+    if (HAL_SD_Init(&g_hsd) == HAL_OK) {
+        HAL_SD_ConfigWideBusOperation(&g_hsd, SDIO_BUS_WIDE_4B);
+        /* Re-link DMA (DeInit might have cleared it) */
+        __HAL_LINKDMA(&g_hsd, hdmatx, g_hdma_sdio);
+        __HAL_LINKDMA(&g_hsd, hdmarx, g_hdma_sdio);
+    }
+    g_sdio_write_count = 0;
+}
+
 /*-----------------------------------------------------------------------*/
 /* Write Sector(s) — DMA at full SDIO clock speed                        */
 /*-----------------------------------------------------------------------*/
