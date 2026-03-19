@@ -10,6 +10,7 @@
 #include <cstring>
 #include <cstdio>
 #include "DisplayStatus.hpp"
+#include "SdBenchmarkServiceImpl.hpp"
 #include "Log.hpp"
 #include "EventCodes.hpp"
 #include "SerialAppender.hpp"
@@ -410,7 +411,11 @@ void AtsStorageServiceImpl::storageTask(void* param) {
                           (uint32_t)xTaskGetTickCount(),
                           display::colors::WHITE, display::colors::RED);
             printf("[SD] Format FAILED (err=%d)\r\n", (int)fr);
-            break;
+            vTaskDelay(pdMS_TO_TICKS(3000));
+            // Retry: reinit SD + try format again next loop
+            sdio_force_reinit();
+            self->mFormatRequested = true;
+            continue;
         }
 
         // Remount (reuse SdBenchmark's FATFS)
@@ -418,11 +423,19 @@ void AtsStorageServiceImpl::storageTask(void* param) {
             display::toast("Mount FAILED!", 3000,
                           (uint32_t)xTaskGetTickCount(),
                           display::colors::WHITE, display::colors::RED);
-            break;
+            vTaskDelay(pdMS_TO_TICKS(3000));
+            sdio_force_reinit();
+            self->mFormatRequested = true;
+            continue;
         }
         display::toast("Format OK!", 2000, (uint32_t)xTaskGetTickCount(),
                       display::colors::WHITE, display::colors::GREEN);
         printf("[SD] Format OK, restarting...\r\n");
+
+        // Re-publish SD capacity to ViewModel
+        static_cast<sdbench::SdBenchmarkServiceImpl&>(
+            sdbench::SdBenchmarkServiceImpl::getInstance()).refreshSdInfo();
+
         vTaskDelay(pdMS_TO_TICKS(1000));
 
         // Reopen DBs
@@ -806,7 +819,7 @@ void AtsStorageServiceImpl::taskLoop() {
                     mFormatRequested = true;
                 }
             } else {
-                if (key1Hold > 0) display::clearToast();
+                if (key1Hold > 0) display::toastState().dismissTick = 0;
                 key1Hold = 0;
             }
 
@@ -815,7 +828,7 @@ void AtsStorageServiceImpl::taskLoop() {
             // Require seeing HIGH (released) at least once before accepting LOW.
             if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_SET) {
                 key2Seen = true;  // Pin is working, not floating
-                if (key2Hold > 0) display::clearToast();
+                if (key2Hold > 0) display::toastState().dismissTick = 0;
                 key2Hold = 0;
             } else if (key2Seen) {
                 if (key2Hold == 0) {

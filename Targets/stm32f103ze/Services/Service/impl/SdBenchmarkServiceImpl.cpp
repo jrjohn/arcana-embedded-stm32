@@ -207,6 +207,20 @@ void SdBenchmarkServiceImpl::runBenchmark() {
     }
 }
 
+void SdBenchmarkServiceImpl::refreshSdInfo() {
+    DWORD fre_clust;
+    FATFS* fs;
+    FRESULT fr = f_getfree("", &fre_clust, &fs);
+    if (fr == FR_OK) {
+        uint32_t totalMB = (uint32_t)((uint64_t)(fs->n_fatent - 2) * fs->csize / 2048);
+        uint32_t freeMB  = (uint32_t)((uint64_t)fre_clust * fs->csize / 2048);
+        mStats.totalKB = freeMB;
+        mStats.totalRecords = totalMB;
+        mStats.updateTimestamp();
+        mStatsObs.notify(&mStats);
+    }
+}
+
 void SdBenchmarkServiceImpl::publishStats() {
     mStats.updateTimestamp();
     mStatsObs.publish(&mStats);

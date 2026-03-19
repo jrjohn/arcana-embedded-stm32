@@ -97,9 +97,10 @@ void MainView::processRender() {
                 onEnter(lcd);
                 // Force immediate full redraw of all dynamic fields
                 mRendered = LcdOutput();
-                const LcdOutput& cur = vm.output();
-                render(lcd, cur, mRendered);
-                mRendered = cur;
+                LcdOutput fullRedraw = vm.output();
+                fullRedraw.dirty = 0xFF;  // all dirty
+                render(lcd, fullRedraw, mRendered);
+                mRendered = vm.output();
                 mRendered.dirty = 0;
             } else {
                 display::toastRedraw(ts);

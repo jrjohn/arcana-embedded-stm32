@@ -17,6 +17,9 @@ public:
     ServiceStatus start() override;
     void stop() override;
 
+    /** Re-query SD free space and publish to ViewModel (call after format) */
+    void refreshSdInfo();
+
 private:
     SdBenchmarkServiceImpl();
     ~SdBenchmarkServiceImpl();
