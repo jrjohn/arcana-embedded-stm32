@@ -378,11 +378,45 @@ void AtsStorageServiceImpl::storageTask(void* param) {
         syncDualFat();
 
         if (!self->mFormatRequested) {
-            // --- Safe eject ---
+            // --- Safe eject: unmount, wait for card swap, remount ---
             f_mount(0, "", 0);
             printf("[SD] Safe to remove card\r\n");
             lcdStatus("[SD] Safe to remove", 0x07E0);
-            break;
+
+            // Wait for KEY2 press to resume (insert card first)
+            bool key2Was = false;
+            for (;;) {
+                vTaskDelay(pdMS_TO_TICKS(100));
+                bool pressed = (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13)
+                                == GPIO_PIN_RESET);
+                if (!pressed) { key2Was = true; continue; }
+                if (!key2Was) continue;  // Need release-first
+                // KEY2 pressed after being released → remount
+                lcdStatus("[SD] Mounting...", 0xFD20);
+                printf("[SD] KEY2 resume, mounting...\r\n");
+                vTaskDelay(pdMS_TO_TICKS(1000)); // Debounce + card settle
+                if (f_mount(&::arcana::sdbench::sFatFs, "", 1) != FR_OK) {
+                    lcdStatus("[SD] Mount FAILED!", 0xF800);
+                    printf("[SD] Mount FAILED\r\n");
+                    continue;  // Keep waiting
+                }
+                break;
+            }
+
+            // Reopen DBs
+            sdio_force_reinit();
+            if (self->openDeviceDb()) {
+                sDevApp.attach(&self->mDeviceDb);
+                self->writeLifecycleEvent(
+                    static_cast<uint8_t>(ats::LifecycleEventType::PowerOn), 0);
+            }
+            if (self->openDailyDb()) {
+                sAtsApp.attach(&self->mDb, 1);
+            }
+            self->mRunning = true;
+            LOG_I(ats::ErrorSource::Tsdb, evt::ATS_READY, self->mTotalRecords);
+            log::Logger::getInstance().drain(8);
+            continue;  // Back to taskLoop
         }
 
         // --- Runtime format + restart ---

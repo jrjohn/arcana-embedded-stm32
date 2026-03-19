@@ -99,7 +99,7 @@ FRESULT texfat_format(void) {
     MKFS_PARM opt;
     memset(&opt, 0, sizeof(opt));
     opt.fmt = FM_EXFAT;
-    opt.n_fat = 2;
+    opt.n_fat = 1;
     // Reuse FatFS static buffer (sFatFs.win is 512B, enough for f_mkfs)
     return f_mkfs("", &opt, &sFatFs, sizeof(sFatFs));
 }
