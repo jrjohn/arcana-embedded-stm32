@@ -785,6 +785,24 @@ void AtsStorageServiceImpl::taskLoop() {
                 lastDay = today;
             }
 
+            // Size guard: rotate before hitting uint32_t 4GB limit
+            // Triggers at 3.5GB regardless of NTP/WiFi availability
+            {
+                uint32_t blks = mDb.getStats().blocksWritten;
+                if (blks > 0 && (blks + 1) * 4 > (3584 * 1024)) { // 3.5GB in KB
+                    static uint32_t seqNum = 0;
+                    char newName[20];
+                    snprintf(newName, sizeof(newName), "sensor_%03lu.ats",
+                             (unsigned long)(++seqNum));
+                    printf("[ATS] Size limit, rotating → %s\r\n", newName);
+                    LOG_W(ats::ErrorSource::Tsdb, evt::ATS_ROTATE_OK, blks);
+                    mDb.close();
+                    mDbReady = false;
+                    f_rename("sensor.ats", newName);
+                    openDailyDb();
+                }
+            }
+
             // KEY1 (PA0) runtime format — detect 2-second hold (active-HIGH)
             if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET) {
                 if (key1Hold == 0) {
