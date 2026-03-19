@@ -395,6 +395,8 @@ void AtsStorageServiceImpl::storageTask(void* param) {
                 lcdStatus("[SD] Mounting...", 0xFD20);
                 printf("[SD] KEY2 resume, mounting...\r\n");
                 vTaskDelay(pdMS_TO_TICKS(1000)); // Debounce + card settle
+                sdio_force_reinit();
+                f_mount(0, "", 0);  // Clear stale mount state
                 if (f_mount(&::arcana::sdbench::sFatFs, "", 1) != FR_OK) {
                     lcdStatus("[SD] Mount FAILED!", 0xF800);
                     printf("[SD] Mount FAILED\r\n");
