@@ -100,7 +100,7 @@ FRESULT texfat_format(void) {
     memset(&opt, 0, sizeof(opt));
     opt.fmt = FM_EXFAT;
     opt.n_fat = 2;
-    opt.au_size = 512 * 1024;  // 512KB clusters: FAT update every ~128s
+    opt.au_size = 1024 * 1024;  // 1MB clusters: FAT update every ~256s
     // Reuse FatFS static buffer (sFatFs.win is 512B, enough for f_mkfs)
     return f_mkfs("", &opt, &sFatFs, sizeof(sFatFs));
 }
