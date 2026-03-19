@@ -1,6 +1,7 @@
 #include "Hc08Ble.hpp"
+#include "Log.hpp"
+#include "EventCodes.hpp"
 #include <cstring>
-#include <cstdio>
 
 // Global USART2 handle for IRQ handler
 static UART_HandleTypeDef sHuart2;
@@ -90,27 +91,24 @@ bool Hc08Ble::initHAL() {
     initGpio();
     initUsart();
 
-    printf("[BLE] HC-08 USART2 @ 9600 init\r\n");
+    LOG_I(ats::ErrorSource::Ble, evt::BLE_HC08_INIT);
 
     // Quick AT test (only works when NOT connected to a BLE peer)
     if (sendCmd("AT")) {
-        printf("[BLE] HC-08 AT OK\r\n");
+        LOG_I(ats::ErrorSource::Ble, evt::BLE_HC08_AT_OK);
 
         // Query firmware version (response is version string, not "OK")
         sendCmd("AT+VERSION", "", 500);
-        if (mAtLen > 0) {
-            printf("[BLE] FW: %s\r\n", mAtBuf);
-        }
 
         // Set device name
         sendCmd("AT+NAME=ArcanaBLE", "OK");
-        printf("[BLE] Name=ArcanaBLE\r\n");
+        LOG_I(ats::ErrorSource::Ble, evt::BLE_HC08_NAME);
 
         return true;
     }
 
     // If connected to BLE peer, AT commands don't work — still OK for data mode
-    printf("[BLE] HC-08 in data mode (peer connected)\r\n");
+    LOG_I(ats::ErrorSource::Ble, evt::BLE_HC08_DATA_MODE);
     return true;  // not a failure — transparent mode works
 }
 

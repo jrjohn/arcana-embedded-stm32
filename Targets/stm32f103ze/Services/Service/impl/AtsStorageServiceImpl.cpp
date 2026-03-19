@@ -206,7 +206,7 @@ void AtsStorageServiceImpl::storageTask(void* param) {
     }
     log::Logger::getInstance().drain(8);
 
-    printf("[ATS] Opening sensor DB...\r\n");
+    LOG_I(ats::ErrorSource::Tsdb, evt::ATS_SENSOR_OPENING);
     if (!self->openDailyDb()) {
         LOG_F(ats::ErrorSource::Tsdb, evt::ATS_DB_OPEN_FAIL);
         log::Logger::getInstance().drain(8);
@@ -332,7 +332,7 @@ void AtsStorageServiceImpl::storageTask(void* param) {
         self->taskLoop();
 
         // --- Close DBs ---
-        printf("[SD] Shutting down...\r\n");
+        LOG_I(ats::ErrorSource::Tsdb, evt::ATS_SHUTDOWN);
         sAtsApp.detach();
         if (self->mDbReady) {
             self->mDb.close();
@@ -351,7 +351,7 @@ void AtsStorageServiceImpl::storageTask(void* param) {
         if (!self->mFormatRequested) {
             // --- Safe eject: unmount, wait for card swap, remount ---
             f_mount(0, "", 0);
-            printf("[SD] Safe to remove card\r\n");
+            LOG_I(ats::ErrorSource::Tsdb, evt::ATS_SAFE_EJECT);
             display::toast("Safe to remove", 0x7FFFFFFF,
                           (uint32_t)xTaskGetTickCount(),
                           display::colors::WHITE, display::colors::GREEN);
@@ -367,7 +367,7 @@ void AtsStorageServiceImpl::storageTask(void* param) {
                 // KEY2 pressed after being released → remount
                 display::toast("Mounting...", 5000, (uint32_t)xTaskGetTickCount(),
                               display::colors::WHITE, 0xFD20);
-                printf("[SD] KEY2 resume, mounting...\r\n");
+                LOG_I(ats::ErrorSource::Tsdb, evt::ATS_KEY2_RESUME);
                 vTaskDelay(pdMS_TO_TICKS(1000)); // Debounce + card settle
                 sd_card_full_reinit();  // Full card re-enumeration after swap
                 f_mount(0, "", 0);  // Clear stale mount state
@@ -375,7 +375,7 @@ void AtsStorageServiceImpl::storageTask(void* param) {
                     display::toast("Mount FAILED!", 3000,
                                   (uint32_t)xTaskGetTickCount(),
                                   display::colors::WHITE, display::colors::RED);
-                    printf("[SD] Mount FAILED\r\n");
+                    LOG_E(ats::ErrorSource::Tsdb, evt::ATS_REMOUNT_FAIL);
                     continue;  // Keep waiting
                 }
                 break;
@@ -410,7 +410,7 @@ void AtsStorageServiceImpl::storageTask(void* param) {
             display::toast("Format FAILED!", 3000,
                           (uint32_t)xTaskGetTickCount(),
                           display::colors::WHITE, display::colors::RED);
-            printf("[SD] Format FAILED (err=%d)\r\n", (int)fr);
+            LOG_E(ats::ErrorSource::Tsdb, evt::ATS_FORMAT_FAIL, (uint32_t)fr);
             vTaskDelay(pdMS_TO_TICKS(3000));
             // Retry: reinit SD + try format again next loop
             sdio_force_reinit();
@@ -430,7 +430,7 @@ void AtsStorageServiceImpl::storageTask(void* param) {
         }
         display::toast("Format OK!", 2000, (uint32_t)xTaskGetTickCount(),
                       display::colors::WHITE, display::colors::GREEN);
-        printf("[SD] Format OK, restarting...\r\n");
+        LOG_I(ats::ErrorSource::Tsdb, evt::ATS_FORMAT_OK);
 
         // Re-publish SD capacity to ViewModel
         static_cast<sdbench::SdBenchmarkServiceImpl&>(
@@ -485,10 +485,8 @@ bool AtsStorageServiceImpl::openDailyDb() {
             return false;
         }
     }
-    printf("[ATS] db.open OK (blk=%lu, rec=%lu, trunc=%lu)\r\n",
-           (unsigned long)mDb.getStats().blocksWritten,
-           (unsigned long)mDb.getStats().totalRecords,
-           (unsigned long)mDb.getStats().recoveryTruncations);
+    LOG_I(ats::ErrorSource::Tsdb, evt::ATS_SENSOR_DB_INFO,
+          mDb.getStats().totalRecords);
 
     // If recovery loaded channels, skip addChannel/start
     if (!mDb.isReadOnly() && mDb.getChannelCount() == 0) {
@@ -570,10 +568,8 @@ bool AtsStorageServiceImpl::openDeviceDb() {
         }
     }
 
-    printf("[DEV] db.open OK (blk=%lu, rec=%lu, trunc=%lu)\r\n",
-           (unsigned long)mDeviceDb.getStats().blocksWritten,
-           (unsigned long)mDeviceDb.getStats().totalRecords,
-           (unsigned long)mDeviceDb.getStats().recoveryTruncations);
+    LOG_I(ats::ErrorSource::Tsdb, evt::ATS_DEVICE_DB_INFO,
+          mDeviceDb.getStats().totalRecords);
 
     if (mDeviceDb.getChannelCount() == 0) {
         ats::ArcanaTsSchema lc = ats::ArcanaTsSchema::lifecycleEvent();
@@ -814,7 +810,7 @@ void AtsStorageServiceImpl::taskLoop() {
                                    display::colors::WHITE, 0xFD20);
                 }
                 if (++key1Hold >= 2) {
-                    printf("[SD] KEY1 runtime format triggered\r\n");
+                    LOG_W(ats::ErrorSource::Tsdb, evt::ATS_KEY1_FORMAT);
                     mRunning = false;
                     mFormatRequested = true;
                 }
@@ -837,7 +833,7 @@ void AtsStorageServiceImpl::taskLoop() {
                                    display::colors::WHITE, 0xFD20);
                 }
                 if (++key2Hold >= 2) {
-                    printf("[SD] KEY2 safe eject triggered\r\n");
+                    LOG_W(ats::ErrorSource::Tsdb, evt::ATS_KEY2_EJECT, mTotalRecords);
                     LOG_W(ats::ErrorSource::System, evt::SYS_BOOT_OK,
                           mTotalRecords);
                     mRunning = false;

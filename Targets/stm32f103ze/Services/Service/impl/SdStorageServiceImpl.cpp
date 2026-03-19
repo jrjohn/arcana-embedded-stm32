@@ -3,6 +3,8 @@
 #include "DeviceKey.hpp"
 #include "SystemClock.hpp"
 #include "ff.h"
+#include "Log.hpp"
+#include "EventCodes.hpp"
 #include <cstring>
 #include <cstdio>
 
@@ -138,13 +140,13 @@ void SdStorageServiceImpl::storageTask(void* param) {
     if (!self->mRunning) { vTaskDelete(0); return; }
 
     // Initialize FAL adapter (opens/creates partition files)
-    printf("[STORE] FAL init...\r\n");
+    LOG_I(ats::ErrorSource::Tsdb, evt::SDS_FAL_INIT);
     if (!self->mFal.init()) {
-        printf("[STORE] FAL init FAILED\r\n");
+        LOG_E(ats::ErrorSource::Tsdb, evt::SDS_FAL_FAIL);
         vTaskDelete(0);
         return;
     }
-    printf("[STORE] FAL init OK\r\n");
+    LOG_I(ats::ErrorSource::Tsdb, evt::SDS_FAL_OK);
 
     // Initialize FlashDB TSDB
     uint32_t secSize = storage::SdFalAdapter::SECTOR_SIZE;
@@ -153,21 +155,21 @@ void SdStorageServiceImpl::storageTask(void* param) {
     fdb_tsdb_control(&self->mTsdb, FDB_TSDB_CTRL_SET_LOCK, (void *)fdbLock);
     fdb_tsdb_control(&self->mTsdb, FDB_TSDB_CTRL_SET_UNLOCK, (void *)fdbUnlock);
 
-    printf("[STORE] TSDB init...\r\n");
+    LOG_I(ats::ErrorSource::Tsdb, evt::SDS_TSDB_INIT);
     fdb_err_t err = fdb_tsdb_init(&self->mTsdb, "sensor", "tsdb", fdbGetTime,
                                    BLOB_SIZE, NULL);
     if (err != FDB_NO_ERR) {
-        printf("[STORE] TSDB init FAILED err=%d\r\n", (int)err);
+        LOG_E(ats::ErrorSource::Tsdb, evt::SDS_TSDB_FAIL, (uint32_t)err);
         vTaskDelete(0);
         return;
     }
-    printf("[STORE] TSDB init OK\r\n");
+    LOG_I(ats::ErrorSource::Tsdb, evt::SDS_TSDB_OK);
 
     // Seed timestamp to exceed persisted last_time from previous sessions.
     // Without this, records are dropped after reboot until tick > last_time.
     if (self->mTsdb.last_time > 0) {
         sLastTime = self->mTsdb.last_time;
-        printf("[STORE] TSDB seed lastTime=%lu\r\n", (unsigned long)sLastTime);
+        LOG_I(ats::ErrorSource::Tsdb, evt::SDS_TSDB_SEED, (uint32_t)sLastTime);
     }
 
     // Initialize FlashDB KVDB
@@ -175,22 +177,22 @@ void SdStorageServiceImpl::storageTask(void* param) {
     fdb_kvdb_control(&self->mKvdb, FDB_KVDB_CTRL_SET_LOCK, (void *)fdbLock);
     fdb_kvdb_control(&self->mKvdb, FDB_KVDB_CTRL_SET_UNLOCK, (void *)fdbUnlock);
 
-    printf("[STORE] KVDB init...\r\n");
+    LOG_I(ats::ErrorSource::Tsdb, evt::SDS_KVDB_INIT);
     err = fdb_kvdb_init(&self->mKvdb, "upload", "kvdb", NULL, NULL);
     if (err != FDB_NO_ERR) {
-        printf("[STORE] KVDB init FAILED err=%d\r\n", (int)err);
+        LOG_E(ats::ErrorSource::Tsdb, evt::SDS_KVDB_FAIL, (uint32_t)err);
         fdb_tsdb_deinit(&self->mTsdb);
         vTaskDelete(0);
         return;
     }
-    printf("[STORE] KVDB init OK\r\n");
+    LOG_I(ats::ErrorSource::Tsdb, evt::SDS_KVDB_OK);
 
     self->mDbReady = true;
 
     // Get initial nonce counter from TSDB query count
     self->mNonceCounter = (uint32_t)fdb_tsl_query_count(
         &self->mTsdb, 0, 0x7FFFFFFF, FDB_TSL_WRITE);
-    printf("[STORE] Ready, nonce=%lu\r\n", (unsigned long)self->mNonceCounter);
+    LOG_I(ats::ErrorSource::Tsdb, evt::SDS_READY, self->mNonceCounter);
 
     self->taskLoop();
     vTaskDelete(0);
@@ -238,7 +240,7 @@ void SdStorageServiceImpl::appendRecord(const SensorDataModel* model) {
     struct fdb_blob fblob;
     fdb_err_t err = fdb_tsl_append(&mTsdb, fdb_blob_make(&fblob, blob, BLOB_SIZE));
     if (err != FDB_NO_ERR) {
-        printf("[STORE] write ERR=%d nonce=%lu\r\n", (int)err, (unsigned long)mNonceCounter);
+        LOG_W(ats::ErrorSource::Tsdb, evt::SDS_WRITE_ERR, (uint32_t)err);
     }
     if (err == FDB_NO_ERR) {
         mNonceCounter++;
@@ -254,8 +256,7 @@ void SdStorageServiceImpl::appendRecord(const SensorDataModel* model) {
         uint32_t elapsedMs = elapsed / (SystemCoreClock / 1000);
         if (elapsedMs >= 1000) {
             mLastRate = mWritesInWindow;
-            printf("[STORE] %lu rec, %lu rec/s\r\n",
-                   (unsigned long)mNonceCounter, (unsigned long)mLastRate);
+            LOG_D(ats::ErrorSource::Tsdb, evt::SDS_RATE, mLastRate);
             mWritesInWindow = 0;
             mWindowStartTick = now;
         }

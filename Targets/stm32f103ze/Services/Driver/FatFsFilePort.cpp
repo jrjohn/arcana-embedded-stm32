@@ -10,8 +10,9 @@
 #include "ats/ArcanaTsTypes.hpp"
 #include "FreeRTOS.h"
 #include "task.h"
+#include "Log.hpp"
+#include "EventCodes.hpp"
 #include <cstring>
-#include <cstdio>
 
 extern "C" { void sdio_force_reinit(void); }
 
@@ -38,7 +39,7 @@ bool FatFsFilePort::open(const char* path, uint8_t mode) {
         mPath[sizeof(mPath) - 1] = '\0';
         return true;
     }
-    printf("[FP] open '%s' fa=0x%02X err=%d\r\n", path, (int)fa, (int)fr);
+    LOG_W(ats::ErrorSource::Sdio, evt::SDIO_FP_OPEN_FAIL, (uint32_t)fr);
     return false;
 }
 
@@ -88,9 +89,7 @@ int32_t FatFsFilePort::write(const uint8_t* buf, uint32_t size) {
             sdio_force_reinit();
         }
     }
-    printf("[FP] write FAIL sz=%lu wr=%lu err=%d fpos=%lu\r\n",
-           (unsigned long)size, (unsigned long)lastWr,
-           (int)lastErr, (unsigned long)f_tell(&mFil));
+    LOG_E(ats::ErrorSource::Sdio, evt::SDIO_FP_WRITE_FAIL, (uint32_t)lastErr);
     return -1;
 }
 
@@ -116,8 +115,7 @@ bool FatFsFilePort::seek(uint64_t offset) {
     if (offset >= curSize) {
         mFil.err = 0;
         if (f_lseek(&mFil, curSize) != FR_OK) {
-            printf("[FP] seek FAIL off=%lu err=%d fsz=%lu\r\n",
-                   (unsigned long)offset, (int)lastErr, (unsigned long)curSize);
+            LOG_E(ats::ErrorSource::Sdio, evt::SDIO_FP_SEEK_FAIL, (uint32_t)lastErr);
             return false;
         }
         // Zero-fill from EOF to target offset
@@ -131,8 +129,7 @@ bool FatFsFilePort::seek(uint64_t offset) {
             mFil.err = 0;
             if (f_write(&mFil, zeros, chunk, &written) != FR_OK
                 || written != chunk) {
-                printf("[FP] extend FAIL off=%lu fsz=%lu\r\n",
-                       (unsigned long)offset, (unsigned long)curSize);
+                LOG_E(ats::ErrorSource::Sdio, evt::SDIO_FP_EXTEND_FAIL, (uint32_t)offset);
                 return false;
             }
             remaining -= written;
@@ -140,8 +137,7 @@ bool FatFsFilePort::seek(uint64_t offset) {
         return true;  // fptr now at target offset
     }
 
-    printf("[FP] seek FAIL off=%lu err=%d fsz=%lu\r\n",
-           (unsigned long)offset, (int)lastErr, (unsigned long)curSize);
+    LOG_E(ats::ErrorSource::Sdio, evt::SDIO_FP_SEEK_FAIL, (uint32_t)lastErr);
     return false;
 }
 

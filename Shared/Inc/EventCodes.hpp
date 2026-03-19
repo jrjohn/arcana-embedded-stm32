@@ -36,6 +36,25 @@ static const uint16_t SDIO_WRITE_FAIL       = 0x0104;
 static const uint16_t SDIO_CARD_REMOVED     = 0x0105;
 static const uint16_t SDIO_EXFAT_READY      = 0x0106;
 
+// FatFsFilePort (0x0110 - 0x011F)
+static const uint16_t SDIO_FP_OPEN_FAIL     = 0x0110;
+static const uint16_t SDIO_FP_WRITE_FAIL    = 0x0111;
+static const uint16_t SDIO_FP_SEEK_FAIL     = 0x0112;
+static const uint16_t SDIO_FP_EXTEND_FAIL   = 0x0113;
+
+// SdBenchmark (0x0120 - 0x012F)
+static const uint16_t SDIO_FORMAT_START     = 0x0120;
+static const uint16_t SDIO_FORMAT_OK        = 0x0121;
+static const uint16_t SDIO_FORMAT_FAIL      = 0x0122;
+static const uint16_t SDIO_MOUNT_ATTEMPT    = 0x0123;
+static const uint16_t SDIO_MOUNT_CORRUPT    = 0x0124;
+static const uint16_t SDIO_MOUNT_ERR        = 0x0125;
+static const uint16_t SDIO_MOUNT_RETRY      = 0x0126;
+static const uint16_t SDIO_MOUNT_FINAL_FMT  = 0x0127;
+static const uint16_t SDIO_MOUNT_FAILED     = 0x0128;
+static const uint16_t SDIO_CAPACITY         = 0x0129;
+static const uint16_t SDIO_MOUNT_OK         = 0x012A;
+
 // ---------------------------------------------------------------------------
 // Sensor  (0x0200 - 0x02FF)
 // ---------------------------------------------------------------------------
@@ -54,6 +73,14 @@ static const uint16_t WIFI_CWJAP_FAIL       = 0x0302;
 static const uint16_t WIFI_AT_ERROR         = 0x0303;
 static const uint16_t WIFI_TX_FAIL          = 0x0304;
 static const uint16_t WIFI_RX_TIMEOUT       = 0x0305;
+static const uint16_t WIFI_AT_NO_RESP       = 0x0310;
+static const uint16_t WIFI_AT_OK            = 0x0311;
+static const uint16_t WIFI_CWMODE_FAIL      = 0x0312;
+static const uint16_t WIFI_CWMODE_OK        = 0x0313;
+static const uint16_t WIFI_JOINING          = 0x0314;
+static const uint16_t WIFI_GOT_IP           = 0x0315;
+static const uint16_t WIFI_NTP_SYNC         = 0x0316;
+static const uint16_t WIFI_NTP_EPOCH        = 0x0317;
 
 // ---------------------------------------------------------------------------
 // Pump  (0x0400 - 0x04FF)
@@ -94,6 +121,36 @@ static const uint16_t ATS_LIFECYCLE_OFF     = 0x0611;
 static const uint16_t ATS_LIFECYCLE_RECOV   = 0x0612;
 static const uint16_t ATS_LIFECYCLE_FWUPD   = 0x0613;
 
+// AtsStorageServiceImpl extra (0x0640 - 0x065F)
+static const uint16_t ATS_SENSOR_OPENING   = 0x0640;
+static const uint16_t ATS_SENSOR_DB_INFO   = 0x0641;
+static const uint16_t ATS_DEVICE_DB_INFO   = 0x0642;
+static const uint16_t ATS_SHUTDOWN         = 0x0643;
+static const uint16_t ATS_SAFE_EJECT       = 0x0644;
+static const uint16_t ATS_KEY2_RESUME      = 0x0645;
+static const uint16_t ATS_REMOUNT_FAIL     = 0x0646;
+static const uint16_t ATS_FORMAT_FAIL      = 0x0647;
+static const uint16_t ATS_FORMAT_OK        = 0x0648;
+static const uint16_t ATS_KEY1_FORMAT      = 0x0649;
+static const uint16_t ATS_KEY2_EJECT       = 0x064A;
+
+// ---------------------------------------------------------------------------
+// ATS / TSDB (SdStorageServiceImpl)  (0x0620 - 0x063F)
+// ---------------------------------------------------------------------------
+static const uint16_t SDS_FAL_INIT          = 0x0620;
+static const uint16_t SDS_FAL_FAIL          = 0x0621;
+static const uint16_t SDS_FAL_OK            = 0x0622;
+static const uint16_t SDS_TSDB_INIT         = 0x0623;
+static const uint16_t SDS_TSDB_FAIL         = 0x0624;
+static const uint16_t SDS_TSDB_OK           = 0x0625;
+static const uint16_t SDS_TSDB_SEED         = 0x0626;
+static const uint16_t SDS_KVDB_INIT         = 0x0627;
+static const uint16_t SDS_KVDB_FAIL         = 0x0628;
+static const uint16_t SDS_KVDB_OK           = 0x0629;
+static const uint16_t SDS_READY             = 0x062A;
+static const uint16_t SDS_WRITE_ERR         = 0x062B;
+static const uint16_t SDS_RATE              = 0x062C;
+
 // ---------------------------------------------------------------------------
 // NTP  (0x0700 - 0x07FF)
 // ---------------------------------------------------------------------------
@@ -118,6 +175,16 @@ static const uint16_t BLE_TIMEOUT           = 0x0901;
 static const uint16_t BLE_CONNECTED         = 0x0902;
 static const uint16_t BLE_DISCONNECTED      = 0x0903;
 
+// HC-08 driver (0x0910 - 0x091F)
+static const uint16_t BLE_HC08_INIT         = 0x0910;
+static const uint16_t BLE_HC08_AT_OK        = 0x0911;
+static const uint16_t BLE_HC08_NAME         = 0x0912;
+static const uint16_t BLE_HC08_DATA_MODE    = 0x0913;
+
+// BleServiceImpl (0x0920 - 0x092F)
+static const uint16_t BLE_TRANSPORT_READY   = 0x0920;
+static const uint16_t BLE_CMD_COUNT         = 0x0921;
+
 // ---------------------------------------------------------------------------
 // OTA  (0x0A00 - 0x0AFF)
 // ---------------------------------------------------------------------------
@@ -126,6 +193,23 @@ static const uint16_t OTA_COMPLETE          = 0x0A01;
 static const uint16_t OTA_VERIFY_FAIL       = 0x0A02;
 static const uint16_t OTA_DOWNLOAD_FAIL     = 0x0A03;
 static const uint16_t OTA_APPLY_FAIL        = 0x0A04;
+static const uint16_t OTA_HTTP_FAIL         = 0x0A10;
+static const uint16_t OTA_TCP_FAIL          = 0x0A11;
+static const uint16_t OTA_CIPSEND_FAIL      = 0x0A12;
+static const uint16_t OTA_SEND_FAIL         = 0x0A13;
+static const uint16_t OTA_FILE_CREATE_FAIL  = 0x0A14;
+static const uint16_t OTA_CONN_CLOSED       = 0x0A15;
+static const uint16_t OTA_DATA_TIMEOUT      = 0x0A16;
+static const uint16_t OTA_HDR_TOO_LARGE     = 0x0A17;
+static const uint16_t OTA_NOT_HTTP          = 0x0A18;
+static const uint16_t OTA_HTTP_ERROR        = 0x0A19;
+static const uint16_t OTA_PROGRESS          = 0x0A1A;
+static const uint16_t OTA_DL_COMPLETE       = 0x0A1B;
+static const uint16_t OTA_CRC_START         = 0x0A1C;
+static const uint16_t OTA_CRC_RESULT        = 0x0A1D;
+static const uint16_t OTA_META_FAIL         = 0x0A1E;
+static const uint16_t OTA_FLAG_SET          = 0x0A1F;
+static const uint16_t OTA_RESETTING         = 0x0A20;
 
 // ---------------------------------------------------------------------------
 // CMD  (0x0B00 - 0x0BFF)
@@ -133,6 +217,11 @@ static const uint16_t OTA_APPLY_FAIL        = 0x0A04;
 static const uint16_t CMD_DISPATCH          = 0x0B00;
 static const uint16_t CMD_UNKNOWN           = 0x0B01;
 static const uint16_t CMD_DECODE_FAIL       = 0x0B02;
+static const uint16_t CMD_REGISTERED        = 0x0B10;
+static const uint16_t CMD_BRIDGE_START      = 0x0B11;
+static const uint16_t CMD_BAD_FRAME         = 0x0B12;
+static const uint16_t CMD_RX               = 0x0B13;
+static const uint16_t CMD_RSP              = 0x0B14;
 
 } // namespace evt
 } // namespace arcana

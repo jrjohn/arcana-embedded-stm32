@@ -3,8 +3,9 @@
 #include "Crc16.hpp"
 #include "stm32f1xx_hal.h"
 #include "Commands.hpp"
+#include "Log.hpp"
+#include "EventCodes.hpp"
 #include <cstring>
-#include <cstdio>
 
 namespace arcana {
 
@@ -78,7 +79,7 @@ CommandBridge::CommandBridge()
     mTxQueue = xQueueCreateStatic(TX_QUEUE_LEN, sizeof(TxItem),
                                    mTxQueueStorage, &mTxQueueBuf);
 
-    printf("[CMD] %u cmds registered\r\n", (unsigned)mCommandCount);
+    LOG_I(ats::ErrorSource::Cmd, evt::CMD_REGISTERED, (uint32_t)mCommandCount);
 }
 
 CommandBridge& CommandBridge::getInstance() {
@@ -130,7 +131,7 @@ void CommandBridge::startTasks() {
 
 void CommandBridge::bridgeTask(void* param) {
     CommandBridge* self = static_cast<CommandBridge*>(param);
-    printf("[CMD] Bridge task started\r\n");
+    LOG_I(ats::ErrorSource::Cmd, evt::CMD_BRIDGE_START);
 
     while (true) {
         CmdFrameItem frame;
@@ -142,7 +143,7 @@ void CommandBridge::bridgeTask(void* param) {
 
             if (!FrameCodec::deframe(frame.data, frame.len,
                                       payload, payloadLen, flags, streamId)) {
-                printf("[CMD] Bad frame (%u bytes)\r\n", frame.len);
+                LOG_W(ats::ErrorSource::Cmd, evt::CMD_BAD_FRAME, (uint32_t)frame.len);
                 continue;
             }
 
@@ -157,9 +158,8 @@ void CommandBridge::bridgeTask(void* param) {
                 memcpy(req.params, payload + 3, req.paramsLength);
             }
 
-            printf("[CMD] %02X:%02X sid=%u\r\n",
-                   (unsigned)req.key.cluster, (unsigned)req.key.commandId,
-                   (unsigned)streamId);
+            LOG_D(ats::ErrorSource::Cmd, evt::CMD_RX,
+                  ((uint32_t)req.key.cluster << 8) | req.key.commandId);
 
             // Execute
             CommandResponseModel rsp;
@@ -198,8 +198,7 @@ void CommandBridge::bridgeTask(void* param) {
             tx.target = frame.source;
             xQueueSend(self->mTxQueue, &tx, pdMS_TO_TICKS(50));
 
-            printf("[CMD] RSP status=%u data=%u\r\n",
-                   (unsigned)rsp.status, (unsigned)rsp.dataLength);
+            LOG_D(ats::ErrorSource::Cmd, evt::CMD_RSP, (uint32_t)rsp.status);
         }
     }
 }
@@ -230,7 +229,7 @@ void CommandBridge::processFrame(const uint8_t* data, uint16_t len,
     uint8_t flags = 0, streamId = 0;
 
     if (!FrameCodec::deframe(data, len, payload, payloadLen, flags, streamId)) {
-        printf("[CMD] Bad frame (%u bytes)\r\n", len);
+        LOG_W(ats::ErrorSource::Cmd, evt::CMD_BAD_FRAME, (uint32_t)len);
         return;
     }
 
@@ -244,8 +243,8 @@ void CommandBridge::processFrame(const uint8_t* data, uint16_t len,
         memcpy(req.params, payload + 3, req.paramsLength);
     }
 
-    printf("[CMD] %02X:%02X\r\n",
-           (unsigned)req.key.cluster, (unsigned)req.key.commandId);
+    LOG_D(ats::ErrorSource::Cmd, evt::CMD_RX,
+          ((uint32_t)req.key.cluster << 8) | req.key.commandId);
 
     CommandResponseModel rsp;
     rsp.key = req.key;
@@ -279,8 +278,7 @@ void CommandBridge::processFrame(const uint8_t* data, uint16_t len,
         respCb(frameBuf, (uint16_t)frameLen, ctx);
     }
 
-    printf("[CMD] RSP status=%u data=%u\r\n",
-           (unsigned)rsp.status, (unsigned)rsp.dataLength);
+    LOG_D(ats::ErrorSource::Cmd, evt::CMD_RSP, (uint32_t)rsp.status);
 }
 
 } // namespace arcana

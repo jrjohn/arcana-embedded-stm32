@@ -1,8 +1,10 @@
 #include "WifiServiceImpl.hpp"
 #include "Credentials.hpp"
 #include "SystemClock.hpp"
-#include <cstdio>
+#include "Log.hpp"
+#include "EventCodes.hpp"
 #include <cstring>
+#include <cstdio>
 
 namespace arcana {
 namespace wifi {
@@ -55,10 +57,10 @@ bool WifiServiceImpl::resetAndConnect() {
         vTaskDelay(pdMS_TO_TICKS(500));
     }
     if (!atOk) {
-        printf("[WiFi] AT no response\r\n");
+        LOG_W(ats::ErrorSource::Wifi, evt::WIFI_AT_NO_RESP);
         return false;
     }
-    printf("[WiFi] AT OK\r\n");
+    LOG_I(ats::ErrorSource::Wifi, evt::WIFI_AT_OK);
 
     return connectWifi();
 }
@@ -77,33 +79,31 @@ bool WifiServiceImpl::connectWifi() {
 
     if (!mEsp.sendCmd("AT+CWMODE=1", "OK", 2500)) {
         if (!mEsp.responseContains("no change")) {
-            printf("[WiFi] CWMODE fail\r\n");
+            LOG_W(ats::ErrorSource::Wifi, evt::WIFI_CWMODE_FAIL);
             return false;
         }
     }
-    printf("[WiFi] CWMODE OK\r\n");
+    LOG_I(ats::ErrorSource::Wifi, evt::WIFI_CWMODE_OK);
 
     char cmd[128];
     snprintf(cmd, sizeof(cmd), "AT+CWJAP=\"%s\",\"%s\"", WIFI_SSID, WIFI_PASS);
-    printf("[WiFi] Joining %s...\r\n", WIFI_SSID);
+    LOG_I(ats::ErrorSource::Wifi, evt::WIFI_JOINING);
 
     // AT v2.2 may send "WIFI CONNECTED" + "WIFI GOT IP" before "OK"
     if (mEsp.sendCmd(cmd, "OK", 20000)) {
-        printf("[WiFi] Connected!\r\n");
+        LOG_I(ats::ErrorSource::Wifi, evt::WIFI_CONNECTED);
         vTaskDelay(pdMS_TO_TICKS(1000));
         return true;
     }
 
     // Check if connected despite no "OK" (AT v2.2 may respond differently)
     if (mEsp.responseContains("GOT IP")) {
-        printf("[WiFi] Connected (GOT IP)!\r\n");
+        LOG_I(ats::ErrorSource::Wifi, evt::WIFI_GOT_IP);
         vTaskDelay(pdMS_TO_TICKS(1000));
         return true;
     }
 
-    printf("[WiFi] CWJAP fail: %.*s\r\n",
-           mEsp.getResponseLen() > 60 ? 60 : mEsp.getResponseLen(),
-           mEsp.getResponse());
+    LOG_W(ats::ErrorSource::Wifi, evt::WIFI_CWJAP_FAIL);
     return false;
 }
 

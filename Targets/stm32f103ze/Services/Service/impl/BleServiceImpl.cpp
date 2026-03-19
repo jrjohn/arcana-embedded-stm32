@@ -1,5 +1,7 @@
 #include "BleServiceImpl.hpp"
 #include "CommandBridge.hpp"
+#include "Log.hpp"
+#include "EventCodes.hpp"
 #include <cstring>
 #include <cstdio>
 
@@ -74,12 +76,12 @@ void BleServiceImpl::bleTask(void* param) {
 
     // Switch HC-08 driver to data (frame reassembly) mode
     self->mBle.setDataMode(true);
-    printf("[BLE] Transport ready\r\n");
+    LOG_I(ats::ErrorSource::Ble, evt::BLE_TRANSPORT_READY);
 
     // Start CommandBridge tasks (RX + TX processing)
     CommandBridge::getInstance().startTasks();
-    printf("[CMD] %u cmds\r\n",
-           (unsigned)CommandBridge::getInstance().getCommandCount());
+    LOG_I(ats::ErrorSource::Ble, evt::BLE_CMD_COUNT,
+          (uint32_t)CommandBridge::getInstance().getCommandCount());
 
     self->taskLoop();
     vTaskDelete(0);

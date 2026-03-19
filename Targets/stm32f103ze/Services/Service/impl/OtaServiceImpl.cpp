@@ -19,8 +19,10 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "stm32f1xx_hal.h"
-#include <cstdio>
+#include "Log.hpp"
+#include "EventCodes.hpp"
 #include <cstring>
+#include <cstdio>
 
 namespace arcana {
 
@@ -45,19 +47,18 @@ bool OtaServiceImpl::startUpdate(const char* host, uint16_t port,
     mActive = true;
     mProgress = 0;
 
-    printf("[OTA] Start: %s:%u%s (%lu bytes)\r\n", host, port, path,
-           (unsigned long)expectedSize);
+    LOG_I(ats::ErrorSource::Ota, evt::OTA_START, expectedSize);
 
     /* 1. TCP connect + HTTP GET */
     if (!httpGet(host, port, path)) {
-        printf("[OTA] HTTP GET failed\r\n");
+        LOG_E(ats::ErrorSource::Ota, evt::OTA_HTTP_FAIL);
         mActive = false;
         return false;
     }
 
     /* 2. Receive body → firmware.bin */
     if (!receiveToFile(expectedSize)) {
-        printf("[OTA] Download failed\r\n");
+        LOG_E(ats::ErrorSource::Ota, evt::OTA_DOWNLOAD_FAIL);
         input.esp->sendCmd("AT+CIPCLOSE", "OK", 1000);
         input.esp->setIpdPassthrough(false);
         mActive = false;
@@ -68,20 +69,20 @@ bool OtaServiceImpl::startUpdate(const char* host, uint16_t port,
 
     /* 3. Verify CRC */
     if (!verifyCrc(expectedCrc32, expectedSize)) {
-        printf("[OTA] CRC mismatch!\r\n");
+        LOG_E(ats::ErrorSource::Ota, evt::OTA_VERIFY_FAIL, expectedCrc32);
         mActive = false;
         return false;
     }
 
     /* 4. Write ota_meta.bin */
     if (!writeOtaMeta(expectedSize, expectedCrc32, "ota")) {
-        printf("[OTA] Meta write failed\r\n");
+        LOG_E(ats::ErrorSource::Ota, evt::OTA_META_FAIL);
         mActive = false;
         return false;
     }
 
     /* 5. Set OTA flag + reset */
-    printf("[OTA] Setting OTA flag and resetting...\r\n");
+    LOG_I(ats::ErrorSource::Ota, evt::OTA_RESETTING);
     setOtaFlag();
 
     vTaskDelay(pdMS_TO_TICKS(100));  /* Flush UART */
@@ -103,7 +104,7 @@ bool OtaServiceImpl::httpGet(const char* host, uint16_t port, const char* path)
     char cmd[128];
     snprintf(cmd, sizeof(cmd), "AT+CIPSTART=\"TCP\",\"%s\",%u", host, port);
     if (!esp.sendCmd(cmd, "OK", 10000)) {
-        printf("[OTA] TCP connect failed\r\n");
+        LOG_E(ats::ErrorSource::Ota, evt::OTA_TCP_FAIL);
         return false;
     }
     vTaskDelay(pdMS_TO_TICKS(200));
@@ -120,13 +121,13 @@ bool OtaServiceImpl::httpGet(const char* host, uint16_t port, const char* path)
     /* Send via AT+CIPSEND */
     snprintf(cmd, sizeof(cmd), "AT+CIPSEND=%d", reqLen);
     if (!esp.sendCmd(cmd, ">", 2000)) {
-        printf("[OTA] CIPSEND failed\r\n");
+        LOG_E(ats::ErrorSource::Ota, evt::OTA_CIPSEND_FAIL);
         return false;
     }
 
     esp.sendData((const uint8_t*)req, reqLen, 2000);
     if (!esp.waitFor("SEND OK", 5000)) {
-        printf("[OTA] SEND failed\r\n");
+        LOG_E(ats::ErrorSource::Ota, evt::OTA_SEND_FAIL);
         return false;
     }
 
@@ -145,7 +146,7 @@ bool OtaServiceImpl::receiveToFile(uint32_t expectedSize)
 
     /* Open firmware.bin for writing */
     if (f_open(&f, OTA_FW_FILENAME, FA_WRITE | FA_CREATE_ALWAYS) != FR_OK) {
-        printf("[OTA] Cannot create firmware.bin\r\n");
+        LOG_E(ats::ErrorSource::Ota, evt::OTA_FILE_CREATE_FAIL);
         return false;
     }
 
@@ -158,13 +159,12 @@ bool OtaServiceImpl::receiveToFile(uint32_t expectedSize)
         if (!esp.waitFor("+IPD,", 10000)) {
             /* Check for CLOSED (server done) */
             if (esp.responseContains("CLOSED")) {
-                printf("[OTA] Connection closed at %lu/%lu\r\n",
-                       (unsigned long)bytesWritten, (unsigned long)expectedSize);
+                LOG_W(ats::ErrorSource::Ota, evt::OTA_CONN_CLOSED, bytesWritten);
                 break;
             }
             noDataCount++;
             if (noDataCount > 3) {
-                printf("[OTA] Timeout waiting for data\r\n");
+                LOG_E(ats::ErrorSource::Ota, evt::OTA_DATA_TIMEOUT, bytesWritten);
                 f_close(&f);
                 return false;
             }
@@ -220,14 +220,14 @@ bool OtaServiceImpl::receiveToFile(uint32_t expectedSize)
 
             if (!bodyStart) {
                 /* Headers didn't fit in one +IPD — unlikely for our small GET */
-                printf("[OTA] Headers too large\r\n");
+                LOG_E(ats::ErrorSource::Ota, evt::OTA_HDR_TOO_LARGE);
                 f_close(&f);
                 return false;
             }
 
             /* Check HTTP status */
             if (memcmp(payload, "HTTP/1.", 7) != 0) {
-                printf("[OTA] Not HTTP response\r\n");
+                LOG_E(ats::ErrorSource::Ota, evt::OTA_NOT_HTTP);
                 f_close(&f);
                 return false;
             }
@@ -235,7 +235,7 @@ bool OtaServiceImpl::receiveToFile(uint32_t expectedSize)
             /* Find status code (after "HTTP/1.x ") */
             const char* status = (const char*)payload + 9;
             if (status[0] != '2') {
-                printf("[OTA] HTTP error: %.3s\r\n", status);
+                LOG_E(ats::ErrorSource::Ota, evt::OTA_HTTP_ERROR, (uint32_t)(status[0] - '0') * 100 + (status[1] - '0') * 10 + (status[2] - '0'));
                 f_close(&f);
                 return false;
             }
@@ -261,11 +261,9 @@ bool OtaServiceImpl::receiveToFile(uint32_t expectedSize)
             mProgress = (uint8_t)((bytesWritten * 100UL) / expectedSize);
         }
 
-        /* Print progress every 10KB */
+        /* Log progress every 10KB */
         if ((bytesWritten % 10240) < 512) {
-            printf("[OTA] %lu/%lu (%u%%)\r\n",
-                   (unsigned long)bytesWritten, (unsigned long)expectedSize,
-                   mProgress);
+            LOG_D(ats::ErrorSource::Ota, evt::OTA_PROGRESS, bytesWritten);
         }
 
         esp.clearRx();
@@ -274,14 +272,14 @@ bool OtaServiceImpl::receiveToFile(uint32_t expectedSize)
     f_close(&f);
     mProgress = 100;
 
-    printf("[OTA] Download complete: %lu bytes\r\n", (unsigned long)bytesWritten);
+    LOG_I(ats::ErrorSource::Ota, evt::OTA_DL_COMPLETE, bytesWritten);
     return (bytesWritten >= expectedSize);
 }
 
 /* ---- CRC-32 verification ---- */
 bool OtaServiceImpl::verifyCrc(uint32_t expectedCrc32, uint32_t fileSize)
 {
-    printf("[OTA] Verifying CRC-32...\r\n");
+    LOG_I(ats::ErrorSource::Ota, evt::OTA_CRC_START);
 
     FIL f;
     if (f_open(&f, OTA_FW_FILENAME, FA_READ) != FR_OK) return false;
@@ -302,8 +300,7 @@ bool OtaServiceImpl::verifyCrc(uint32_t expectedCrc32, uint32_t fileSize)
     f_close(&f);
 
     crc = ~crc;  /* Standard IEEE finalization */
-    printf("[OTA] CRC: expected=0x%08lX actual=0x%08lX\r\n",
-           (unsigned long)expectedCrc32, (unsigned long)crc);
+    LOG_I(ats::ErrorSource::Ota, evt::OTA_CRC_RESULT, crc);
 
     return (crc == expectedCrc32);
 }
@@ -347,8 +344,7 @@ void OtaServiceImpl::setOtaFlag()
     BKP->DR2 = OTA_FLAG_DR2_VALUE;
     BKP->DR3 = OTA_FLAG_DR3_VALUE;
 
-    printf("[OTA] BKP DR2=0x%04lX DR3=0x%04lX\r\n",
-           (unsigned long)BKP->DR2, (unsigned long)BKP->DR3);
+    LOG_I(ats::ErrorSource::Ota, evt::OTA_FLAG_SET, (uint32_t)BKP->DR2);
 }
 
 } // namespace arcana
