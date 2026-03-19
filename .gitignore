@@ -15,3 +15,13 @@ Credentials.hpp
 # Backup files
 *.bak
 *~
+
+# Test data (binary DB files)
+test/*.fdb
+test/*.db
+
+# Python cache
+__pycache__/
+
+# ESP8266 firmware binaries
+tools/esp8266_fw/
