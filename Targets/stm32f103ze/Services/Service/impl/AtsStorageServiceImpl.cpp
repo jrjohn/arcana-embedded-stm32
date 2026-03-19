@@ -74,10 +74,6 @@ static uint32_t atsGetTime() {
     return (uint32_t)xTaskGetTickCount();
 }
 
-// LCD status line via global thread-safe display
-static void lcdStatus(const char* msg, uint16_t color = 0xFFFF) {
-    display::statusLine(msg, color);
-}
 
 // Logger platform helpers (function pointers for LogConfig)
 static void logEnterCritical()  { taskENTER_CRITICAL(); }
@@ -355,7 +351,8 @@ void AtsStorageServiceImpl::storageTask(void* param) {
             // --- Safe eject: unmount, wait for card swap, remount ---
             f_mount(0, "", 0);
             printf("[SD] Safe to remove card\r\n");
-            lcdStatus("[SD] Safe to remove", 0x07E0);
+            display::toast("Safe to remove", 0, (uint32_t)xTaskGetTickCount(),
+                          display::colors::WHITE, display::colors::GREEN);
 
             // Wait for KEY2 press to resume (insert card first)
             bool key2Was = false;
@@ -366,13 +363,16 @@ void AtsStorageServiceImpl::storageTask(void* param) {
                 if (!pressed) { key2Was = true; continue; }
                 if (!key2Was) continue;  // Need release-first
                 // KEY2 pressed after being released → remount
-                lcdStatus("[SD] Mounting...", 0xFD20);
+                display::toast("Mounting...", 5000, (uint32_t)xTaskGetTickCount(),
+                              display::colors::WHITE, 0xFD20);
                 printf("[SD] KEY2 resume, mounting...\r\n");
                 vTaskDelay(pdMS_TO_TICKS(1000)); // Debounce + card settle
                 sd_card_full_reinit();  // Full card re-enumeration after swap
                 f_mount(0, "", 0);  // Clear stale mount state
                 if (f_mount(&::arcana::sdbench::sFatFs, "", 1) != FR_OK) {
-                    lcdStatus("[SD] Mount FAILED!", 0xF800);
+                    display::toast("Mount FAILED!", 3000,
+                                  (uint32_t)xTaskGetTickCount(),
+                                  display::colors::WHITE, display::colors::RED);
                     printf("[SD] Mount FAILED\r\n");
                     continue;  // Keep waiting
                 }
@@ -380,7 +380,8 @@ void AtsStorageServiceImpl::storageTask(void* param) {
             }
 
             // Reopen DBs
-            lcdStatus("[SD] Resumed!", 0x07E0);
+            display::toast("Resumed!", 2000, (uint32_t)xTaskGetTickCount(),
+                          display::colors::WHITE, display::colors::GREEN);
             sdio_force_reinit();
             if (self->openDeviceDb()) {
                 sDevApp.attach(&self->mDeviceDb);
@@ -398,22 +399,28 @@ void AtsStorageServiceImpl::storageTask(void* param) {
 
         // --- Runtime format + restart ---
         self->mFormatRequested = false;
-        lcdStatus("[SD] Formatting...", 0xFD20);
+        display::toast("Formatting...", 10000, (uint32_t)xTaskGetTickCount(),
+                      display::colors::WHITE, 0xFD20);
         f_mount(0, "", 0);
 
         FRESULT fr = texfat_format();
         if (fr != FR_OK) {
-            lcdStatus("[SD] Format FAILED!", 0xF800);
+            display::toast("Format FAILED!", 3000,
+                          (uint32_t)xTaskGetTickCount(),
+                          display::colors::WHITE, display::colors::RED);
             printf("[SD] Format FAILED (err=%d)\r\n", (int)fr);
             break;
         }
 
         // Remount (reuse SdBenchmark's FATFS)
         if (f_mount(&::arcana::sdbench::sFatFs, "", 1) != FR_OK) {
-            lcdStatus("[SD] Mount FAILED!", 0xF800);
+            display::toast("Mount FAILED!", 3000,
+                          (uint32_t)xTaskGetTickCount(),
+                          display::colors::WHITE, display::colors::RED);
             break;
         }
-        lcdStatus("[SD] Format OK!", 0x07E0);
+        display::toast("Format OK!", 2000, (uint32_t)xTaskGetTickCount(),
+                      display::colors::WHITE, display::colors::GREEN);
         printf("[SD] Format OK, restarting...\r\n");
         vTaskDelay(pdMS_TO_TICKS(1000));
 
@@ -788,7 +795,9 @@ void AtsStorageServiceImpl::taskLoop() {
             // KEY1 (PA0) runtime format — detect 2-second hold (active-HIGH)
             if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET) {
                 if (key1Hold == 0) {
-                    lcdStatus("[SD] KEY1: Format?", 0xFD20);
+                    display::toast("Format?", 2000,
+                                   (uint32_t)xTaskGetTickCount(),
+                                   display::colors::WHITE, 0xFD20);
                 }
                 if (++key1Hold >= 2) {
                     printf("[SD] KEY1 runtime format triggered\r\n");
@@ -796,7 +805,7 @@ void AtsStorageServiceImpl::taskLoop() {
                     mFormatRequested = true;
                 }
             } else {
-                if (key1Hold > 0) lcdStatus("");
+                if (key1Hold > 0) display::clearToast();
                 key1Hold = 0;
             }
 
@@ -805,11 +814,13 @@ void AtsStorageServiceImpl::taskLoop() {
             // Require seeing HIGH (released) at least once before accepting LOW.
             if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_SET) {
                 key2Seen = true;  // Pin is working, not floating
-                if (key2Hold > 0) lcdStatus("");
+                if (key2Hold > 0) display::clearToast();
                 key2Hold = 0;
             } else if (key2Seen) {
                 if (key2Hold == 0) {
-                    lcdStatus("[SD] Ejecting...", 0xFD20);
+                    display::toast("Eject?", 2000,
+                                   (uint32_t)xTaskGetTickCount(),
+                                   display::colors::WHITE, 0xFD20);
                 }
                 if (++key2Hold >= 2) {
                     printf("[SD] KEY2 safe eject triggered\r\n");

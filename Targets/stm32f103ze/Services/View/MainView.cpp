@@ -1,6 +1,7 @@
 #include "MainView.hpp"
 #include "LcdViewModel.hpp"
 #include "SystemClock.hpp"
+#include "DisplayStatus.hpp"
 #include <cstdio>
 #include <cstring>
 
@@ -83,6 +84,22 @@ void MainView::processRender() {
     if (vm.output().dirty) {
         render(lcd, vm.output(), mRendered);
         vm.clearDirty();
+    }
+
+    // 3. Toast overlay — repaint on top after all field updates (no flicker)
+    {
+        display::ToastState& ts = display::toastState();
+        if (ts.active) {
+            uint32_t now = (uint32_t)xTaskGetTickCount();
+            if (now >= ts.dismissTick) {
+                ts.active = false;
+                // Redraw full static layout + force all fields dirty
+                onEnter(lcd);
+                mRendered = LcdOutput();
+            } else {
+                display::toastRedraw(ts);
+            }
+        }
     }
 
     xSemaphoreGive(mLcdMutex);
