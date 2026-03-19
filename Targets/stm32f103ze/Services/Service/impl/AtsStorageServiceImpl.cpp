@@ -77,7 +77,7 @@ static uint32_t atsGetTime() {
 // LCD status line (same position as MQTT status: y=154)
 static void lcdStatus(const char* msg, uint16_t color = 0xFFFF) {
     lcd::Ili9341Lcd disp;
-    disp.fillRect(0, 154, 240, 10, 0x0000);
+    disp.fillRect(0, 154, 240, 8, 0x0000);
     disp.drawString(20, 154, msg, color, 0x0000, 1);
 }
 

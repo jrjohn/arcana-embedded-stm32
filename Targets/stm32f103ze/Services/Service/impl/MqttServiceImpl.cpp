@@ -13,7 +13,7 @@ extern "C" void ats_safe_eject(void);
 
 static void lcdStatus(const char* msg) {
     arcana::lcd::Ili9341Lcd disp;
-    disp.fillRect(0, 154, 240, 10, 0x0000);
+    disp.fillRect(0, 154, 240, 8, 0x0000);
     disp.drawString(20, 154, msg, 0xFFFF, 0x0000, 1);
 }
 
