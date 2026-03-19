@@ -270,7 +270,8 @@ class AtsReader:
 
             # Validate block
             if bhdr['blockSeqNo'] == 0 or bhdr['blockSeqNo'] == 0xFFFFFFFF:
-                break  # uncommitted block
+                offset += BLOCK_SIZE
+                continue  # skip uncommitted block
 
             payload = block_data[BLOCK_HEADER_SIZE:]
 
