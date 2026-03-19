@@ -132,7 +132,8 @@ void Esp8266::reset() {
 
 void Esp8266::isr_onRxByte(uint8_t byte) {
     if (mRxPos < RX_BUF_SIZE - 1) {
-        mRxBuf[mRxPos++] = (char)byte;
+        mRxBuf[mRxPos] = (char)byte;
+        mRxPos = mRxPos + 1;
         mRxBuf[mRxPos] = '\0';
     }
 }

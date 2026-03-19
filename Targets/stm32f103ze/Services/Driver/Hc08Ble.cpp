@@ -128,7 +128,8 @@ void Hc08Ble::isr_onRxByte(uint8_t byte) {
     } else {
         // AT mode: linear buffer
         if (mAtLen < AT_BUF_SIZE - 1) {
-            mAtBuf[mAtLen++] = byte;
+            mAtBuf[mAtLen] = byte;
+            mAtLen = mAtLen + 1;
             mAtBuf[mAtLen] = '\0';
         }
     }

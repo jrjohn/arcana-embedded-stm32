@@ -10,7 +10,7 @@ void Ap3216cSensor::init(I2cBus* bus) {
     // Reset
     mBus->writeReg(ADDR, REG_SYSTEM_CONFIG, 0x04);
     // Wait for reset (~10ms)
-    for (volatile uint32_t i = 0; i < 100000; i++) {}
+    { volatile uint32_t i = 0; while (i < 100000) { i = i + 1; } }
     // Enable ALS + PS mode
     mBus->writeReg(ADDR, REG_SYSTEM_CONFIG, 0x03);
 }

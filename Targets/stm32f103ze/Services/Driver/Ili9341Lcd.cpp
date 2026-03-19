@@ -8,7 +8,8 @@ namespace lcd {
 // Simple busy-wait delay (independent of HAL_Delay / TIM4)
 static void delayMs(uint32_t ms) {
     // ~72MHz, -O0: each iteration ~9 cycles → 8000 iters ≈ 1ms
-    for (volatile uint32_t i = 0; i < ms * 8000; i++) {}
+    volatile uint32_t i = 0;
+    while (i < ms * 8000) { i = i + 1; }
 }
 
 // FSMC Bank1 NE4 (0x6C000000), A23 (PE2) as RS
