@@ -151,31 +151,6 @@ ServiceStatus AtsStorageServiceImpl::start() {
     return ServiceStatus::OK;
 }
 
-/** Synchronize active FAT → inactive FAT so both are identical.
- *  Call after closing all files, before ejecting SD card.
- *  Uses AtsStorageServiceImpl::sSlowBuf as sector copy buffer. */
-static void syncDualFat() {
-    FATFS* fs;
-    DWORD fre;
-    if (f_getfree("", &fre, &fs) != FR_OK) return;
-    if (fs->n_fats < 2) return;
-
-    LBA_t active = fs->fatbase;
-    LBA_t inactive = (fs->active_fat == 0)
-        ? active + fs->fsize     // inactive = FAT#2
-        : active - fs->fsize;    // inactive = FAT#1
-
-    printf("[SD] Syncing dual FAT (%lu sectors)...\r\n",
-           (unsigned long)fs->fsize);
-    // Use fs->win (512B) as copy buffer — window is clean after f_sync
-    for (DWORD i = 0; i < fs->fsize; i++) {
-        if (disk_read(fs->pdrv, fs->win, active + i, 1) != RES_OK) break;
-        if (disk_write(fs->pdrv, fs->win, inactive + i, 1) != RES_OK) break;
-    }
-    fs->winsect = (LBA_t)0 - 1;  // Invalidate window after repurposing
-    disk_ioctl(fs->pdrv, CTRL_SYNC, 0);
-    printf("[SD] Dual FAT sync done\r\n");
-}
 
 void AtsStorageServiceImpl::stop() {
     mRunning = false;
@@ -376,7 +351,7 @@ void AtsStorageServiceImpl::storageTask(void* param) {
         }
         sDevApp.detach();
         log::Logger::getInstance().drain(8);
-        syncDualFat();
+        // n_fats=2 simple mirror: both FATs always identical, no sync needed
 
         if (!self->mFormatRequested) {
             // --- Safe eject: unmount, wait for card swap, remount ---
