@@ -19,13 +19,13 @@ namespace ats {
 // File layout constants
 // ---------------------------------------------------------------------------
 
-static const uint32_t HEADER_BLOCK_OFFSET    = 0;
-static const uint32_t GLOBAL_HEADER_OFFSET   = 0x0000;
-static const uint32_t CHANNEL_DESC_OFFSET    = 0x0040;  // 8 x 32 bytes
-static const uint32_t FIELD_TABLE_OFFSET     = 0x0140;  // 8 x 256 bytes
-static const uint32_t STATS_OFFSET           = 0x0940;  // 128 bytes
-static const uint32_t SHADOW_OFFSET          = 0x0A00;  // shadow copy of 0x0000-0x09FF
-static const uint32_t DATA_START_OFFSET      = BLOCK_SIZE;  // first data block at 4096
+static const uint64_t HEADER_BLOCK_OFFSET    = 0;
+static const uint64_t GLOBAL_HEADER_OFFSET   = 0x0000;
+static const uint64_t CHANNEL_DESC_OFFSET    = 0x0040;  // 8 x 32 bytes
+static const uint64_t FIELD_TABLE_OFFSET     = 0x0140;  // 8 x 256 bytes
+static const uint64_t STATS_OFFSET           = 0x0940;  // 128 bytes
+static const uint64_t SHADOW_OFFSET          = 0x0A00;  // shadow copy of 0x0000-0x09FF
+static const uint64_t DATA_START_OFFSET      = BLOCK_SIZE;  // first data block at 4096
 
 static const uint8_t  ATS_MAGIC[4] = { 'A', 'T', 'S', '2' };
 static const uint8_t  IDX_MAGIC[4] = { 'I', 'D', 'X', '2' };
@@ -162,8 +162,8 @@ bool ArcanaTsDb::openReadOnly(const char* path, const AtsConfig& cfg) {
 
     // If no persisted index, scan block headers to build one
     if (mIndexCount == 0) {
-        uint32_t offset = DATA_START_OFFSET;
-        uint32_t fileSize = cfg.file->size();
+        uint64_t offset = DATA_START_OFFSET;
+        uint64_t fileSize = cfg.file->size();
         while (offset + BLOCK_SIZE <= fileSize && mIndexCount < MAX_INDEX_ENTRIES) {
             AtsBlockHeader hdr;
             if (!validateBlock(offset / BLOCK_SIZE, hdr)) break;
@@ -705,13 +705,13 @@ bool ArcanaTsDb::writeChannelDescriptors() {
             desc.channelId = 0xFF;  // unused slot
         }
 
-        uint32_t offset = CHANNEL_DESC_OFFSET + i * sizeof(AtsChannelDescriptor);
+        uint64_t offset = CHANNEL_DESC_OFFSET + i * sizeof(AtsChannelDescriptor);
         if (!mCfg.file->seek(offset)) return false;
         if (mCfg.file->write(reinterpret_cast<const uint8_t*>(&desc), sizeof(desc)) != sizeof(desc)) return false;
 
         // Write field table (256 bytes per channel at 0x0140 + i*256)
         if (mChannels[i].active) {
-            uint32_t ftOffset = FIELD_TABLE_OFFSET + i * 256;
+            uint64_t ftOffset = FIELD_TABLE_OFFSET + i * 256;
             if (!mCfg.file->seek(ftOffset)) return false;
             // Write field descriptors
             if (mCfg.file->write(
@@ -733,7 +733,7 @@ bool ArcanaTsDb::readChannelDescriptors() {
         mChannels[i].active = false;
 
         AtsChannelDescriptor desc;
-        uint32_t offset = CHANNEL_DESC_OFFSET + i * sizeof(AtsChannelDescriptor);
+        uint64_t offset = CHANNEL_DESC_OFFSET + i * sizeof(AtsChannelDescriptor);
         if (!mCfg.file->seek(offset)) return false;
         if (mCfg.file->read(reinterpret_cast<uint8_t*>(&desc), sizeof(desc)) != sizeof(desc)) return false;
 
@@ -741,7 +741,7 @@ bool ArcanaTsDb::readChannelDescriptors() {
         if (desc.channelId >= MAX_CHANNELS) continue;
 
         // Read field table
-        uint32_t ftOffset = FIELD_TABLE_OFFSET + i * 256;
+        uint64_t ftOffset = FIELD_TABLE_OFFSET + i * 256;
         if (!mCfg.file->seek(ftOffset)) return false;
 
         ArcanaTsSchema& schema = mChannels[i].schema;
@@ -794,7 +794,7 @@ bool ArcanaTsDb::writeIndex() {
     if (mIndexCount == 0) return true;
 
     // Write index at current end of file
-    uint32_t indexOffset = mNextBlockOffset;
+    uint64_t indexOffset = mNextBlockOffset;
 
     // Index header
     AtsIndexHeader idxHdr;
@@ -827,7 +827,7 @@ bool ArcanaTsDb::readIndex() {
 
     if (!(hdr.flags & ATS_FLAG_HAS_INDEX) || hdr.indexBlockOffset == 0) return false;
 
-    uint32_t indexOffset = hdr.indexBlockOffset * BLOCK_SIZE;
+    uint64_t indexOffset = hdr.indexBlockOffset * BLOCK_SIZE;
     if (!mCfg.file->seek(indexOffset)) return false;
 
     AtsIndexHeader idxHdr;
@@ -869,14 +869,14 @@ bool ArcanaTsDb::recoverFromExisting() {
     mNextBlockOffset = DATA_START_OFFSET;
     mIndexCount = 0;
 
-    uint32_t fileSize = mCfg.file->size();
+    uint64_t fileSize = mCfg.file->size();
     uint32_t validBlocks = 0;
     uint32_t totalRecords = 0;
     uint32_t skippedBlocks = 0;
-    uint32_t lastValidEnd = DATA_START_OFFSET;  // truncation point
+    uint64_t lastValidEnd = DATA_START_OFFSET;  // truncation point
     uint32_t consecutiveBad = 0;
 
-    uint32_t offset = DATA_START_OFFSET;
+    uint64_t offset = DATA_START_OFFSET;
     while (offset + BLOCK_SIZE <= fileSize) {
         AtsBlockHeader hdr;
         if (!validateBlock(offset / BLOCK_SIZE, hdr)) {
@@ -943,7 +943,7 @@ bool ArcanaTsDb::recoverFromExisting() {
 }
 
 bool ArcanaTsDb::validateBlock(uint32_t blockNum, AtsBlockHeader& hdr) const {
-    uint32_t offset = blockNum * BLOCK_SIZE;
+    uint64_t offset = blockNum * BLOCK_SIZE;
     if (!mCfg.file->seek(offset)) return false;
     if (mCfg.file->read(reinterpret_cast<uint8_t*>(&hdr), sizeof(hdr)) != sizeof(hdr)) return false;
 
@@ -968,7 +968,7 @@ uint8_t* ArcanaTsDb::getReadCache() const {
 }
 
 bool ArcanaTsDb::readAndDecryptBlock(uint32_t blockNum, uint8_t* outBuf) const {
-    uint32_t offset = blockNum * BLOCK_SIZE;
+    uint64_t offset = blockNum * BLOCK_SIZE;
     if (!mCfg.file->seek(offset)) return false;
     if (mCfg.file->read(outBuf, BLOCK_SIZE) != BLOCK_SIZE) return false;
 

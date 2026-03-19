@@ -23,10 +23,10 @@ public:
     bool close() override;
     int32_t read(uint8_t* buf, uint32_t size) override;
     int32_t write(const uint8_t* buf, uint32_t size) override;
-    bool seek(uint32_t offset) override;
+    bool seek(uint64_t offset) override;
     bool sync() override;
-    uint32_t tell() override;
-    uint32_t size() override;
+    uint64_t tell() override;
+    uint64_t size() override;
     bool truncate() override;
     bool isOpen() const override { return mIsOpen; }
 

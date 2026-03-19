@@ -33,10 +33,10 @@ public:
     /** @brief Write bytes. Returns bytes written, -1 on error */
     virtual int32_t write(const uint8_t* buf, uint32_t size) = 0;
 
-    virtual bool seek(uint32_t offset) = 0;
+    virtual bool seek(uint64_t offset) = 0;
     virtual bool sync() = 0;
-    virtual uint32_t tell() = 0;
-    virtual uint32_t size() = 0;
+    virtual uint64_t tell() = 0;
+    virtual uint64_t size() = 0;
 
     /** @brief Truncate file at current position */
     virtual bool truncate() = 0;

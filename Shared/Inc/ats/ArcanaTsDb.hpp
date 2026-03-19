@@ -176,7 +176,7 @@ private:
     uint8_t         mChannelCount;
     uint32_t        mNextSeqNo;
     uint32_t        mCreatedEpoch;
-    uint32_t        mNextBlockOffset;   // file offset of next data block
+    uint64_t        mNextBlockOffset;   // file offset of next data block
 
     ChannelState    mChannels[MAX_CHANNELS];
     PrimaryBuf      mPrimary;

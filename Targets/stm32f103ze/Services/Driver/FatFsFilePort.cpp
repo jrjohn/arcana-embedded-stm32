@@ -94,7 +94,7 @@ int32_t FatFsFilePort::write(const uint8_t* buf, uint32_t size) {
     return -1;
 }
 
-bool FatFsFilePort::seek(uint32_t offset) {
+bool FatFsFilePort::seek(uint64_t offset) {
     if (!mIsOpen) return false;
 
     FRESULT lastErr = FR_OK;
@@ -112,7 +112,7 @@ bool FatFsFilePort::seek(uint32_t offset) {
 
     // f_lseek beyond EOF failed (FR_INT_ERR on damaged exFAT cluster chain).
     // Fallback: seek to EOF, write zeros to extend, arrive at target offset.
-    uint32_t curSize = (uint32_t)f_size(&mFil);
+    uint64_t curSize = f_size(&mFil);
     if (offset >= curSize) {
         mFil.err = 0;
         if (f_lseek(&mFil, curSize) != FR_OK) {
@@ -123,7 +123,7 @@ bool FatFsFilePort::seek(uint32_t offset) {
         // Zero-fill from EOF to target offset
         uint8_t zeros[64];
         memset(zeros, 0, sizeof(zeros));
-        uint32_t remaining = offset - curSize;
+        uint64_t remaining = offset - curSize;
         while (remaining > 0) {
             UINT chunk = (remaining > sizeof(zeros))
                          ? (UINT)sizeof(zeros) : (UINT)remaining;
@@ -155,14 +155,14 @@ bool FatFsFilePort::sync() {
     return false;
 }
 
-uint32_t FatFsFilePort::tell() {
+uint64_t FatFsFilePort::tell() {
     if (!mIsOpen) return 0;
-    return static_cast<uint32_t>(f_tell(&mFil));
+    return f_tell(&mFil);
 }
 
-uint32_t FatFsFilePort::size() {
+uint64_t FatFsFilePort::size() {
     if (!mIsOpen) return 0;
-    return static_cast<uint32_t>(f_size(&mFil));
+    return f_size(&mFil);
 }
 
 bool FatFsFilePort::truncate() {
