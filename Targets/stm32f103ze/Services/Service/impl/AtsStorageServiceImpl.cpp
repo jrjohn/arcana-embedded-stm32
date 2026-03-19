@@ -407,6 +407,7 @@ void AtsStorageServiceImpl::storageTask(void* param) {
             }
 
             // Reopen DBs
+            lcdStatus("[SD] Resumed!", 0x07E0);
             sdio_force_reinit();
             if (self->openDeviceDb()) {
                 sDevApp.attach(&self->mDeviceDb);
