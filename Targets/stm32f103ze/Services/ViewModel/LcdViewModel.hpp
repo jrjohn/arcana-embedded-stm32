@@ -35,6 +35,10 @@ struct LcdOutput {
     bool timeSynced;
     uint32_t uptimeSec;
 
+    // MQTT status
+    bool mqttConnected;
+    bool mqttKnown;       // false = no status yet (show "---")
+
     // ECG waveform (ring buffer + cursor)
     static const uint16_t ECG_WIDTH = 240;
     uint8_t ecgY[ECG_WIDTH];
@@ -48,6 +52,7 @@ struct LcdOutput {
     static const uint8_t DIRTY_TIME    = 0x04;
     static const uint8_t DIRTY_ECG     = 0x08;
     static const uint8_t DIRTY_SDINFO  = 0x10;
+    static const uint8_t DIRTY_MQTT   = 0x20;
 
     LcdOutput() { memset(this, 0, sizeof(*this)); ecgPrevY = 70; }
 };
@@ -63,6 +68,7 @@ struct LcdInput {
         TimerTick,
         EcgSample,
         SdInfo,
+        MqttStatus,
     };
 
     Type type;
@@ -74,6 +80,7 @@ struct LcdInput {
         struct { uint32_t epoch; bool synced; uint32_t uptime; } timer;
         struct { uint8_t y; }                                    ecg;
         struct { uint32_t freeMB; uint32_t totalMB; }            sdinfo;
+        struct { bool connected; }                               mqtt;
     };
 };
 
@@ -100,6 +107,7 @@ public:
         Observable<StorageStatsModel>*  StorageStats;
         Observable<SdBenchmarkModel>*   SdBenchmark;
         Observable<TimerModel>*         BaseTimer;
+        Observable<MqttConnectionModel>* MqttConn;
     };
     Input input;
 
@@ -109,6 +117,7 @@ public:
         input.StorageStats = 0;
         input.SdBenchmark = 0;
         input.BaseTimer = 0;
+        input.MqttConn = 0;
     }
 
     /** Subscribe to all wired Observables. renderTask receives xTaskNotifyGive on change. */
@@ -119,6 +128,7 @@ public:
         if (input.StorageStats) input.StorageStats->subscribe(onStorageStats, this);
         if (input.SdBenchmark)  input.SdBenchmark->subscribe(onSdBenchmark, this);
         if (input.BaseTimer)    input.BaseTimer->subscribe(onBaseTimer, this);
+        if (input.MqttConn)     input.MqttConn->subscribe(onMqttConn, this);
     }
 
     void onEvent(const LcdInput& input) {
@@ -148,6 +158,12 @@ public:
             mOutput.sdFreeMB = input.sdinfo.freeMB;
             mOutput.sdTotalMB = input.sdinfo.totalMB;
             mOutput.dirty |= LcdOutput::DIRTY_SDINFO;
+            break;
+
+        case LcdInput::MqttStatus:
+            mOutput.mqttConnected = input.mqtt.connected;
+            mOutput.mqttKnown = true;
+            mOutput.dirty |= LcdOutput::DIRTY_MQTT;
             break;
 
         case LcdInput::EcgSample: {
@@ -199,6 +215,13 @@ private:
         in.timer.epoch = SystemClock::getInstance().now();
         in.timer.synced = SystemClock::getInstance().isSynced();
         in.timer.uptime = xTaskGetTickCount() / configTICK_RATE_HZ;
+        self->onEvent(in); self->notifyView();
+    }
+
+    static void onMqttConn(MqttConnectionModel* model, void* ctx) {
+        LcdViewModel* self = static_cast<LcdViewModel*>(ctx);
+        LcdInput in; in.type = LcdInput::MqttStatus;
+        in.mqtt.connected = model->connected;
         self->onEvent(in); self->notifyView();
     }
 

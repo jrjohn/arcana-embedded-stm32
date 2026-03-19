@@ -98,6 +98,7 @@ void Controller::wireViews() {
     sViewModel.input.StorageStats = mSdStorage->output.StatsEvents;
     sViewModel.input.SdBenchmark  = mSdBench->output.StatsEvents;
     sViewModel.input.BaseTimer    = mTimer->output.BaseTimer;
+    sViewModel.input.MqttConn     = mMqtt->output.ConnectionStatus;
 
     // View ← ViewModel + LCD hardware
     sMainView.input.viewModel = &sViewModel;

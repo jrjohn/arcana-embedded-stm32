@@ -45,6 +45,7 @@ private:
     void renderSdInfo(display::IDisplay& lcd, const LcdOutput& out, LcdOutput& rendered);
     void renderStorage(display::IDisplay& lcd, const LcdOutput& out, LcdOutput& rendered);
     void renderTime(display::IDisplay& lcd, const LcdOutput& out, LcdOutput& rendered);
+    void renderMqtt(display::IDisplay& lcd, const LcdOutput& out, LcdOutput& rendered);
 
     static void uint32ToStr(char* buf, uint32_t value);
 

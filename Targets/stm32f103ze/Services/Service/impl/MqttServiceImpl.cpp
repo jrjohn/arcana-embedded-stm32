@@ -2,18 +2,14 @@
 #include "WifiService.hpp"
 #include "Credentials.hpp"
 #include "Esp8266.hpp"
-#include "DisplayStatus.hpp"
 #include "CommandBridge.hpp"
 #include "SyslogAppender.hpp"
+#include "Log.hpp"
 #include <cstdio>
 #include <cstring>
 
 extern "C" volatile uint8_t g_exfat_ready;
 extern "C" void ats_safe_eject(void);
-
-static void lcdStatus(const char* msg) {
-    arcana::display::statusLine(msg);
-}
 
 namespace arcana {
 namespace mqtt {
@@ -163,10 +159,10 @@ void MqttServiceImpl::runTask() {
     while (mRunning) {
 
         // --- Phase 1: WiFi ---
-        lcdStatus("[WiFi] Connecting...");
+        LOG_I(ats::ErrorSource::Wifi, 0x0001);  // WiFi connecting
         while (mRunning) {
             if (wifi->resetAndConnect()) break;
-            lcdStatus("[WiFi] Retry 10s...");
+            LOG_W(ats::ErrorSource::Wifi, 0x0002);  // WiFi retry
             vTaskDelay(pdMS_TO_TICKS(10000));
         }
         if (!mRunning) break;
@@ -175,41 +171,39 @@ void MqttServiceImpl::runTask() {
         wifi->syncNtp();
 
         // --- Phase 3: MQTT config + connect ---
-        lcdStatus("[MQTT] Connecting...");
-        printf("[MQTT] Config...\r\n");
+        LOG_I(ats::ErrorSource::Mqtt, 0x0001);  // MQTT connecting
+        LOG_D(ats::ErrorSource::Mqtt, 0x0010);  // MQTT config start
         if (!mqttConfig()) {
-            printf("[MQTT] Config FAILED\r\n");
-            lcdStatus("[MQTT] Config fail");
+            LOG_W(ats::ErrorSource::Mqtt, 0x0011);  // MQTT config failed
+            LOG_W(ats::ErrorSource::Mqtt, 0x0004);  // MQTT config fail
             vTaskDelay(pdMS_TO_TICKS(3000));
             continue;
         }
-        printf("[MQTT] Config OK\r\n");
+        LOG_D(ats::ErrorSource::Mqtt, 0x0012);  // MQTT config OK
 
         bool connected = false;
         for (int i = 0; i < 3 && mRunning; i++) {
-            printf("[MQTT] Connect attempt %d to %s:%u...\r\n", i+1, MQTT_BROKER, MQTT_PORT);
+            LOG_D(ats::ErrorSource::Mqtt, 0x0013, (uint32_t)(i+1));  // connect attempt
             if (mqttConnect()) {
                 connected = true;
-                printf("[MQTT] Connect OK\r\n");
+                LOG_D(ats::ErrorSource::Mqtt, 0x0014);  // connect OK
                 break;
             }
-            printf("[MQTT] Connect failed, resp: %.*s\r\n",
-                   esp.getResponseLen() > 80 ? 80 : esp.getResponseLen(),
-                   esp.getResponse());
+            LOG_W(ats::ErrorSource::Mqtt, 0x0015, (uint32_t)(i+1));  // connect failed
             vTaskDelay(pdMS_TO_TICKS(2000));
         }
         if (!connected) {
-            printf("[MQTT] All attempts failed\r\n");
-            lcdStatus("[MQTT] Connect fail");
+            LOG_W(ats::ErrorSource::Mqtt, 0x0016);  // all attempts failed
+            LOG_W(ats::ErrorSource::Mqtt, 0x0005);  // MQTT connect fail
             vTaskDelay(pdMS_TO_TICKS(3000));
             continue;
         }
 
         // --- Phase 4: Subscribe ---
-        printf("[MQTT] Subscribe %s\r\n", TOPIC_CMD);
+        LOG_D(ats::ErrorSource::Mqtt, 0x0017);  // subscribe
         mqttSubscribe(TOPIC_CMD, 0);
 
-        lcdStatus("[MQTT] Connected!");
+        LOG_I(ats::ErrorSource::Mqtt, 0x0002);  // MQTT connected
         mMqttConnected = true;
         CommandBridge::getInstance().setMqttSend(mqttSendFn, this);
         mConnModel.connected = true;
@@ -271,7 +265,7 @@ void MqttServiceImpl::runTask() {
         mConnModel.updateTimestamp();
         mConnObs.publish(&mConnModel);
 
-        lcdStatus("[MQTT] Disconnected");
+        LOG_W(ats::ErrorSource::Mqtt, 0x0003);  // MQTT disconnected
         vTaskDelay(pdMS_TO_TICKS(3000));
     }
 }
@@ -313,7 +307,7 @@ void MqttServiceImpl::processIncomingMsg() {
 
     // Safe eject command
     if (payloadLen == 5 && memcmp(p, "eject", 5) == 0) {
-        printf("[MQTT] Eject command received\r\n");
+        LOG_I(ats::ErrorSource::Mqtt, 0x0020);  // eject command received
         ats_safe_eject();
         return;
     }

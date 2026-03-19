@@ -351,7 +351,8 @@ void AtsStorageServiceImpl::storageTask(void* param) {
             // --- Safe eject: unmount, wait for card swap, remount ---
             f_mount(0, "", 0);
             printf("[SD] Safe to remove card\r\n");
-            display::toast("Safe to remove", 0, (uint32_t)xTaskGetTickCount(),
+            display::toast("Safe to remove", 0x7FFFFFFF,
+                          (uint32_t)xTaskGetTickCount(),
                           display::colors::WHITE, display::colors::GREEN);
 
             // Wait for KEY2 press to resume (insert card first)

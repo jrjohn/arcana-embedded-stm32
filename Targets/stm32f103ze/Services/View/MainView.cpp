@@ -93,9 +93,14 @@ void MainView::processRender() {
             uint32_t now = (uint32_t)xTaskGetTickCount();
             if (now >= ts.dismissTick) {
                 ts.active = false;
-                // Redraw full static layout + force all fields dirty
+                // Redraw full static layout
                 onEnter(lcd);
+                // Force immediate full redraw of all dynamic fields
                 mRendered = LcdOutput();
+                const LcdOutput& cur = vm.output();
+                render(lcd, cur, mRendered);
+                mRendered = cur;
+                mRendered.dirty = 0;
             } else {
                 display::toastRedraw(ts);
             }
@@ -127,7 +132,7 @@ void MainView::onEnter(display::IDisplay& lcd) {
 
     lcd.drawHLine(10, 136, 220, display::colors::DARKGRAY);
     lcd.drawString(VALUE_X, MQTT_LABEL_Y, "WiFi / MQTT", display::colors::WHITE, display::colors::BLACK, 1);
-    lcd.drawString(VALUE_X, MQTT_STATUS_Y, "Idle", display::colors::GRAY, display::colors::BLACK, 1);
+    lcd.drawString(VALUE_X, MQTT_STATUS_Y, "---", display::colors::GRAY, display::colors::BLACK, 1);
 
     lcd.drawString(78, CLOCK_DATE_Y, "UPTIME", display::colors::YELLOW, display::colors::BLACK, 2);
     lcd.drawString(72, CLOCK_TIME_Y, "00:00:00", display::colors::YELLOW, display::colors::BLACK, 2);
@@ -142,6 +147,7 @@ void MainView::render(display::IDisplay& lcd, const LcdOutput& out, LcdOutput& r
     if (out.dirty & LcdOutput::DIRTY_SDINFO)  renderSdInfo(lcd, out, rendered);
     if (out.dirty & LcdOutput::DIRTY_STORAGE) renderStorage(lcd, out, rendered);
     if (out.dirty & LcdOutput::DIRTY_TIME)    renderTime(lcd, out, rendered);
+    if (out.dirty & LcdOutput::DIRTY_MQTT)   renderMqtt(lcd, out, rendered);
 }
 
 void MainView::renderTemp(display::IDisplay& lcd, const LcdOutput& out, LcdOutput& rendered) {
@@ -237,6 +243,19 @@ void MainView::renderTime(display::IDisplay& lcd, const LcdOutput& out, LcdOutpu
     rendered.epoch = out.epoch;
     rendered.timeSynced = out.timeSynced;
     rendered.uptimeSec = out.uptimeSec;
+}
+
+void MainView::renderMqtt(display::IDisplay& lcd, const LcdOutput& out, LcdOutput& rendered) {
+    lcd.fillRect(VALUE_X, MQTT_STATUS_Y, 200, 8, display::colors::BLACK);
+    if (!out.mqttKnown) {
+        lcd.drawString(VALUE_X, MQTT_STATUS_Y, "---", display::colors::GRAY, display::colors::BLACK, 1);
+    } else if (out.mqttConnected) {
+        lcd.drawString(VALUE_X, MQTT_STATUS_Y, "Connected", display::colors::GREEN, display::colors::BLACK, 1);
+    } else {
+        lcd.drawString(VALUE_X, MQTT_STATUS_Y, "Disconnected", display::colors::RED, display::colors::BLACK, 1);
+    }
+    rendered.mqttConnected = out.mqttConnected;
+    rendered.mqttKnown = out.mqttKnown;
 }
 
 void MainView::renderEcgColumn(display::IDisplay& lcd, uint8_t x, uint8_t y, uint8_t prevY) {
