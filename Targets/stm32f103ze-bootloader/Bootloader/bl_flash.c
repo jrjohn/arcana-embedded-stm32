@@ -14,6 +14,10 @@ int bl_flash_erase_app(uint32_t num_pages)
     FLASH_EraseInitTypeDef erase;
     uint32_t page_error = 0;
 
+    /* Defense-in-depth: never erase key store pages */
+    uint32_t max_pages = (KEY_STORE_BASE - APP_FLASH_BASE) / FLASH_PAGE_SIZE;
+    if (num_pages > max_pages) num_pages = max_pages;
+
     status = HAL_FLASH_Unlock();
     if (status != HAL_OK) return -1;
 

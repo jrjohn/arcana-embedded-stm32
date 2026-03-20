@@ -26,8 +26,11 @@ extern "C" {
 
 /* App flash layout */
 #define APP_FLASH_BASE      0x08008000u  /* After 32KB bootloader */
-#define APP_FLASH_SIZE      (480u * 1024u)
+#define APP_FLASH_SIZE      (476u * 1024u)  /* Last 4KB reserved for key store */
 #define APP_FLASH_END       (APP_FLASH_BASE + APP_FLASH_SIZE)
+
+/* Key store: 2x 2KB pages at end of flash (Page A + Page B) */
+#define KEY_STORE_BASE      0x0807F000u
 
 /* STM32F103ZE flash page size (guard: HAL may define this too) */
 #ifndef FLASH_PAGE_SIZE

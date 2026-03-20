@@ -2,11 +2,14 @@
 """
 ArcanaTS v2 reader — parse .ats files from embedded devices.
 
+Supports both plaintext and encrypted header formats.
+
 Usage:
-  python arcanats.py info  data.ats                           # header + channels + stats
-  python arcanats.py read  data.ats --key KEY                 # dump all channels as CSV
-  python arcanats.py read  data.ats --schema MPU6050 --key KEY # filter by schema
-  python arcanats.py read  data.ats --channel 0 --key KEY     # filter by channel
+  python arcanats.py info  data.ats                                       # plaintext header
+  python arcanats.py info  data.ats --header-key FLEET_KEY                # encrypted header
+  python arcanats.py read  data.ats --key KEY                             # plaintext header
+  python arcanats.py read  data.ats --key KEY --header-key FLEET_KEY      # encrypted header
+  python arcanats.py read  data.ats --secret SECRET --header-key FLEET_KEY # derive key from secret+UID
 """
 
 import struct
@@ -21,15 +24,7 @@ BLOCK_HEADER_SIZE = 32
 BLOCK_PAYLOAD_SIZE = BLOCK_SIZE - BLOCK_HEADER_SIZE  # 4064
 MAX_CHANNELS = 8
 MULTI_CHANNEL_ID = 0xFF
-
-FIELD_TYPE_NAMES = {
-    0: 'U8', 1: 'U16', 2: 'U32', 3: 'I16', 4: 'I32',
-    5: 'F32', 6: 'I24', 7: 'U64', 8: 'BYTES',
-}
-
-FIELD_TYPE_SIZE = {
-    0: 1, 1: 2, 2: 4, 3: 2, 4: 4, 5: 4, 6: 3, 7: 8,
-}
+ATS_FLAG_ENC_HEADER = 0x0010
 
 # -- ChaCha20 (RFC 7539) ----------------------------------------------------
 
@@ -79,6 +74,13 @@ def chacha20_crypt(key: bytes, nonce: bytes, counter: int, data: bytearray):
         offset += chunk
         blk_ctr += 1
 
+def chacha20_derive_key(secret: bytes, uid: bytes) -> bytes:
+    """Derive device_key = ChaCha20(secret, uid_as_nonce, counter=0)[:32]."""
+    assert len(secret) == 32 and len(uid) == 12
+    buf = bytearray(32)
+    chacha20_crypt(secret, uid, 0, buf)
+    return bytes(buf)
+
 # -- CRC-32 -----------------------------------------------------------------
 
 def crc32_ieee(data: bytes) -> int:
@@ -86,10 +88,17 @@ def crc32_ieee(data: bytes) -> int:
     import zlib
     return zlib.crc32(data) & 0xFFFFFFFF
 
+# -- Field types -------------------------------------------------------------
+
+FIELD_TYPE_NAMES = {
+    0: 'U8', 1: 'U16', 2: 'U32', 3: 'I16', 4: 'I32',
+    5: 'F32', 6: 'I24', 7: 'U64', 8: 'BYTES',
+}
+
 # -- File header parsing -----------------------------------------------------
 
 def parse_file_header(data: bytes):
-    """Parse 64-byte global header."""
+    """Parse 64-byte global header (expects "ATS2" at offset 0)."""
     if len(data) < 64:
         return None
     magic = data[0:4]
@@ -184,37 +193,90 @@ def read_field_value(record: bytes, field: dict):
 # -- Main commands -----------------------------------------------------------
 
 class AtsReader:
-    def __init__(self, path: str, key_hex: str = None):
+    def __init__(self, path: str, key_hex: str = None, header_key_hex: str = None,
+                 secret_hex: str = None):
         self.path = path
-        self.key = bytes.fromhex(key_hex) if key_hex else None
+        self.header_key = bytes.fromhex(header_key_hex) if header_key_hex else None
         self.data = Path(path).read_bytes()
         self.file_hdr = None
         self.channels = {}    # channelId -> descriptor
         self.fields = {}      # channelId -> [field_desc]
+        self.header_base = 0  # 0=plaintext, 16=encrypted
+        self.encrypted_header = False
 
         self._parse_header()
+
+        # Resolve data key: --key takes precedence, --secret derives from UID
+        if key_hex:
+            self.key = bytes.fromhex(key_hex)
+        elif secret_hex and self.file_hdr:
+            uid_hex = self.file_hdr['deviceUid'][:self.file_hdr['deviceUidSize'] * 2]
+            uid = bytes.fromhex(uid_hex)
+            secret = bytes.fromhex(secret_hex)
+            self.key = chacha20_derive_key(secret, uid)
+        else:
+            self.key = None
 
     def _parse_header(self):
         if len(self.data) < BLOCK_SIZE:
             raise ValueError(f"File too small ({len(self.data)} bytes)")
 
-        self.file_hdr = parse_file_header(self.data[0:64])
-        if not self.file_hdr:
-            raise ValueError("Invalid ATS2 magic")
+        header_block = bytearray(self.data[:BLOCK_SIZE])
 
-        # Parse channel descriptors at 0x0040
+        # Detect format: plaintext ("ATS2" at offset 0) vs encrypted
+        if header_block[0:4] == b'ATS2':
+            # Legacy plaintext format
+            self.header_base = 0
+            self.encrypted_header = False
+        elif self.header_key:
+            # Encrypted header: nonce at [0..11], encrypted data at [16..4095]
+            nonce = bytes(header_block[0:12])
+            enc_part = bytearray(header_block[16:])
+            chacha20_crypt(self.header_key, nonce, 0, enc_part)
+            header_block[16:] = enc_part  # write decrypted data back
+
+            # Validate: "ATS2" magic at [16]
+            if header_block[16:20] == b'ATS2':
+                self.header_base = 16
+                self.encrypted_header = True
+            else:
+                raise ValueError(
+                    "Decryption failed: wrong header key or corrupted header. "
+                    "Decrypted magic bytes do not match 'ATS2'.")
+        else:
+            raise ValueError(
+                "Not a plaintext ATS2 file (no 'ATS2' magic at offset 0). "
+                "Use --header-key to decrypt an encrypted header.")
+
+        base = self.header_base
+
+        self.file_hdr = parse_file_header(bytes(header_block[base:base+64]))
+        if not self.file_hdr:
+            raise ValueError("Invalid ATS2 file header after decryption")
+
+        # Validate CRC
+        expected_crc = crc32_ieee(bytes(header_block[base:base+44]))
+        if expected_crc != self.file_hdr['headerCrc32']:
+            raise ValueError("Header CRC mismatch — corrupted or wrong key")
+
+        # Parse channel descriptors
         for i in range(MAX_CHANNELS):
-            off = 0x0040 + i * 32
-            ch = parse_channel_descriptor(self.data[off:off+32])
+            off = base + 0x0040 + i * 32
+            if off + 32 > BLOCK_SIZE:
+                break
+            ch = parse_channel_descriptor(bytes(header_block[off:off+32]))
             if ch['channelId'] == 0xFF:
                 continue
             self.channels[ch['channelId']] = ch
 
-            # Parse field table at 0x0140 + i*256
-            ft_off = 0x0140 + i * 256
+            # Parse field table
+            ft_off = base + 0x0140 + i * 256
             fields = []
             for j in range(ch['fieldCount']):
-                fd = parse_field_desc(self.data[ft_off + j*16 : ft_off + (j+1)*16])
+                fd_off = ft_off + j * 16
+                if fd_off + 16 > BLOCK_SIZE:
+                    break
+                fd = parse_field_desc(bytes(header_block[fd_off:fd_off+16]))
                 fields.append(fd)
             self.fields[ch['channelId']] = fields
 
@@ -229,11 +291,16 @@ class AtsReader:
         if h['flags'] & 0x02: flags.append('has_index')
         if h['flags'] & 0x04: flags.append('has_hmac')
         if h['flags'] & 0x08: flags.append('has_shadow')
+        if h['flags'] & 0x10: flags.append('enc_header')
         print(f"Flags: {' '.join(flags) or 'none'} (0x{h['flags']:04X})")
         print(f"Created: {h['createdEpoch']}  UID: {h['deviceUid'][:h['deviceUidSize']*2]}")
         print(f"Blocks: {h['totalBlockCount']}  LastSeq: {h['lastSeqNo']}")
         overflow = 'BLOCK' if h['overflowPolicy'] == 0 else 'DROP'
         print(f"Overflow: {overflow}")
+        if self.encrypted_header:
+            print(f"Header: ENCRYPTED (nonce: {self.data[:12].hex()})")
+        else:
+            print(f"Header: plaintext")
         print()
 
         for chId, ch in sorted(self.channels.items()):
@@ -333,11 +400,13 @@ class AtsReader:
 # -- CLI ---------------------------------------------------------------------
 
 def cmd_info(args):
-    reader = AtsReader(args.file)
+    reader = AtsReader(args.file, header_key_hex=args.header_key)
     reader.info()
 
 def cmd_read(args):
-    reader = AtsReader(args.file, key_hex=args.key)
+    reader = AtsReader(args.file, key_hex=args.key,
+                       header_key_hex=args.header_key,
+                       secret_hex=args.secret)
 
     first = True
     for chId, ch_name, vals in reader.read_records(
@@ -357,12 +426,20 @@ def main():
     parser = argparse.ArgumentParser(description='ArcanaTS v2 file reader')
     sub = parser.add_subparsers(dest='cmd')
 
+    # Common args
+    def add_common_args(p):
+        p.add_argument('file', help='.ats file path')
+        p.add_argument('--header-key',
+                       help='Fleet master key (64 hex chars) for encrypted header')
+
     p_info = sub.add_parser('info', help='Show file header and channel info')
-    p_info.add_argument('file', help='.ats file path')
+    add_common_args(p_info)
 
     p_read = sub.add_parser('read', help='Read and decrypt records')
-    p_read.add_argument('file', help='.ats file path')
-    p_read.add_argument('--key', help='32-byte hex encryption key')
+    add_common_args(p_read)
+    p_read.add_argument('--key', help='32-byte hex device key')
+    p_read.add_argument('--secret',
+                        help='Fleet master secret (64 hex chars) — derives key from UID in file')
     p_read.add_argument('--schema', help='Filter by schema name (e.g. MPU6050)')
     p_read.add_argument('--channel', type=int, help='Filter by channel ID')
 
@@ -371,10 +448,14 @@ def main():
         parser.print_help()
         return
 
-    if args.cmd == 'info':
-        cmd_info(args)
-    elif args.cmd == 'read':
-        cmd_read(args)
+    try:
+        if args.cmd == 'info':
+            cmd_info(args)
+        elif args.cmd == 'read':
+            cmd_read(args)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
 if __name__ == '__main__':
     main()

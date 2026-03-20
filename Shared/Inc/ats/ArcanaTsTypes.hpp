@@ -38,10 +38,11 @@ static const uint8_t ATS_MODE_CREATE = 0x10;
 // File header flag bitmasks
 // ---------------------------------------------------------------------------
 
-static const uint16_t ATS_FLAG_ENCRYPTED  = 0x0001;  // bit 0
+static const uint16_t ATS_FLAG_ENCRYPTED  = 0x0001;  // bit 0: data block payloads encrypted
 static const uint16_t ATS_FLAG_HAS_INDEX  = 0x0002;  // bit 1
 static const uint16_t ATS_FLAG_HAS_HMAC   = 0x0004;  // bit 2
 static const uint16_t ATS_FLAG_HAS_SHADOW = 0x0008;  // bit 3
+static const uint16_t ATS_FLAG_ENC_HEADER = 0x0010;  // bit 4: header block encrypted with headerKey
 
 // ---------------------------------------------------------------------------
 // Enums
@@ -174,7 +175,8 @@ struct AtsConfig {
     ICipher*        cipher;
     IMutex*         mutex;
     AtsGetTimeFn    getTime;
-    const uint8_t*  key;              // 32-byte encryption key
+    const uint8_t*  key;              // 32-byte encryption key (data blocks)
+    const uint8_t*  headerKey;        // 32-byte header encryption key (fleet master, nullptr=no header encryption)
     const uint8_t*  deviceUid;        // device UID bytes
     uint8_t         deviceUidSize;    // 6 (ESP32) or 12 (STM32)
     OverflowPolicy  overflow;         // Block (medical) or Drop (IoT)

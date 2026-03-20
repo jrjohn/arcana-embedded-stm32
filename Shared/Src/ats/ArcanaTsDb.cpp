@@ -58,6 +58,7 @@ ArcanaTsDb::ArcanaTsDb()
     , mNextSeqNo(1)
     , mCreatedEpoch(0)
     , mNextBlockOffset(DATA_START_OFFSET)
+    , mHeaderBase(0)
     , mIndexCount(0)
 {
     memset(&mCfg, 0, sizeof(mCfg));
@@ -68,6 +69,7 @@ ArcanaTsDb::ArcanaTsDb()
     memset(&mSlow, 0, sizeof(mSlow));
     memset(&mStats, 0, sizeof(mStats));
     memset(mIndex, 0, sizeof(mIndex));
+    memset(mHeaderNonce, 0, sizeof(mHeaderNonce));
 }
 
 // ---------------------------------------------------------------------------
@@ -147,12 +149,7 @@ bool ArcanaTsDb::openReadOnly(const char* path, const AtsConfig& cfg) {
         return false;
     }
 
-    if (!readFileHeader()) {
-        cfg.file->close();
-        return false;
-    }
-
-    if (!readChannelDescriptors()) {
+    if (!readEntireHeaderBlock()) {
         cfg.file->close();
         return false;
     }
@@ -204,18 +201,24 @@ bool ArcanaTsDb::start() {
     if (!mOpen || mStarted || mReadOnly) return false;
     if (mChannelCount == 0) return false;
 
-    // Write a zeroed 4KB header block first (ensures shadow copy has data to read)
-    uint8_t* headerBuf = getReadCache();
-    if (!headerBuf) return false;
+    mHeaderBase = mCfg.headerKey ? 16 : 0;
 
-    memset(headerBuf, 0, BLOCK_SIZE);
-    if (!mCfg.file->seek(0)) return false;
-    if (mCfg.file->write(headerBuf, BLOCK_SIZE) != BLOCK_SIZE) return false;
+    if (mCfg.headerKey) {
+        // Encrypted header: build entire block in RAM, encrypt, write
+        if (!writeEntireHeaderBlock()) return false;
+    } else {
+        // Legacy plaintext: write zeroed block, fill sections individually
+        uint8_t* headerBuf = getReadCache();
+        if (!headerBuf) return false;
 
-    // Fill in specific header sections
-    if (!writeFileHeader()) return false;
-    if (!writeChannelDescriptors()) return false;
-    if (!writeShadowHeader()) return false;
+        memset(headerBuf, 0, BLOCK_SIZE);
+        if (!mCfg.file->seek(0)) return false;
+        if (mCfg.file->write(headerBuf, BLOCK_SIZE) != BLOCK_SIZE) return false;
+
+        if (!writeFileHeader()) return false;
+        if (!writeChannelDescriptors()) return false;
+        if (!writeShadowHeader()) return false;
+    }
 
     mCfg.file->sync();
 
@@ -236,8 +239,12 @@ bool ArcanaTsDb::close() {
         // Write sparse index
         writeIndex();
         // Update header with final stats
-        updateFileHeader();
-        writeShadowHeader();
+        if (mCfg.headerKey) {
+            writeEntireHeaderBlock();
+        } else {
+            updateFileHeader();
+            writeShadowHeader();
+        }
         mCfg.file->sync();
     }
 
@@ -253,6 +260,7 @@ bool ArcanaTsDb::close() {
     mChannelCount = 0;
     mNextSeqNo = 1;
     mNextBlockOffset = DATA_START_OFFSET;
+    mHeaderBase = 0;
     mIndexCount = 0;
     memset(&mStats, 0, sizeof(mStats));
     memset(&mPrimary, 0, sizeof(mPrimary));
@@ -417,7 +425,11 @@ bool ArcanaTsDb::flush() {
 
     // Update file header with current stats (survives power loss)
     if (ok) {
-        updateFileHeader();
+        if (mCfg.headerKey) {
+            writeEntireHeaderBlock();
+        } else {
+            updateFileHeader();
+        }
         mCfg.file->sync();
     }
 
@@ -569,6 +581,224 @@ void ArcanaTsDb::buildNonce(uint8_t nonce[12], uint32_t seqNo) const {
     // [seqNo:4LE][createdEpoch:4LE][0x00:4]
     memcpy(nonce, &seqNo, 4);
     memcpy(nonce + 4, &mCreatedEpoch, 4);
+}
+
+void ArcanaTsDb::generateHeaderNonce(uint8_t nonce[12]) {
+    // Unique per file: [createdEpoch:4LE][counter:4LE][0x00:4]
+    // Static counter ensures uniqueness even if two files created in same second
+    static uint32_t sNonceCounter = 0;
+    uint32_t epoch = mCfg.getTime ? mCfg.getTime() : 0;
+    uint32_t cnt = ++sNonceCounter;
+    memcpy(nonce, &epoch, 4);
+    memcpy(nonce + 4, &cnt, 4);
+    memset(nonce + 8, 0, 4);
+}
+
+// ---------------------------------------------------------------------------
+// Encrypted header: write entire block (build in RAM → encrypt → write)
+// ---------------------------------------------------------------------------
+
+bool ArcanaTsDb::writeEntireHeaderBlock() {
+    uint8_t* buf = getReadCache();
+    if (!buf) return false;
+    memset(buf, 0, BLOCK_SIZE);
+
+    // Always derive base from config (not mHeaderBase which reflects last READ format)
+    const uint16_t base = mCfg.headerKey ? 16 : 0;
+
+    // --- Build file header at buf[base] ---
+    {
+        AtsFileHeader hdr;
+        memset(&hdr, 0, sizeof(hdr));
+        memcpy(hdr.magic, ATS_MAGIC, 4);
+        hdr.version = 2;
+        hdr.headerBlocks = 1;
+        hdr.flags = ATS_FLAG_HAS_SHADOW;
+        if (mCfg.cipher) hdr.flags |= ATS_FLAG_ENCRYPTED;
+        if (mCfg.headerKey) hdr.flags |= ATS_FLAG_ENC_HEADER;
+        if (mIndexCount > 0) hdr.flags |= ATS_FLAG_HAS_INDEX;
+        hdr.cipherType = mCfg.cipher ? mCfg.cipher->cipherType() : 0;
+        hdr.channelCount = mChannelCount;
+        hdr.overflowPolicy = static_cast<uint8_t>(mCfg.overflow);
+        hdr.deviceUidSize = mCfg.deviceUidSize;
+        hdr.createdEpoch = mCreatedEpoch;
+        if (mCfg.deviceUid) {
+            uint8_t copyLen = mCfg.deviceUidSize;
+            if (copyLen > 16) copyLen = 16;
+            memcpy(hdr.deviceUid, mCfg.deviceUid, copyLen);
+        }
+        hdr.totalBlockCount = mStats.blocksWritten;
+        hdr.lastSeqNo = mNextSeqNo > 0 ? mNextSeqNo - 1 : 0;
+        hdr.indexBlockOffset = 0;
+        hdr.headerCrc32 = computeIeeeCrc32(
+            reinterpret_cast<const uint8_t*>(&hdr), 44);
+        memcpy(buf + base, &hdr, sizeof(hdr));
+    }
+
+    // --- Build channel descriptors at buf[base + 0x40] ---
+    for (uint8_t i = 0; i < MAX_CHANNELS; i++) {
+        AtsChannelDescriptor desc;
+        memset(&desc, 0, sizeof(desc));
+        if (mChannels[i].active) {
+            desc.channelId = i;
+            desc.fieldCount = mChannels[i].schema.fieldCount;
+            desc.recordSize = mChannels[i].schema.recordSize;
+            desc.sampleRateHz = mChannels[i].sampleRateHz;
+            desc.recordCount = 0;
+            strncpy(desc.name, mChannels[i].schema.name, 23);
+            desc.name[23] = '\0';
+        } else {
+            desc.channelId = 0xFF;
+        }
+        memcpy(buf + base + 0x40 + i * sizeof(AtsChannelDescriptor),
+               &desc, sizeof(desc));
+
+        // Field table at buf[base + 0x140 + i*256]
+        if (mChannels[i].active && mChannels[i].schema.fieldCount > 0) {
+            memcpy(buf + base + 0x140 + i * 256,
+                   mChannels[i].schema.fields,
+                   mChannels[i].schema.fieldCount * sizeof(FieldDesc));
+        }
+    }
+
+    // --- Stats at buf[base + 0x940] ---
+    memcpy(buf + base + 0x940, &mStats, sizeof(mStats));
+
+    // --- Shadow: copy [base..base+0x9FF] to [base+0xA00..] ---
+    // Only copy what fits within the 4KB block
+    {
+        uint16_t shadowSrc = base;
+        uint16_t shadowDst = base + 0x0A00;
+        uint16_t copyLen = 0x0A00;  // primary area size
+        if (shadowDst + copyLen > BLOCK_SIZE) {
+            copyLen = BLOCK_SIZE - shadowDst;
+        }
+        if (shadowDst < BLOCK_SIZE && copyLen > 0) {
+            memcpy(buf + shadowDst, buf + shadowSrc, copyLen);
+        }
+    }
+
+    // --- Encrypt if headerKey is set ---
+    if (mCfg.headerKey && mCfg.cipher) {
+        generateHeaderNonce(mHeaderNonce);
+        memcpy(buf, mHeaderNonce, 12);     // nonce at [0..11]
+        memset(buf + 12, 0, 4);            // reserved at [12..15]
+        // Encrypt [16..4095]
+        mCfg.cipher->crypt(mCfg.headerKey, mHeaderNonce, 0,
+                           buf + 16, BLOCK_SIZE - 16);
+    }
+
+    // --- Write to file ---
+    if (!mCfg.file->seek(0)) return false;
+    return mCfg.file->write(buf, BLOCK_SIZE) == BLOCK_SIZE;
+}
+
+// ---------------------------------------------------------------------------
+// Encrypted header: read entire block (detect format → decrypt → parse)
+// ---------------------------------------------------------------------------
+
+bool ArcanaTsDb::readEntireHeaderBlock() {
+    uint8_t* buf = getReadCache();
+    if (!buf) return false;
+
+    if (!mCfg.file->seek(0)) return false;
+    if (mCfg.file->read(buf, BLOCK_SIZE) != BLOCK_SIZE) return false;
+
+    // Detect format: plaintext ("ATS2" at [0]) vs encrypted (random bytes at [0])
+    if (memcmp(buf, ATS_MAGIC, 4) == 0) {
+        // Legacy plaintext format
+        mHeaderBase = 0;
+        if (!readFileHeader()) return false;
+        if (!readChannelDescriptors()) return false;
+        return true;
+    }
+
+    // Try encrypted format
+    if (!mCfg.headerKey || !mCfg.cipher) return false;
+
+    // Extract nonce from [0..11]
+    memcpy(mHeaderNonce, buf, 12);
+
+    // Decrypt [16..4095] in the buffer
+    mCfg.cipher->crypt(mCfg.headerKey, mHeaderNonce, 0,
+                       buf + 16, BLOCK_SIZE - 16);
+
+    // Validate: "ATS2" magic at buf[16]
+    if (memcmp(buf + 16, ATS_MAGIC, 4) == 0) {
+        mHeaderBase = 16;
+        return tryDecryptHeaderFromBuf(buf, 16);
+    }
+
+    // Primary failed — try shadow at [16 + 0xA00] = [0xA10]
+    // Re-read (decryption was in-place, need original for shadow)
+    if (!mCfg.file->seek(0)) return false;
+    if (mCfg.file->read(buf, BLOCK_SIZE) != BLOCK_SIZE) return false;
+    // Re-decrypt
+    mCfg.cipher->crypt(mCfg.headerKey, mHeaderNonce, 0,
+                       buf + 16, BLOCK_SIZE - 16);
+
+    uint16_t shadowBase = 16 + 0x0A00;
+    if (shadowBase + 4 <= BLOCK_SIZE && memcmp(buf + shadowBase, ATS_MAGIC, 4) == 0) {
+        mHeaderBase = shadowBase;
+        return tryDecryptHeaderFromBuf(buf, shadowBase);
+    }
+
+    return false;  // Decryption failed: wrong key or corrupted header
+}
+
+bool ArcanaTsDb::tryDecryptHeaderFromBuf(uint8_t* buf, uint16_t base) {
+    // Parse file header from buf[base]
+    AtsFileHeader hdr;
+    memcpy(&hdr, buf + base, sizeof(hdr));
+
+    // Validate CRC
+    uint32_t expectedCrc = computeIeeeCrc32(
+        reinterpret_cast<const uint8_t*>(&hdr), 44);
+    if (expectedCrc != hdr.headerCrc32) return false;
+
+    mCreatedEpoch = hdr.createdEpoch;
+    mNextSeqNo = hdr.lastSeqNo + 1;
+    mChannelCount = 0;
+
+    // Parse channel descriptors from buf[base + 0x40]
+    for (uint8_t i = 0; i < MAX_CHANNELS; i++) {
+        mChannels[i].active = false;
+
+        AtsChannelDescriptor desc;
+        uint16_t descOff = base + 0x40 + i * sizeof(AtsChannelDescriptor);
+        if (descOff + sizeof(desc) > BLOCK_SIZE) break;
+        memcpy(&desc, buf + descOff, sizeof(desc));
+
+        if (desc.channelId == 0xFF) continue;
+        if (desc.channelId >= MAX_CHANNELS) continue;
+
+        ArcanaTsSchema& schema = mChannels[i].schema;
+        schema = ArcanaTsSchema();
+        schema.fieldCount = desc.fieldCount;
+        schema.recordSize = desc.recordSize;
+        memcpy(schema.name, desc.name, 24);
+
+        // Field table at buf[base + 0x140 + i*256]
+        if (desc.fieldCount > 0) {
+            uint16_t ftOff = base + 0x140 + i * 256;
+            uint16_t ftLen = desc.fieldCount * sizeof(FieldDesc);
+            if (ftOff + ftLen <= BLOCK_SIZE) {
+                memcpy(schema.fields, buf + ftOff, ftLen);
+            }
+        }
+
+        mChannels[i].sampleRateHz = desc.sampleRateHz;
+        mChannels[i].active = true;
+        mChannelCount++;
+    }
+
+    // Restore stats from buf[base + 0x940]
+    uint16_t statsOff = base + 0x940;
+    if (statsOff + sizeof(mStats) <= BLOCK_SIZE) {
+        memcpy(&mStats, buf + statsOff, sizeof(mStats));
+    }
+
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -863,8 +1093,11 @@ bool ArcanaTsDb::readIndex() {
 // ---------------------------------------------------------------------------
 
 bool ArcanaTsDb::recoverFromExisting() {
-    if (!readFileHeader()) return false;
-    if (!readChannelDescriptors()) return false;
+    // Detect and decrypt header format (encrypted vs plaintext)
+    if (!readEntireHeaderBlock()) return false;
+
+    // Future writes use encrypted format if headerKey is configured
+    if (mCfg.headerKey) mHeaderBase = 16;
 
     // Scan forward — skip bad blocks instead of truncating at first one
     mNextBlockOffset = DATA_START_OFFSET;

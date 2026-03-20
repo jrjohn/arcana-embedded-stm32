@@ -152,6 +152,12 @@ private:
 
     // Nonce construction
     void buildNonce(uint8_t nonce[12], uint32_t seqNo) const;
+    void generateHeaderNonce(uint8_t nonce[12]);
+
+    // Encrypted header support
+    bool writeEntireHeaderBlock();
+    bool readEntireHeaderBlock();
+    bool tryDecryptHeaderFromBuf(uint8_t* buf, uint16_t base);
 
     // Index
     void addIndexEntry(uint32_t blockNum, uint8_t channelId,
@@ -177,6 +183,8 @@ private:
     uint32_t        mNextSeqNo;
     uint32_t        mCreatedEpoch;
     uint64_t        mNextBlockOffset;   // file offset of next data block
+    uint16_t        mHeaderBase;        // 0 = plaintext, 16 = encrypted header
+    uint8_t         mHeaderNonce[12];   // nonce for header encryption
 
     ChannelState    mChannels[MAX_CHANNELS];
     PrimaryBuf      mPrimary;

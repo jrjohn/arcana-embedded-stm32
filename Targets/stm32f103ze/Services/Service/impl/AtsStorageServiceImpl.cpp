@@ -468,6 +468,7 @@ bool AtsStorageServiceImpl::openDailyDb() {
     cfg.mutex = &mMutex;
     cfg.getTime = atsGetTime;
     cfg.key = sKey;
+    cfg.headerKey = crypto::DeviceKey::getFleetKey();
     cfg.deviceUid = (const uint8_t*)UID_BASE;
     cfg.deviceUidSize = 12;
     cfg.overflow = ats::OverflowPolicy::Drop;
@@ -550,6 +551,7 @@ bool AtsStorageServiceImpl::openDeviceDb() {
     cfg.mutex = &mMutex;  // shared with sensor DB (same task)
     cfg.getTime = atsGetTime;
     cfg.key = sKey;
+    cfg.headerKey = crypto::DeviceKey::getFleetKey();
     cfg.deviceUid = (const uint8_t*)UID_BASE;
     cfg.deviceUidSize = 12;
     cfg.overflow = ats::OverflowPolicy::Drop;
@@ -703,6 +705,8 @@ void AtsStorageServiceImpl::taskLoop() {
     uint8_t key2Hold = 0;   // KEY2 hold counter (seconds)
     bool key2Seen = false;  // KEY2 must be seen released (HIGH) before first detect
 
+    bool provisionToastShown = false;
+
     while (mRunning) {
         // 1kHz pacing — 1 record per ms
         vTaskDelayUntil(&nextWake, 1);
@@ -785,6 +789,16 @@ void AtsStorageServiceImpl::taskLoop() {
             log::SyslogAppender::getInstance().sendStats(
                 mTotalRecords, (uint16_t)windowOk, mStatsModel.totalKB,
                 atsGetTime());
+
+            // One-time warning after LCD is guaranteed ready
+            if (!provisionToastShown) {
+                provisionToastShown = true;
+                if (!crypto::DeviceKey::isProvisioned()) {
+                    LOG_W(ats::ErrorSource::Crypto, 0xFF00);  // debug: not provisioned
+                    display::toast("NOT PROVISIONED", 5000,
+                                   now, display::colors::WHITE, display::colors::RED);
+                }
+            }
 
             windowOk = 0;
             windowFail = 0;
