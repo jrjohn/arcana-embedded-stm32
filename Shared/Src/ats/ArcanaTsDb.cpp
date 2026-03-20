@@ -1099,60 +1099,127 @@ bool ArcanaTsDb::recoverFromExisting() {
     // Future writes use encrypted format if headerKey is configured
     if (mCfg.headerKey) mHeaderBase = 16;
 
-    // Scan forward — skip bad blocks instead of truncating at first one
-    mNextBlockOffset = DATA_START_OFFSET;
+    uint64_t fileSize = mCfg.file->size();
     mIndexCount = 0;
 
-    uint64_t fileSize = mCfg.file->size();
-    uint32_t validBlocks = 0;
-    uint32_t totalRecords = 0;
-    uint32_t skippedBlocks = 0;
-    uint64_t lastValidEnd = DATA_START_OFFSET;  // truncation point
-    uint32_t consecutiveBad = 0;
+    // -----------------------------------------------------------------------
+    // Fast recovery: use persisted stats to jump near the end of file,
+    // then verify only the tail blocks.  O(1) instead of O(n).
+    // Falls back to full scan if header stats look stale or inconsistent.
+    // -----------------------------------------------------------------------
 
-    uint64_t offset = DATA_START_OFFSET;
-    while (offset + BLOCK_SIZE <= fileSize) {
-        AtsBlockHeader hdr;
-        if (!validateBlock(offset / BLOCK_SIZE, hdr)) {
-            skippedBlocks++;
-            consecutiveBad++;
+    uint64_t estimatedEnd = DATA_START_OFFSET
+                          + (uint64_t)mStats.blocksWritten * BLOCK_SIZE;
+
+    if (mStats.blocksWritten > 0 && estimatedEnd <= fileSize) {
+        // Verify the last few blocks to confirm header stats are trustworthy
+        const uint32_t VERIFY_COUNT = 8;
+        uint64_t verifyStart = estimatedEnd;
+        if (verifyStart > (uint64_t)VERIFY_COUNT * BLOCK_SIZE + DATA_START_OFFSET) {
+            verifyStart = estimatedEnd - (uint64_t)VERIFY_COUNT * BLOCK_SIZE;
+        } else {
+            verifyStart = DATA_START_OFFSET;
+        }
+
+        bool tailOk = true;
+
+        for (uint64_t off = verifyStart; off < estimatedEnd; off += BLOCK_SIZE) {
+            AtsBlockHeader hdr;
+            if (validateBlock(off / BLOCK_SIZE, hdr)) {
+                if (hdr.blockSeqNo >= mNextSeqNo) {
+                    mNextSeqNo = hdr.blockSeqNo + 1;
+                }
+            } else {
+                tailOk = false;
+                break;
+            }
+        }
+
+        if (tailOk) {
+            // Also check one block PAST the expected end (uncommitted block)
+            if (estimatedEnd + BLOCK_SIZE <= fileSize) {
+                AtsBlockHeader pastHdr;
+                if (validateBlock(estimatedEnd / BLOCK_SIZE, pastHdr)) {
+                    // More blocks than header recorded — scan forward a bit
+                    uint64_t off = estimatedEnd;
+                    while (off + BLOCK_SIZE <= fileSize) {
+                        AtsBlockHeader hdr;
+                        if (!validateBlock(off / BLOCK_SIZE, hdr)) break;
+                        if (hdr.blockSeqNo >= mNextSeqNo) {
+                            mNextSeqNo = hdr.blockSeqNo + 1;
+                        }
+                        mStats.blocksWritten++;
+                        off += BLOCK_SIZE;
+                    }
+                    estimatedEnd = off;
+                }
+            }
+
+            mNextBlockOffset = estimatedEnd;
+
+            // Truncate tail if file extends beyond last valid block
+            if (estimatedEnd < fileSize) {
+                mCfg.file->seek(estimatedEnd);
+                mCfg.file->truncate();
+            }
+
+            goto buffers_init;
+        }
+        // else: tail verification failed, fall through to full scan
+    }
+
+    {
+        // Full scan fallback (slow but safe — only if header stats unreliable)
+        mNextBlockOffset = DATA_START_OFFSET;
+        uint32_t validBlocks = 0;
+        uint32_t totalRecords = 0;
+        uint32_t skippedBlocks = 0;
+        uint64_t lastValidEnd = DATA_START_OFFSET;
+        uint32_t consecutiveBad = 0;
+
+        uint64_t offset = DATA_START_OFFSET;
+        while (offset + BLOCK_SIZE <= fileSize) {
+            AtsBlockHeader hdr;
+            if (!validateBlock(offset / BLOCK_SIZE, hdr)) {
+                skippedBlocks++;
+                consecutiveBad++;
+                offset += BLOCK_SIZE;
+                if (consecutiveBad >= 4) break;
+                continue;
+            }
+            consecutiveBad = 0;
+
+            if (mIndexCount < MAX_INDEX_ENTRIES) {
+                addIndexEntry(offset / BLOCK_SIZE, hdr.channelId,
+                              hdr.recordCount, hdr.firstTimestamp, hdr.lastTimestamp);
+            }
+
+            totalRecords += hdr.recordCount;
+            if (hdr.blockSeqNo >= mNextSeqNo) {
+                mNextSeqNo = hdr.blockSeqNo + 1;
+            }
+            validBlocks++;
             offset += BLOCK_SIZE;
-            // Stop after 4 consecutive bad blocks (end of written region)
-            if (consecutiveBad >= 4) break;
-            continue;
-        }
-        consecutiveBad = 0;
-
-        if (mIndexCount < MAX_INDEX_ENTRIES) {
-            addIndexEntry(offset / BLOCK_SIZE, hdr.channelId,
-                          hdr.recordCount, hdr.firstTimestamp, hdr.lastTimestamp);
+            lastValidEnd = offset;
         }
 
-        totalRecords += hdr.recordCount;
-        if (hdr.blockSeqNo >= mNextSeqNo) {
-            mNextSeqNo = hdr.blockSeqNo + 1;
+        mNextBlockOffset = lastValidEnd;
+
+        if (lastValidEnd < fileSize) {
+            mCfg.file->seek(lastValidEnd);
+            mCfg.file->truncate();
+            mStats.recoveryTruncations++;
         }
-        validBlocks++;
-        offset += BLOCK_SIZE;
-        lastValidEnd = offset;  // after this valid block
+
+        if (skippedBlocks > 0) {
+            mStats.blocksFailed += skippedBlocks;
+        }
+
+        mStats.blocksWritten = validBlocks;
+        mStats.totalRecords = totalRecords;
     }
 
-    // Set write position past the last valid block
-    mNextBlockOffset = lastValidEnd;
-
-    // Truncate only the tail beyond last valid block
-    if (lastValidEnd < fileSize) {
-        mCfg.file->seek(lastValidEnd);
-        mCfg.file->truncate();
-        mStats.recoveryTruncations++;
-    }
-
-    if (skippedBlocks > 0) {
-        mStats.blocksFailed += skippedBlocks;
-    }
-
-    mStats.blocksWritten = validBlocks;
-    mStats.totalRecords = totalRecords;
+buffers_init:
 
     // Re-init buffers
     if (mCfg.primaryChannel != 0xFF && mCfg.primaryBufA && mCfg.primaryBufB) {
