@@ -54,6 +54,8 @@ target_include_directories(arcana-f051.elf PRIVATE
     ${F051_ROOT}/Services/command
     ${F051_ROOT}/Services/command/impl
     Shared/Inc
+    Shared/Inc/ats
+    Shared/Inc/display
 )
 target_compile_options(arcana-f051.elf PRIVATE
     $<$<COMPILE_LANGUAGE:C>:${F051_MCU_FLAGS} -Wall -fdata-sections -ffunction-sections -std=gnu11>
