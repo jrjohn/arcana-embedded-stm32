@@ -117,12 +117,12 @@ target_include_directories(arcana-f103.elf PRIVATE
     ${F103_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM3
     ${F103_ROOT}/Middlewares/Third_Party/FatFs/src
     ${F103_ROOT}/Middlewares/Third_Party/FlashDB/inc
-    ${F103_ROOT}/Services/controller
-    ${F103_ROOT}/Services/service
-    ${F103_ROOT}/Services/service/impl
-    ${F103_ROOT}/Services/driver
-    ${F103_ROOT}/Services/model
-    ${F103_ROOT}/Services/common
+    ${F103_ROOT}/Services/Controller
+    ${F103_ROOT}/Services/Service
+    ${F103_ROOT}/Services/Service/impl
+    ${F103_ROOT}/Services/Driver
+    ${F103_ROOT}/Services/Model
+    ${F103_ROOT}/Services/Common
     Shared/Inc
 )
 target_compile_options(arcana-f103.elf PRIVATE

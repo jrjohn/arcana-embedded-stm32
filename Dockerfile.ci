@@ -13,8 +13,8 @@ WORKDIR /app
 COPY . .
 
 # Use CI placeholder credentials (real Credentials.hpp is gitignored)
-RUN cp Targets/stm32f103ze/Services/service/impl/Credentials.hpp.ci \
-       Targets/stm32f103ze/Services/service/impl/Credentials.hpp
+RUN cp Targets/stm32f103ze/Services/Common/Credentials.hpp.ci \
+       Targets/stm32f103ze/Services/Common/Credentials.hpp
 
 RUN mkdir -p build && cd build && cmake -DCMAKE_BUILD_TYPE=Release .. && make -j$(nproc)
 
