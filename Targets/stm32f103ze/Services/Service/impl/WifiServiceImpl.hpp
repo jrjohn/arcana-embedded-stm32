@@ -20,6 +20,9 @@ public:
     bool syncNtp() override;
     Esp8266& getEsp() override;
 
+    /** Query IP geolocation for timezone offset (minutes). Returns true on success. */
+    bool detectTimezone(int16_t& offsetMinutes);
+
 private:
     WifiServiceImpl();
     ~WifiServiceImpl();

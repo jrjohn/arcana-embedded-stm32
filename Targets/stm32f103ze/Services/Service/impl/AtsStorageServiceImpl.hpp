@@ -74,6 +74,13 @@ private:
     void writeRecoveryEvents(uint32_t recoveredRec, uint16_t truncations,
                              uint16_t skippedBlocks);
 
+public:
+    // Timezone config — stored in device.ats CONFIG channel (ch1) or tz.cfg fallback
+    bool loadTzConfig(int16_t& offsetMin, uint8_t& autoCheck);
+    bool saveTzConfig(int16_t offsetMin, uint8_t autoCheck);
+
+private:
+
     // Buffers (static, no heap)
     static uint8_t sSlowBuf[ats::BLOCK_SIZE];
     static uint8_t sReadCache[ats::BLOCK_SIZE];

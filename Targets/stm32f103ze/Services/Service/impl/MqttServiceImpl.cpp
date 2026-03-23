@@ -1,9 +1,11 @@
 #include "MqttServiceImpl.hpp"
-#include "WifiService.hpp"
+#include "WifiServiceImpl.hpp"
+#include "AtsStorageServiceImpl.hpp"
 #include "Credentials.hpp"
 #include "Esp8266.hpp"
 #include "CommandBridge.hpp"
 #include "SyslogAppender.hpp"
+#include "SystemClock.hpp"
 #include "Log.hpp"
 #include <cstdio>
 #include <cstring>
@@ -169,6 +171,28 @@ void MqttServiceImpl::runTask() {
 
         // --- Phase 2: NTP ---
         wifi->syncNtp();
+
+        // --- Phase 2.5: Timezone auto-detect ---
+        {
+            auto& clock = SystemClock::getInstance();
+            auto* wifiImpl = static_cast<wifi::WifiServiceImpl*>(wifi);
+            auto& storage = static_cast<atsstorage::AtsStorageServiceImpl&>(
+                atsstorage::AtsStorageServiceImpl::getInstance());
+
+            int16_t currentTz = clock.tzOffsetMin();
+            int16_t detectedTz = 0;
+
+            if (wifiImpl->detectTimezone(detectedTz)) {
+                if (currentTz != detectedTz) {
+                    // First boot (currentTz==0 and no config) → apply silently
+                    // Otherwise → TODO: LCD prompt KEY1=update KEY2=ignore
+                    clock.setTzOffset(detectedTz);
+                    storage.saveTzConfig(detectedTz, 1);
+                    LOG_I(ats::ErrorSource::System, 0x0031,
+                          (uint32_t)(uint16_t)detectedTz);
+                }
+            }
+        }
 
         // --- Phase 3: MQTT config + connect ---
         LOG_I(ats::ErrorSource::Mqtt, 0x0001);  // MQTT connecting

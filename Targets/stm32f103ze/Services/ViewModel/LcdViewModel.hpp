@@ -212,7 +212,7 @@ private:
     static void onBaseTimer(TimerModel*, void* ctx) {
         LcdViewModel* self = static_cast<LcdViewModel*>(ctx);
         LcdInput in; in.type = LcdInput::TimerTick;
-        in.timer.epoch = SystemClock::getInstance().now();
+        in.timer.epoch = SystemClock::getInstance().localNow();
         in.timer.synced = SystemClock::getInstance().isSynced();
         in.timer.uptime = xTaskGetTickCount() / configTICK_RATE_HZ;
         self->onEvent(in); self->notifyView();

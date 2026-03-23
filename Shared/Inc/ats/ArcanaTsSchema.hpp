@@ -250,7 +250,7 @@ public:
         return s;
     }
 
-    /** @brief Operational config (14 bytes/record, 290 rec/block) */
+    /** @brief Operational config (17 bytes/record, 238 rec/block) */
     static inline ArcanaTsSchema config() {
         ArcanaTsSchema s;
         s.setName("CONFIG");
@@ -262,6 +262,8 @@ public:
         s.addField("thrLo",   FieldType::I16);
         s.addField("mode",    FieldType::U8);
         s.addField("flags",   FieldType::U8);
+        s.addField("tzOff",   FieldType::I16);   // timezone offset in minutes (e.g. +480=UTC+8)
+        s.addField("tzAuto",  FieldType::U8);    // 1=auto-check on boot, 0=don't ask
         return s;
     }
 

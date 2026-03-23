@@ -40,6 +40,20 @@ public:
         return getRtcCounter();
     }
 
+    /** Current local epoch seconds (UTC + timezone offset). For LCD display only. */
+    uint32_t localNow() const {
+        return now() + mTzOffsetSec;
+    }
+
+    /** Set timezone offset in minutes (e.g. +480 = UTC+8, -300 = UTC-5) */
+    void setTzOffset(int16_t minutes) {
+        mTzOffsetMin = minutes;
+        mTzOffsetSec = static_cast<int32_t>(minutes) * 60;
+    }
+
+    /** Get timezone offset in minutes */
+    int16_t tzOffsetMin() const { return mTzOffsetMin; }
+
     static uint32_t startOfDay(uint32_t epoch) {
         return epoch - (epoch % 86400);
     }
@@ -66,9 +80,11 @@ public:
     }
 
 private:
-    SystemClock() : mSynced(false) {}
+    SystemClock() : mSynced(false), mTzOffsetMin(0), mTzOffsetSec(0) {}
 
     bool mSynced;
+    int16_t mTzOffsetMin;
+    int32_t mTzOffsetSec;
 
     // -- RTC register helpers (STM32F103 specific) --
 

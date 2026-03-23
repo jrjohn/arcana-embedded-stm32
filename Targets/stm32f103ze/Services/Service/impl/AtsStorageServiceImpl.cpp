@@ -203,6 +203,14 @@ void AtsStorageServiceImpl::storageTask(void* param) {
         self->restoreTimeFromDeviceDb();
         self->writeLifecycleEvent(
             static_cast<uint8_t>(ats::LifecycleEventType::PowerOn), 0);
+
+        // Load timezone config from device.ats CONFIG (ch1) or tz.cfg fallback
+        int16_t tzOff = 0;
+        uint8_t tzAuto = 1;
+        if (self->loadTzConfig(tzOff, tzAuto)) {
+            SystemClock::getInstance().setTzOffset(tzOff);
+            LOG_I(ats::ErrorSource::System, 0x0030, (uint32_t)(uint16_t)tzOff);
+        }
     }
     log::Logger::getInstance().drain(8);
 
@@ -574,12 +582,16 @@ bool AtsStorageServiceImpl::openDeviceDb() {
           mDeviceDb.getStats().totalRecords);
 
     if (mDeviceDb.getChannelCount() == 0) {
+        // New device.ats — register ch0 (LIFECYCLE) + ch1 (CONFIG)
         ats::ArcanaTsSchema lc = ats::ArcanaTsSchema::lifecycleEvent();
         if (!mDeviceDb.addChannel(0, lc)) {
             LOG_E(ats::ErrorSource::Tsdb, evt::ATS_CHANNEL_FAIL);
             mDeviceDb.close();
             return false;
         }
+        ats::ArcanaTsSchema cfg = ats::ArcanaTsSchema::config();
+        mDeviceDb.addChannel(1, cfg);  // optional — old boards skip this
+
         if (!mDeviceDb.start()) {
             LOG_E(ats::ErrorSource::Tsdb, evt::ATS_START_FAIL);
             mDeviceDb.close();
@@ -688,6 +700,42 @@ void AtsStorageServiceImpl::writeRecoveryEvents(
         mDb.append(1, rec);
         // flush happens in taskLoop's first 1-second window
     }
+}
+
+bool AtsStorageServiceImpl::loadTzConfig(int16_t& offsetMin, uint8_t& autoCheck) {
+    // Try device.ats ch1 (CONFIG) first
+    if (mDeviceDbReady && mDeviceDb.getChannelCount() > 1) {
+        // CONFIG record: 17 bytes — tzOff at offset 14 (I16), tzAuto at offset 16 (U8)
+        uint8_t buf[17];
+        uint16_t n = mDeviceDb.queryLatest(1, buf, 1);
+        if (n > 0) {
+            memcpy(&offsetMin, buf + 14, 2);
+            autoCheck = buf[16];
+            return true;
+        }
+    }
+
+    // No ch1 CONFIG → first boot or old device.ats, will auto-detect via WiFi
+    return false;
+}
+
+bool AtsStorageServiceImpl::saveTzConfig(int16_t offsetMin, uint8_t autoCheck) {
+    // Write to device.ats ch1 (CONFIG) if available
+    if (mDeviceDbReady && mDeviceDb.getChannelCount() > 1) {
+        uint8_t rec[17];
+        memset(rec, 0, sizeof(rec));
+        uint32_t ts = atsGetTime();
+        memcpy(rec, &ts, 4);
+        // tzOff at offset 14, tzAuto at offset 16
+        memcpy(rec + 14, &offsetMin, 2);
+        rec[16] = autoCheck;
+        mDeviceDb.append(1, rec);
+        mDeviceDb.flush();
+        return true;
+    }
+
+    // No ch1 CONFIG on old device.ats — timezone will be re-detected next boot
+    return false;
 }
 
 // ---------------------------------------------------------------------------

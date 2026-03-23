@@ -39,7 +39,10 @@ bool FatFsFilePort::open(const char* path, uint8_t mode) {
         mPath[sizeof(mPath) - 1] = '\0';
         return true;
     }
-    LOG_W(ats::ErrorSource::Sdio, evt::SDIO_FP_OPEN_FAIL, (uint32_t)fr);
+    // FR_NO_FILE is expected when ArcanaTsDb tries open-existing before create
+    if (fr != FR_NO_FILE) {
+        LOG_W(ats::ErrorSource::Sdio, evt::SDIO_FP_OPEN_FAIL, (uint32_t)fr);
+    }
     return false;
 }
 

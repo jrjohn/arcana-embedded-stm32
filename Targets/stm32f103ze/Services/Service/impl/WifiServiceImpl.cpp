@@ -110,8 +110,8 @@ bool WifiServiceImpl::connectWifi() {
 // --- NTP time sync via AT+CIPSNTPCFG (AT v2.2+) ---
 
 bool WifiServiceImpl::syncNtp() {
-    // Configure SNTP: enable, timezone UTC+8, NTP server
-    if (!mEsp.sendCmd("AT+CIPSNTPCFG=1,8,\"pool.ntp.org\"", "OK", 3000)) {
+    // Configure SNTP: enable, timezone UTC (offset applied in SystemClock::localNow)
+    if (!mEsp.sendCmd("AT+CIPSNTPCFG=1,0,\"pool.ntp.org\"", "OK", 3000)) {
         return false;
     }
 
@@ -163,18 +163,76 @@ bool WifiServiceImpl::applyNtpEpoch(uint32_t epoch) {
         }
         return false;
     }
-    // Add UTC+8 timezone offset
-    epoch += 8UL * 3600UL;
+    // Store pure UTC — timezone offset applied only in SystemClock::localNow()
     SystemClock::getInstance().sync(epoch);
-    char buf[24];
+    char buf[28];
     uint8_t h, m, s;
     SystemClock::toHMS(epoch, h, m, s);
-    snprintf(buf, sizeof(buf), "[NTP] %02u:%02u:%02u", h, m, s);
+    snprintf(buf, sizeof(buf), "[NTP] UTC %02u:%02u:%02u", h, m, s);
     //lcdStatus(buf);
     return true;
 }
 
 // parseNtpResponse removed — using AT+CIPSNTPCFG instead of raw UDP
+
+// --- IP geolocation for timezone auto-detect ---
+
+bool WifiServiceImpl::detectTimezone(int16_t& offsetMinutes) {
+    // Open TCP to ip-api.com (free, no key, 45 req/min)
+    if (!mEsp.sendCmd("AT+CIPSTART=\"TCP\",\"ip-api.com\",80", "OK", 5000)) {
+        if (!mEsp.responseContains("ALREADY CONNECTED")) {
+            return false;
+        }
+    }
+    vTaskDelay(pdMS_TO_TICKS(200));
+
+    // HTTP GET — fields=offset returns {"offset":<seconds>}
+    static const char httpReq[] =
+        "GET /json/?fields=offset HTTP/1.1\r\n"
+        "Host: ip-api.com\r\n"
+        "Connection: close\r\n\r\n";
+    const uint16_t reqLen = sizeof(httpReq) - 1;
+
+    char cipsend[24];
+    snprintf(cipsend, sizeof(cipsend), "AT+CIPSEND=%u", reqLen);
+    if (!mEsp.sendCmd(cipsend, ">", 3000)) {
+        mEsp.sendCmd("AT+CIPCLOSE", "OK", 1000);
+        return false;
+    }
+
+    mEsp.sendData(reinterpret_cast<const uint8_t*>(httpReq), reqLen, 3000);
+
+    // Wait for response (ip-api typically responds in <500ms)
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    if (!mEsp.waitFor("\"offset\"", 5000)) {
+        mEsp.sendCmd("AT+CIPCLOSE", "OK", 1000);
+        return false;
+    }
+
+    // Parse: {"offset":28800} or {"offset":-18000}
+    const char* resp = mEsp.getResponse();
+    const char* p = strstr(resp, "\"offset\":");
+    if (!p) {
+        mEsp.sendCmd("AT+CIPCLOSE", "OK", 1000);
+        return false;
+    }
+    p += 9;  // skip "offset":
+
+    bool negative = false;
+    if (*p == '-') { negative = true; p++; }
+
+    int32_t offsetSec = 0;
+    while (*p >= '0' && *p <= '9') {
+        offsetSec = offsetSec * 10 + (*p - '0');
+        p++;
+    }
+    if (negative) offsetSec = -offsetSec;
+
+    mEsp.sendCmd("AT+CIPCLOSE", "OK", 1000);
+
+    offsetMinutes = static_cast<int16_t>(offsetSec / 60);
+    return true;
+}
 
 } // namespace wifi
 } // namespace arcana
