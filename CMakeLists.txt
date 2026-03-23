@@ -123,7 +123,12 @@ target_include_directories(arcana-f103.elf PRIVATE
     ${F103_ROOT}/Services/Driver
     ${F103_ROOT}/Services/Model
     ${F103_ROOT}/Services/Common
+    ${F103_ROOT}/Services/View
+    ${F103_ROOT}/Services/ViewModel
+    ${F103_ROOT}/Services/Command
     Shared/Inc
+    Shared/Inc/ats
+    Shared/Inc/display
 )
 target_compile_options(arcana-f103.elf PRIVATE
     $<$<COMPILE_LANGUAGE:C>:${F103_MCU_FLAGS} -Wall -fdata-sections -ffunction-sections -std=gnu11 -Wno-dangling-pointer>
