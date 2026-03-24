@@ -19,9 +19,9 @@ namespace mqtt {
 // --- Configuration ---
 const char* MqttServiceImpl::MQTT_BROKER    = MQTT_BROKER_VALUE;
 const char* MqttServiceImpl::MQTT_CLIENT_ID = "arcana_f103";
-const char* MqttServiceImpl::TOPIC_SENSOR   = "arcana/sensor";
-const char* MqttServiceImpl::TOPIC_CMD      = "arcana/cmd";
-const char* MqttServiceImpl::TOPIC_RSP      = "arcana/rsp";
+const char* MqttServiceImpl::TOPIC_SENSOR   = "/arcana/sensor";
+const char* MqttServiceImpl::TOPIC_CMD      = "/arcana/cmd";
+const char* MqttServiceImpl::TOPIC_RSP      = "/arcana/rsp";
 
 MqttServiceImpl::MqttServiceImpl()
     : mCmdObs("MqttSvc Cmd")
@@ -51,8 +51,7 @@ ServiceStatus MqttServiceImpl::initHAL() { return ServiceStatus::OK; }
 
 ServiceStatus MqttServiceImpl::init() {
     if (input.SensorData) {
-        input.SensorData->subscribe(
-            reinterpret_cast<void (*)(SensorDataModel*, void*)>(onSensorData), this);
+        input.SensorData->subscribe(onSensorData, this);
     }
     if (input.LightData) {
         input.LightData->subscribe(
@@ -93,8 +92,9 @@ bool MqttServiceImpl::mqttConfig() {
     Esp8266& esp = input.Wifi->getEsp();
     char cmd[128];
     // AT+MQTTUSERCFG=<LinkID>,<scheme>,<"client_id">,<"username">,<"password">,<cert_key_ID>,<CA_ID>,<"path">
+    // scheme=1: MQTT over TCP (ESP8266 TLS too limited for WSS)
     snprintf(cmd, sizeof(cmd),
-             "AT+MQTTUSERCFG=0,1,\"%s\",\"\",\"\",0,0,\"\"",
+             "AT+MQTTUSERCFG=0,1,\"%s\",\"arcana\",\"arcana\",0,0,\"\"",
              MQTT_CLIENT_ID);
     return esp.sendCmd(cmd, "OK", 3000);
 }

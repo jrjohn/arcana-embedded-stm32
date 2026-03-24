@@ -22,7 +22,7 @@
 namespace arcana {
 
 /* Configuration */
-constexpr uint8_t MAX_OBSERVERS = 4;
+constexpr uint8_t MAX_OBSERVERS = 6;
 constexpr uint8_t DISPATCHER_QUEUE_SIZE_NORMAL = 8;   /* Normal priority queue */
 constexpr uint8_t DISPATCHER_QUEUE_SIZE_HIGH = 4;     /* High priority queue */
 constexpr uint16_t DISPATCHER_STACK_SIZE = 128;       /* Reduced from 256 */
