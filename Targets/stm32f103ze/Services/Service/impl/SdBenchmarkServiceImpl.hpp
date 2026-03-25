@@ -46,8 +46,8 @@ private:
     uint32_t mTotalBytesWritten;
     uint32_t mTotalRecords;
 
-    // Dedicated task
-    static const uint16_t TASK_STACK_SIZE = 512;
+    // Dedicated task (runs once: mount + publish capacity, then vTaskDelete)
+    static const uint16_t TASK_STACK_SIZE = 256;
     StaticTask_t mTaskBuffer;
     StackType_t mTaskStack[TASK_STACK_SIZE];
     TaskHandle_t mTaskHandle;
