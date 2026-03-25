@@ -25,3 +25,4 @@ __pycache__/
 
 # ESP8266 firmware binaries
 tools/esp8266_fw/
+tools/.env

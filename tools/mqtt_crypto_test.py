@@ -371,7 +371,19 @@ def hkdf_sha256(ikm, salt, info, length):
 # MQTT client
 # ---------------------------------------------------------------------------
 
-PSK_HEX = "dfcb40b40d06ac9132b23f15c160a1cdaa21ad7637e36dddd8e908d34a656bb3"
+# PSK loaded from environment variable (never hardcode in source!)
+# Export: export ARCANA_PSK=<64-char hex>
+# Or create tools/.env with: ARCANA_PSK=<64-char hex>
+import os
+PSK_HEX = os.environ.get("ARCANA_PSK", "")
+if not PSK_HEX:
+    env_file = os.path.join(os.path.dirname(__file__), ".env")
+    if os.path.exists(env_file):
+        for line in open(env_file):
+            if line.startswith("ARCANA_PSK="):
+                PSK_HEX = line.strip().split("=", 1)[1].strip()
+if not PSK_HEX:
+    sys.exit("ERROR: Set ARCANA_PSK env var or create tools/.env with ARCANA_PSK=<hex>")
 BROKER = "iot.somnics.cloud"
 PORT = 443
 TOPIC_CMD = "/arcana/cmd"

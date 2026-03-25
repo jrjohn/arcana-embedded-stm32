@@ -7,6 +7,7 @@
 #include "EventCodes.hpp"
 #ifdef ARCANA_CMD_CRYPTO
 #include "CryptoEngine.hpp"
+#include "DeviceKey.hpp"  // needs stm32f1xx_hal.h (included above) for UID_BASE
 #include "arcana_cmd.pb.h"
 #include <pb_encode.h>
 #include <pb_decode.h>
@@ -92,13 +93,14 @@ CommandBridge::CommandBridge()
 #endif
 
 #ifdef ARCANA_CMD_CRYPTO
-    // Initialize AES-256-CCM encryption (same PSK as ESP32)
-    static const char* CMD_PSK_HEX =
-        "dfcb40b40d06ac9132b23f15c160a1cdaa21ad7637e36dddd8e908d34a656bb3";
-    uint8_t key[CryptoEngine::kKeyLen];
-    mEncryptionEnabled = CryptoEngine::hexToKey(CMD_PSK_HEX, key) && mCrypto.init(key);
-    if (mEncryptionEnabled) {
-        mKeyExchange.init(key);
+    // Derive command PSK from flash KeyStore + device UID (no hardcoded key in source)
+    {
+        uint8_t cmdKey[CryptoEngine::kKeyLen];
+        crypto::DeviceKey::deriveKey(cmdKey);  // KeyStore fleet master + UID → per-device key
+        mEncryptionEnabled = mCrypto.init(cmdKey);
+        if (mEncryptionEnabled) {
+            mKeyExchange.init(cmdKey);
+        }
     }
 #endif
 
