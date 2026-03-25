@@ -296,10 +296,34 @@ def main():
     def on_message(client, userdata, msg):
         print(f"\n[RX] {msg.topic}: {len(msg.payload)}B")
 
+        raw = msg.payload
+        # STM32 mqttSendFn hex-encodes binary frames — decode if it looks like hex
+        try:
+            hex_str = raw.decode('ascii')
+            if all(c in '0123456789ABCDEFabcdef' for c in hex_str) and len(hex_str) % 2 == 0:
+                raw = bytes.fromhex(hex_str)
+                print(f"[RX] Hex decoded: {len(raw)}B")
+        except (UnicodeDecodeError, ValueError):
+            pass  # Not hex, use raw binary
+
         # Deframe
-        result = frame_decode(msg.payload)
+        result = frame_decode(raw)
         if result is None:
-            print("[RX] Frame decode FAILED (bad magic/CRC)")
+            print(f"[RX] Frame decode FAILED. Raw hex ({len(msg.payload)}B):")
+            print(f"[RX] {msg.payload.hex()}")
+            # Try to diagnose
+            raw = msg.payload
+            if len(raw) >= 2:
+                print(f"[RX] magic={raw[0]:02X} {raw[1]:02X} (expect AC DA)")
+            if len(raw) >= 7:
+                plen = raw[5] | (raw[6] << 8)
+                print(f"[RX] ver={raw[2]:02X} flags={raw[3]:02X} sid={raw[4]:02X} len={plen}")
+                expected_total = 7 + plen + 2
+                print(f"[RX] expected total={expected_total}, actual={len(raw)}")
+                if len(raw) == expected_total:
+                    expected_crc = crc16(raw[:7 + plen])
+                    actual_crc = raw[7 + plen] | (raw[7 + plen + 1] << 8)
+                    print(f"[RX] CRC expected={expected_crc:04X} actual={actual_crc:04X}")
             response_received[0] = True
             return
 
