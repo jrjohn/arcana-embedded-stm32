@@ -5,6 +5,12 @@
 #include "Commands.hpp"
 #include "Log.hpp"
 #include "EventCodes.hpp"
+#ifdef ARCANA_CMD_CRYPTO
+#include "CryptoEngine.hpp"
+#include "arcana_cmd.pb.h"
+#include <pb_encode.h>
+#include <pb_decode.h>
+#endif
 #include <cstring>
 
 namespace arcana {
@@ -79,6 +85,14 @@ CommandBridge::CommandBridge()
     mTxQueue = xQueueCreateStatic(TX_QUEUE_LEN, sizeof(TxItem),
                                    mTxQueueStorage, &mTxQueueBuf);
 
+#ifdef ARCANA_CMD_CRYPTO
+    // Initialize AES-256-CCM encryption (same PSK as ESP32)
+    static const char* CMD_PSK_HEX =
+        "dfcb40b40d06ac9132b23f15c160a1cdaa21ad7637e36dddd8e908d34a656bb3";
+    uint8_t key[CryptoEngine::kKeyLen];
+    mEncryptionEnabled = CryptoEngine::hexToKey(CMD_PSK_HEX, key) && mCrypto.init(key);
+#endif
+
     LOG_I(ats::ErrorSource::Cmd, evt::CMD_REGISTERED, (uint32_t)mCommandCount);
 }
 
@@ -148,8 +162,43 @@ void CommandBridge::bridgeTask(void* param) {
             }
 
             // Decode command request
-            if (payloadLen < 3) continue;
             CommandRequest req;
+#ifdef ARCANA_CMD_CRYPTO
+            {
+                const uint8_t* pbData = payload;
+                size_t pbLen = payloadLen;
+                uint8_t plainBuf[arcana_CmdRequest_size];
+
+                // Decrypt if enabled
+                if (self->mEncryptionEnabled) {
+                    size_t plainLen = 0;
+                    if (!self->mCrypto.decrypt(payload, payloadLen,
+                                                plainBuf, sizeof(plainBuf), plainLen)) {
+                        LOG_W(ats::ErrorSource::Cmd, evt::CMD_BAD_FRAME, 0xDE);
+                        continue;
+                    }
+                    pbData = plainBuf;
+                    pbLen = plainLen;
+                }
+
+                // Decode protobuf
+                arcana_CmdRequest msg = arcana_CmdRequest_init_zero;
+                pb_istream_t stream = pb_istream_from_buffer(pbData, pbLen);
+                if (!pb_decode(&stream, arcana_CmdRequest_fields, &msg)) {
+                    LOG_W(ats::ErrorSource::Cmd, evt::CMD_BAD_FRAME, 0xFB);
+                    continue;
+                }
+                if (msg.cluster > 0xFF || msg.command > 0xFF) continue;
+
+                req.key.cluster = static_cast<Cluster>(msg.cluster);
+                req.key.commandId = static_cast<uint8_t>(msg.command);
+                req.paramsLength = (msg.payload.size <= 8) ? (uint8_t)msg.payload.size : 8;
+                if (req.paramsLength > 0) {
+                    memcpy(req.params, msg.payload.bytes, req.paramsLength);
+                }
+            }
+#else
+            if (payloadLen < 3) continue;
             req.key.cluster = static_cast<Cluster>(payload[0]);
             req.key.commandId = payload[1];
             req.paramsLength = payload[2];
@@ -157,6 +206,7 @@ void CommandBridge::bridgeTask(void* param) {
             if (payloadLen >= 3u + req.paramsLength) {
                 memcpy(req.params, payload + 3, req.paramsLength);
             }
+#endif
 
             LOG_D(ats::ErrorSource::Cmd, evt::CMD_RX,
                   ((uint32_t)req.key.cluster << 8) | req.key.commandId);
@@ -171,25 +221,60 @@ void CommandBridge::bridgeTask(void* param) {
                 rsp.status = CommandStatus::NotFound;
             }
 
-            // Encode response payload
-            uint8_t rspPayload[28];
-            rspPayload[0] = static_cast<uint8_t>(rsp.key.cluster);
-            rspPayload[1] = rsp.key.commandId;
-            rspPayload[2] = static_cast<uint8_t>(rsp.status);
-            rspPayload[3] = rsp.dataLength;
-            if (rsp.dataLength > 0) {
-                memcpy(rspPayload + 4, rsp.data, rsp.dataLength);
-            }
-            size_t rspPayloadLen = 4 + rsp.dataLength;
-
-            // Frame response — echo the request's streamId
-            uint8_t frameBuf[40];
+            // Encode response
+            uint8_t frameBuf[TxItem::MAX_DATA];
             size_t frameLen = 0;
-            if (!FrameCodec::frame(rspPayload, rspPayloadLen,
-                                    FrameCodec::kFlagFin, streamId,
-                                    frameBuf, sizeof(frameBuf), frameLen)) {
-                continue;
+
+#ifdef ARCANA_CMD_CRYPTO
+            {
+                // Protobuf encode
+                arcana_CmdResponse rspMsg = arcana_CmdResponse_init_zero;
+                rspMsg.cluster = static_cast<uint32_t>(rsp.key.cluster);
+                rspMsg.command = static_cast<uint32_t>(rsp.key.commandId);
+                rspMsg.status = static_cast<uint32_t>(rsp.status);
+                rspMsg.payload.size = rsp.dataLength;
+                if (rsp.dataLength > 0) {
+                    memcpy(rspMsg.payload.bytes, rsp.data, rsp.dataLength);
+                }
+
+                uint8_t pbBuf[arcana_CmdResponse_size];
+                pb_ostream_t ostream = pb_ostream_from_buffer(pbBuf, sizeof(pbBuf));
+                if (!pb_encode(&ostream, arcana_CmdResponse_fields, &rspMsg)) continue;
+                size_t pbLen = ostream.bytes_written;
+
+                // Encrypt if enabled
+                uint8_t innerBuf[arcana_CmdResponse_size + CryptoEngine::kOverhead];
+                size_t innerLen = 0;
+                if (self->mEncryptionEnabled) {
+                    if (!self->mCrypto.encrypt(pbBuf, pbLen,
+                                                innerBuf, sizeof(innerBuf), innerLen)) continue;
+                } else {
+                    memcpy(innerBuf, pbBuf, pbLen);
+                    innerLen = pbLen;
+                }
+
+                // Frame
+                if (!FrameCodec::frame(innerBuf, innerLen,
+                                        FrameCodec::kFlagFin, streamId,
+                                        frameBuf, sizeof(frameBuf), frameLen)) continue;
             }
+#else
+            {
+                uint8_t rspPayload[28];
+                rspPayload[0] = static_cast<uint8_t>(rsp.key.cluster);
+                rspPayload[1] = rsp.key.commandId;
+                rspPayload[2] = static_cast<uint8_t>(rsp.status);
+                rspPayload[3] = rsp.dataLength;
+                if (rsp.dataLength > 0) {
+                    memcpy(rspPayload + 4, rsp.data, rsp.dataLength);
+                }
+                size_t rspPayloadLen = 4 + rsp.dataLength;
+
+                if (!FrameCodec::frame(rspPayload, rspPayloadLen,
+                                        FrameCodec::kFlagFin, streamId,
+                                        frameBuf, sizeof(frameBuf), frameLen)) continue;
+            }
+#endif
 
             // Push to TX queue
             TxItem tx;

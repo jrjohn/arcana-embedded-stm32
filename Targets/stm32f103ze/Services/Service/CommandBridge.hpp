@@ -3,6 +3,9 @@
 #include "CommandTypes.hpp"
 #include "ICommand.hpp"
 #include "FrameCodec.hpp"
+#ifdef ARCANA_CMD_CRYPTO
+#include "CryptoEngine.hpp"
+#endif
 #include "SensorDataCache.hpp"
 #include "FreeRTOS.h"
 #include "queue.h"
@@ -16,10 +19,15 @@ struct FrameItem;
 
 /**
  * Shared frame item for RX queue — used by both BLE and MQTT.
- * Re-declared here so CommandBridge owns the queue type.
+ * When ARCANA_CMD_CRYPTO is defined, MAX_DATA is larger to accommodate
+ * encrypted protobuf frames (max 143 pb + 12 crypto + 9 frame = 164).
  */
 struct CmdFrameItem {
+#ifdef ARCANA_CMD_CRYPTO
+    static constexpr uint16_t MAX_DATA = 176;
+#else
     static constexpr uint16_t MAX_DATA = 64;
+#endif
     uint8_t data[MAX_DATA];
     uint16_t len;
     enum Transport : uint8_t { BLE = 0, MQTT = 1 } source;
@@ -27,7 +35,12 @@ struct CmdFrameItem {
 
 /** TX item — response routed back to originating transport */
 struct TxItem {
-    uint8_t data[64];
+#ifdef ARCANA_CMD_CRYPTO
+    static constexpr uint16_t MAX_DATA = 300;
+#else
+    static constexpr uint16_t MAX_DATA = 64;
+#endif
+    uint8_t data[MAX_DATA];
     uint16_t len;
     CmdFrameItem::Transport target;
 };
@@ -102,8 +115,16 @@ private:
     StaticQueue_t mTxQueueBuf;
     uint8_t mTxQueueStorage[TX_QUEUE_LEN * sizeof(TxItem)];
 
-    // Bridge task
+#ifdef ARCANA_CMD_CRYPTO
+    // CryptoEngine for command encryption (PSK-based, AES-256-CCM)
+    CryptoEngine mCrypto;
+    bool mEncryptionEnabled;
+
+    // Larger bridge stack for protobuf + crypto buffers on stack
+    static const uint16_t BRIDGE_STACK_SIZE = 512;
+#else
     static const uint16_t BRIDGE_STACK_SIZE = 256;
+#endif
     StaticTask_t mBridgeTaskBuf;
     StackType_t mBridgeStack[BRIDGE_STACK_SIZE];
 
