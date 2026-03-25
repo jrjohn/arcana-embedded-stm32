@@ -17,7 +17,8 @@ MBEDTLS_DEFS = -DMBEDTLS_CONFIG_FILE='"mbedtls_config.h"'
 # --- C++ sources ---
 CPP_SRCS += \
 $(SHARED)/Src/Observable.cpp \
-$(SHARED)/Src/CryptoEngine.cpp
+$(SHARED)/Src/CryptoEngine.cpp \
+$(SHARED)/Src/KeyExchangeManager.cpp
 
 # --- C sources ---
 C_SRCS += \
@@ -31,11 +32,24 @@ $(SHARED)/Src/mbedtls/sha256.c \
 $(SHARED)/Src/mbedtls/cipher.c \
 $(SHARED)/Src/mbedtls/cipher_wrap.c \
 $(SHARED)/Src/mbedtls/platform_util.c \
-$(SHARED)/Src/mbedtls/constant_time.c
+$(SHARED)/Src/mbedtls/constant_time.c \
+$(SHARED)/Src/mbedtls/ecp.c \
+$(SHARED)/Src/mbedtls/ecp_curves.c \
+$(SHARED)/Src/mbedtls/bignum.c \
+$(SHARED)/Src/mbedtls/bignum_core.c \
+$(SHARED)/Src/mbedtls/bignum_mod.c \
+$(SHARED)/Src/mbedtls/bignum_mod_raw.c \
+$(SHARED)/Src/mbedtls/ecdh.c \
+$(SHARED)/Src/mbedtls/entropy.c \
+$(SHARED)/Src/mbedtls/entropy_poll.c \
+$(SHARED)/Src/mbedtls/entropy_hardware_alt.c \
+$(SHARED)/Src/mbedtls/ctr_drbg.c \
+$(SHARED)/Src/mbedtls/md.c
 
 OBJS += \
 ./Shared/Src/Observable.o \
 ./Shared/Src/CryptoEngine.o \
+./Shared/Src/KeyExchangeManager.o \
 ./Shared/Src/arcana_cmd.pb.o \
 ./Shared/Src/nanopb/pb_common.o \
 ./Shared/Src/nanopb/pb_encode.o \
@@ -46,7 +60,19 @@ OBJS += \
 ./Shared/Src/mbedtls/cipher.o \
 ./Shared/Src/mbedtls/cipher_wrap.o \
 ./Shared/Src/mbedtls/platform_util.o \
-./Shared/Src/mbedtls/constant_time.o
+./Shared/Src/mbedtls/constant_time.o \
+./Shared/Src/mbedtls/ecp.o \
+./Shared/Src/mbedtls/ecp_curves.o \
+./Shared/Src/mbedtls/bignum.o \
+./Shared/Src/mbedtls/bignum_core.o \
+./Shared/Src/mbedtls/bignum_mod.o \
+./Shared/Src/mbedtls/bignum_mod_raw.o \
+./Shared/Src/mbedtls/ecdh.o \
+./Shared/Src/mbedtls/entropy.o \
+./Shared/Src/mbedtls/entropy_poll.o \
+./Shared/Src/mbedtls/entropy_hardware_alt.o \
+./Shared/Src/mbedtls/ctr_drbg.o \
+./Shared/Src/mbedtls/md.o
 
 CPP_DEPS += \
 ./Shared/Src/Observable.d \
