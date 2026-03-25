@@ -52,6 +52,9 @@ public:
     /** Mark date as uploaded in device.ats. */
     void markUploaded(uint32_t dateYYYYMMDD);
 
+    /** Shared 4KB read cache — for upload file streaming (same task, sequential) */
+    static uint8_t* getReadCache() { return sReadCache; }
+
 private:
     AtsStorageServiceImpl();
     ~AtsStorageServiceImpl();
