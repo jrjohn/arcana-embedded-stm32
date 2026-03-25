@@ -81,28 +81,48 @@ def upload_file(device_id, filename):
     # Check if gzip
     is_gzip = request.headers.get("Content-Encoding", "").lower() == "gzip"
 
-    # Read stream
-    raw_data = request.get_data()
-    if is_gzip:
-        try:
-            data = gzip.decompress(raw_data)
-        except Exception as e:
-            abort(400, f"Gzip decompress failed: {e}")
-    else:
-        data = raw_data
-
-    # Write to file
+    # Streaming write — handle large files without buffering entire body
     mode = "r+b" if (is_partial and filepath.exists()) else "wb"
-    if is_partial and filepath.exists():
-        with open(filepath, mode) as f:
-            f.seek(write_offset)
-            f.write(data)
-    else:
-        with open(filepath, "wb") as f:
-            f.write(data)
+    sha256_hash = hashlib.sha256()
+    written = 0
+    start_time = time.time()
 
-    # Compute checksum of written portion
-    sha256 = hashlib.sha256(data).hexdigest()
+    print(f"[UPLOAD] {device_id}/{filename}: receiving stream...")
+
+    with open(filepath, mode) as f:
+        if is_partial and write_offset > 0:
+            f.seek(write_offset)
+
+        stream = request.stream
+        last_log = time.time()
+        while True:
+            chunk = stream.read(65536)
+            if not chunk:
+                break
+            if is_gzip and written == 0:
+                remaining = stream.read()
+                all_data = chunk + remaining
+                try:
+                    decompressed = gzip.decompress(all_data)
+                except Exception as e:
+                    abort(400, f"Gzip decompress failed: {e}")
+                f.write(decompressed)
+                sha256_hash.update(decompressed)
+                written += len(decompressed)
+                break
+            else:
+                f.write(chunk)
+                sha256_hash.update(chunk)
+                written += len(chunk)
+                # Progress log every 5 seconds
+                now = time.time()
+                if now - last_log >= 5:
+                    rate = written / (now - start_time) / 1024 if (now - start_time) > 0 else 0
+                    print(f"  [STREAM] {device_id}/{filename}: "
+                          f"{written:,}B received ({rate:.1f} KB/s)")
+                    last_log = now
+
+    sha256 = sha256_hash.hexdigest()
 
     # Verify checksum if provided
     expected_checksum = request.headers.get("X-Checksum-SHA256")
@@ -118,7 +138,7 @@ def upload_file(device_id, filename):
         "status": "complete" if complete else "partial",
         "device_id": device_id,
         "filename": filename,
-        "written_bytes": len(data),
+        "written_bytes": written,
         "offset": write_offset,
         "file_size": file_size,
         "sha256": sha256,
@@ -265,4 +285,7 @@ if __name__ == "__main__":
     print(f"    GET  /upload/<device_id>/<filename>/status  (resume check)")
     print()
 
-    app.run(host=args.host, port=args.port, debug=True, ssl_context=ssl_ctx)
+    # No request timeout — large file uploads can take hours over slow links
+    app.config['MAX_CONTENT_LENGTH'] = None  # no body size limit
+    app.run(host=args.host, port=args.port, debug=True, ssl_context=ssl_ctx,
+            threaded=True)

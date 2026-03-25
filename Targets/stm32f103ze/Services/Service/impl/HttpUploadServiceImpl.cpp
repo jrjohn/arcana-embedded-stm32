@@ -10,7 +10,10 @@
 #include <cstdio>
 #include <cstring>
 
-extern "C" void sdio_force_reinit(void);
+extern "C" {
+    void sdio_force_reinit(void);
+    void sd_card_full_reinit(void);
+}
 
 namespace arcana {
 
@@ -46,7 +49,7 @@ uint8_t HttpUploadServiceImpl::uploadPendingFiles(Esp8266& esp) {
     storage.pauseRecording();
     vTaskDelay(pdMS_TO_TICKS(500));  // let ATS task finish current write + enter yield loop
 
-    // Reset SDIO — long DMA writes degrade polling read (known issue)
+    // Reset SDIO state (lighter than full reinit — preserves FatFS mount)
     sdio_force_reinit();
 
     // List pending files (safe now — ATS task suspended)
@@ -104,6 +107,7 @@ bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
 
     uint32_t fileSize = (uint32_t)f_size(&fp);
     if (fileSize == 0) { f_close(&fp); return false; }
+    printf("[UPL] size=%luKB\r\n", (unsigned long)(fileSize / 1024));
 
     // SSL connect
     printf("[UPL] SSL connecting...\r\n");
@@ -201,11 +205,22 @@ bool HttpUploadServiceImpl::streamFileBody(Esp8266& esp, FIL* fp, uint32_t fileS
         uint32_t remaining = fileSize - sent;
         uint16_t chunkLen = (remaining > CHUNK_SIZE) ? CHUNK_SIZE : (uint16_t)remaining;
 
-        // Read from SD
+        // Read from SD with retry + SDIO reinit on failure
         UINT br = 0;
-        FRESULT fr = f_read(fp, chunkBuf, chunkLen, &br);
+        FRESULT fr = FR_DISK_ERR;
+        for (int retry = 0; retry < 3; retry++) {
+            SDIO->DCTRL = 0;
+            SDIO->ICR = 0xFFFFFFFF;
+            br = 0;
+            fr = f_read(fp, chunkBuf, chunkLen, &br);
+            if (fr == FR_OK && br > 0) break;
+            // Reinit SDIO and retry
+            sdio_force_reinit();
+            vTaskDelay(pdMS_TO_TICKS(50));
+        }
         if (fr != FR_OK || br == 0) {
-            printf("[UPL] read FAIL fr=%d br=%u\r\n", (int)fr, (unsigned)br);
+            printf("[UPL] read FAIL fr=%d br=%u at %lu\r\n",
+                   (int)fr, (unsigned)br, (unsigned long)sent);
             return false;
         }
 
@@ -226,7 +241,7 @@ bool HttpUploadServiceImpl::streamFileBody(Esp8266& esp, FIL* fp, uint32_t fileS
 
         sent += br;
 
-        // Periodic SDIO reinit — polling read degrades after ~100 consecutive reads
+        // Proactive SDIO reinit every 32KB
         if (sent % (CHUNK_SIZE * 64) == 0) {
             sdio_force_reinit();
         }
