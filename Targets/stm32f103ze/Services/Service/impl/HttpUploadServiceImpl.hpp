@@ -46,7 +46,7 @@ private:
     // Config
     static const char* SERVER;
     static const uint16_t PORT;
-    static const uint16_t CHUNK_SIZE = 512;  // AT+CIPSEND per call (smaller = less SDIO stress)
+    static const uint16_t CHUNK_SIZE = 512;  // max stable with SDIO polling read
 };
 
 } // namespace arcana

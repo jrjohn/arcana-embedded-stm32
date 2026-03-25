@@ -242,7 +242,7 @@ bool HttpUploadServiceImpl::streamFileBody(Esp8266& esp, FIL* fp, uint32_t fileS
         sent += br;
 
         // Proactive SDIO reinit every 32KB
-        if (sent % (CHUNK_SIZE * 64) == 0) {
+        if (sent % (32768) == 0) {
             sdio_force_reinit();
         }
 
