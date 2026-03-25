@@ -55,6 +55,9 @@ public:
     /** Shared 4KB read cache — for upload file streaming */
     static uint8_t* getReadCache() { return sReadCache; }
 
+    /** True when DB is open and recording (boot complete) */
+    bool isReady() const { return mDbReady; }
+
     /** Cooperative pause/resume — ATS task yields cleanly between writes */
     void pauseRecording()  { mUploadPause = true; }
     void resumeRecording() { mUploadPause = false; }

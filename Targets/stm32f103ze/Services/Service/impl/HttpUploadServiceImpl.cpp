@@ -10,6 +10,8 @@
 #include <cstdio>
 #include <cstring>
 
+extern "C" void sdio_force_reinit(void);
+
 namespace arcana {
 
 const char* HttpUploadServiceImpl::SERVER = UPLOAD_SERVER_VALUE;
@@ -34,9 +36,18 @@ uint8_t HttpUploadServiceImpl::uploadPendingFiles(Esp8266& esp) {
     }
     deviceId[8] = '\0';
 
+    // Wait for ATS to finish boot (recovery scan etc.)
+    for (int i = 0; i < 30 && !storage.isReady(); i++) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+    if (!storage.isReady()) return 0;
+
     // Pause ATS recording cooperatively — FatFS not thread-safe
     storage.pauseRecording();
-    vTaskDelay(pdMS_TO_TICKS(200));  // let ATS task finish current write + enter yield loop
+    vTaskDelay(pdMS_TO_TICKS(500));  // let ATS task finish current write + enter yield loop
+
+    // Reset SDIO — long DMA writes degrade polling read (known issue)
+    sdio_force_reinit();
 
     // List pending files (safe now — ATS task suspended)
     atsstorage::AtsStorageServiceImpl::PendingFile pending[atsstorage::AtsStorageServiceImpl::MAX_PENDING];
@@ -82,8 +93,9 @@ uint8_t HttpUploadServiceImpl::uploadPendingFiles(Esp8266& esp) {
 bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
                                     const char* deviceId) {
     printf("[UPL] open %s\r\n", filename);
-    // Shared FIL with AtsStorage (compact at boot, upload at runtime — never concurrent)
+    // Shared FIL — clear before use
     FIL& fp = atsstorage::AtsStorageServiceImpl::sSharedFil;
+    memset(&fp, 0, sizeof(FIL));
     FRESULT fr = f_open(&fp, filename, FA_READ);
     if (fr != FR_OK) {
         printf("[UPL] open FAIL %d\r\n", (int)fr);
@@ -183,6 +195,7 @@ bool HttpUploadServiceImpl::streamFileBody(Esp8266& esp, FIL* fp, uint32_t fileS
     // Reuse AtsStorage's 4KB read cache (same task, sequential access)
     uint8_t* chunkBuf = atsstorage::AtsStorageServiceImpl::getReadCache();
 
+    printf("[UPL] stream %luB\r\n", (unsigned long)fileSize);
     uint32_t sent = 0;
     while (sent < fileSize) {
         uint32_t remaining = fileSize - sent;
@@ -190,20 +203,37 @@ bool HttpUploadServiceImpl::streamFileBody(Esp8266& esp, FIL* fp, uint32_t fileS
 
         // Read from SD
         UINT br = 0;
-        if (f_read(fp, chunkBuf, chunkLen, &br) != FR_OK || br == 0) {
+        FRESULT fr = f_read(fp, chunkBuf, chunkLen, &br);
+        if (fr != FR_OK || br == 0) {
+            printf("[UPL] read FAIL fr=%d br=%u\r\n", (int)fr, (unsigned)br);
             return false;
         }
 
         // AT+CIPSEND=<len>
         char cipsend[24];
         snprintf(cipsend, sizeof(cipsend), "AT+CIPSEND=%u", (unsigned)br);
-        if (!esp.sendCmd(cipsend, ">", 3000)) return false;
+        if (!esp.sendCmd(cipsend, ">", 5000)) {
+            printf("[UPL] CIPSEND FAIL at %lu\r\n", (unsigned long)sent);
+            return false;
+        }
 
         // Send chunk
         esp.sendData(chunkBuf, br, 5000);
-        if (!esp.waitFor("SEND OK", 10000)) return false;
+        if (!esp.waitFor("SEND OK", 10000)) {
+            printf("[UPL] SEND FAIL at %lu\r\n", (unsigned long)sent);
+            return false;
+        }
 
         sent += br;
+
+        // Periodic SDIO reinit — polling read degrades after ~100 consecutive reads
+        if (sent % (CHUNK_SIZE * 64) == 0) {
+            sdio_force_reinit();
+        }
+
+        if (sent % (CHUNK_SIZE * 10) == 0 || sent == fileSize) {
+            printf("[UPL] %lu/%lu\r\n", (unsigned long)sent, (unsigned long)fileSize);
+        }
     }
     return true;
 }
