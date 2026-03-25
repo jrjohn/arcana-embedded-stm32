@@ -52,13 +52,17 @@ CommandBridge::CommandBridge()
     , mRxQueue(0)
     , mRxQueueBuf()
     , mRxQueueStorage{}
+#ifdef ARCANA_CMD_CRYPTO
     , mTxQueue(0)
     , mTxQueueBuf()
     , mTxQueueStorage{}
+#endif
     , mBridgeTaskBuf()
     , mBridgeStack{}
+#ifdef ARCANA_CMD_CRYPTO
     , mTxTaskBuf()
     , mTxStack{}
+#endif
     , mBleSend(nullptr)
     , mBleCtx(nullptr)
     , mMqttSend(nullptr)
@@ -82,8 +86,10 @@ CommandBridge::CommandBridge()
     // Create queues
     mRxQueue = xQueueCreateStatic(RX_QUEUE_LEN, sizeof(CmdFrameItem),
                                    mRxQueueStorage, &mRxQueueBuf);
+#ifdef ARCANA_CMD_CRYPTO
     mTxQueue = xQueueCreateStatic(TX_QUEUE_LEN, sizeof(TxItem),
                                    mTxQueueStorage, &mTxQueueBuf);
+#endif
 
 #ifdef ARCANA_CMD_CRYPTO
     // Initialize AES-256-CCM encryption (same PSK as ESP32)
@@ -134,13 +140,15 @@ bool CommandBridge::submitFrame(const uint8_t* data, uint16_t len,
 // ---------------------------------------------------------------------------
 
 void CommandBridge::startTasks() {
-    xTaskCreateStatic(bridgeTask, "CmdRx", BRIDGE_STACK_SIZE,
+    xTaskCreateStatic(bridgeTask, "CmdBr", BRIDGE_STACK_SIZE,
                       this, tskIDLE_PRIORITY + 2,
                       mBridgeStack, &mBridgeTaskBuf);
 
+#ifdef ARCANA_CMD_CRYPTO
     xTaskCreateStatic(txTask, "CmdTx", TX_STACK_SIZE,
                       this, tskIDLE_PRIORITY + 2,
                       mTxStack, &mTxTaskBuf);
+#endif
 }
 
 void CommandBridge::bridgeTask(void* param) {
@@ -276,18 +284,28 @@ void CommandBridge::bridgeTask(void* param) {
             }
 #endif
 
-            // Push to TX queue
+#ifdef ARCANA_CMD_CRYPTO
+            // Push to TX queue (TX task sends)
             TxItem tx;
             memcpy(tx.data, frameBuf, frameLen);
             tx.len = static_cast<uint16_t>(frameLen);
             tx.target = frame.source;
             xQueueSend(self->mTxQueue, &tx, pdMS_TO_TICKS(50));
+#else
+            // Direct send (no TX task on small-RAM boards)
+            if (frame.source == CmdFrameItem::BLE && self->mBleSend) {
+                self->mBleSend(frameBuf, (uint16_t)frameLen, self->mBleCtx);
+            } else if (frame.source == CmdFrameItem::MQTT && self->mMqttSend) {
+                self->mMqttSend(frameBuf, (uint16_t)frameLen, self->mMqttCtx);
+            }
+#endif
 
             LOG_D(ats::ErrorSource::Cmd, evt::CMD_RSP, (uint32_t)rsp.status);
         }
     }
 }
 
+#ifdef ARCANA_CMD_CRYPTO
 void CommandBridge::txTask(void* param) {
     CommandBridge* self = static_cast<CommandBridge*>(param);
 
@@ -302,6 +320,7 @@ void CommandBridge::txTask(void* param) {
         }
     }
 }
+#endif
 
 // ---------------------------------------------------------------------------
 // Legacy processFrame — direct call (kept for compatibility)

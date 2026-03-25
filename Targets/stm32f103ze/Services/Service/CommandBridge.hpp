@@ -92,7 +92,9 @@ private:
     CommandBridge();
 
     static void bridgeTask(void* param);
+#ifdef ARCANA_CMD_CRYPTO
     static void txTask(void* param);
+#endif
 
     static const uint8_t MAX_COMMANDS = 16;
     ICommand* mCommands[MAX_COMMANDS];
@@ -103,17 +105,24 @@ private:
     // Shared sensor cache
     SensorDataCache mSensorCache;
 
-    // RX frame queue
+    // RX frame queue (depth 2 with crypto — commands are low-frequency)
+#ifdef ARCANA_CMD_CRYPTO
+    static const uint8_t RX_QUEUE_LEN = 2;
+    static const uint8_t TX_QUEUE_LEN = 2;
+#else
     static const uint8_t RX_QUEUE_LEN = 8;
+    static const uint8_t TX_QUEUE_LEN = 8;
+#endif
     QueueHandle_t mRxQueue;
     StaticQueue_t mRxQueueBuf;
     uint8_t mRxQueueStorage[RX_QUEUE_LEN * sizeof(CmdFrameItem)];
 
-    // TX response queue
-    static const uint8_t TX_QUEUE_LEN = 8;
+#ifdef ARCANA_CMD_CRYPTO
+    // TX response queue — only with TX task
     QueueHandle_t mTxQueue;
     StaticQueue_t mTxQueueBuf;
     uint8_t mTxQueueStorage[TX_QUEUE_LEN * sizeof(TxItem)];
+#endif
 
 #ifdef ARCANA_CMD_CRYPTO
     // CryptoEngine for command encryption (PSK-based, AES-256-CCM)
@@ -128,10 +137,12 @@ private:
     StaticTask_t mBridgeTaskBuf;
     StackType_t mBridgeStack[BRIDGE_STACK_SIZE];
 
-    // TX task
+#ifdef ARCANA_CMD_CRYPTO
+    // TX task — only on boards with enough RAM
     static const uint16_t TX_STACK_SIZE = 256;
     StaticTask_t mTxTaskBuf;
     StackType_t mTxStack[TX_STACK_SIZE];
+#endif
 
     // Transport send functions
     TransportSendFn mBleSend;
