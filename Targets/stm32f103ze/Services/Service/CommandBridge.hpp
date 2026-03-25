@@ -107,7 +107,7 @@ private:
 
     // RX frame queue (depth 2 with crypto — commands are low-frequency)
 #ifdef ARCANA_CMD_CRYPTO
-    static const uint8_t RX_QUEUE_LEN = 2;
+    static const uint8_t RX_QUEUE_LEN = 4;
     static const uint8_t TX_QUEUE_LEN = 2;
 #else
     static const uint8_t RX_QUEUE_LEN = 8;
