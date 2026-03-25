@@ -255,6 +255,8 @@ def main():
                         help="Command to send (default: ping)")
     parser.add_argument("--no-encrypt", action="store_true",
                         help="Send plaintext (no AES-256-CCM)")
+    parser.add_argument("--binary", action="store_true",
+                        help="Use STM32 binary codec instead of protobuf")
     parser.add_argument("--broker", default=BROKER)
     parser.add_argument("--port", type=int, default=PORT)
     parser.add_argument("--timeout", type=int, default=5, help="Response timeout (sec)")
@@ -263,16 +265,21 @@ def main():
     cluster, command = COMMANDS[args.cmd]
     crypto = None if args.no_encrypt else CryptoEngine(PSK_HEX)
 
-    # Build protobuf
-    pb = encode_cmd_request(cluster, command)
-    print(f"[TX] {args.cmd}: cluster=0x{cluster:02X} cmd=0x{command:02X} pb={len(pb)}B")
+    if args.binary:
+        # STM32 binary codec: [cluster][commandId][paramsLen][params...]
+        payload = bytes([cluster, command, 0])  # no params
+        print(f"[TX] {args.cmd}: binary codec {payload.hex()}")
+    else:
+        # Protobuf
+        payload = encode_cmd_request(cluster, command)
+        print(f"[TX] {args.cmd}: cluster=0x{cluster:02X} cmd=0x{command:02X} pb={len(payload)}B")
 
     # Encrypt
     if crypto:
-        encrypted = crypto.encrypt(pb)
+        encrypted = crypto.encrypt(payload)
         print(f"[TX] Encrypted: {len(encrypted)}B (counter={crypto.tx_counter - 1})")
     else:
-        encrypted = pb
+        encrypted = payload
         print(f"[TX] Plaintext: {len(encrypted)}B")
 
     # Frame
@@ -311,26 +318,44 @@ def main():
         else:
             plaintext = payload
 
-        # Decode protobuf
+        # Decode response
         try:
-            rsp = decode_cmd_response(plaintext)
-            status_name = STATUS_NAMES.get(rsp["status"], f"0x{rsp['status']:02X}")
-            print(f"[RX] Response: cluster=0x{rsp['cluster']:02X} "
-                  f"cmd=0x{rsp['command']:02X} status={status_name}")
-            if rsp["payload"]:
-                print(f"[RX] Payload ({len(rsp['payload'])}B): "
-                      f"{rsp['payload'].hex()}")
-                # Try interpret common responses
-                if len(rsp["payload"]) == 4:
-                    val = struct.unpack("<I", rsp["payload"])[0]
-                    print(f"[RX] As uint32: {val}")
-                elif len(rsp["payload"]) > 4:
-                    try:
-                        print(f"[RX] As string: {rsp['payload'].decode('utf-8', errors='replace')}")
-                    except:
-                        pass
+            if args.binary:
+                # Binary codec: [cluster][commandId][status][dataLen][data...]
+                if len(plaintext) >= 4:
+                    rsp_cluster = plaintext[0]
+                    rsp_cmd = plaintext[1]
+                    rsp_status = plaintext[2]
+                    rsp_data_len = plaintext[3]
+                    rsp_data = plaintext[4:4 + rsp_data_len] if rsp_data_len > 0 else b""
+                    status_name = STATUS_NAMES.get(rsp_status, f"0x{rsp_status:02X}")
+                    print(f"[RX] Response: cluster=0x{rsp_cluster:02X} "
+                          f"cmd=0x{rsp_cmd:02X} status={status_name}")
+                    if rsp_data:
+                        print(f"[RX] Payload ({len(rsp_data)}B): {rsp_data.hex()}")
+                        if len(rsp_data) == 4:
+                            val = struct.unpack("<I", rsp_data)[0]
+                            print(f"[RX] As uint32: {val}")
+                else:
+                    print(f"[RX] Binary too short: {plaintext.hex()}")
+            else:
+                rsp = decode_cmd_response(plaintext)
+                status_name = STATUS_NAMES.get(rsp["status"], f"0x{rsp['status']:02X}")
+                print(f"[RX] Response: cluster=0x{rsp['cluster']:02X} "
+                      f"cmd=0x{rsp['command']:02X} status={status_name}")
+                if rsp["payload"]:
+                    print(f"[RX] Payload ({len(rsp['payload'])}B): "
+                          f"{rsp['payload'].hex()}")
+                    if len(rsp["payload"]) == 4:
+                        val = struct.unpack("<I", rsp["payload"])[0]
+                        print(f"[RX] As uint32: {val}")
+                    elif len(rsp["payload"]) > 4:
+                        try:
+                            print(f"[RX] As string: {rsp['payload'].decode('utf-8', errors='replace')}")
+                        except:
+                            pass
         except Exception as e:
-            print(f"[RX] Protobuf decode FAILED: {e}")
+            print(f"[RX] Decode FAILED: {e}")
             print(f"[RX] Raw: {plaintext.hex()}")
 
         response_received[0] = True

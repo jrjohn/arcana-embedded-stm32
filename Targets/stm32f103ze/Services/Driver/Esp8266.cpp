@@ -144,18 +144,33 @@ void Esp8266::isr_onIdle() {
     mRxLen = mRxPos;
 
     // Check for unsolicited incoming data (+IPD or +MQTTSUBRECV)
-    // In IPD passthrough mode, +IPD stays in mRxBuf for direct access
-    if (!mIpdPassthrough &&
-        (strncmp(mRxBuf, "+IPD,", 5) == 0 ||
-         strncmp(mRxBuf, "+MQTTSUBRECV:", 13) == 0)) {
-        uint16_t copyLen = mRxLen < MQTT_BUF_SIZE - 1 ? mRxLen : MQTT_BUF_SIZE - 1;
-        memcpy(mMqttBuf, mRxBuf, copyLen);
-        mMqttBuf[copyLen] = '\0';
-        mMqttLen = copyLen;
-        mMqttReady = true;
-        // Clear RX buffer for next frame
-        mRxPos = 0;
-        mRxBuf[0] = '\0';
+    // Search anywhere in buffer — may arrive appended to AT response (no IDLE gap)
+    if (!mIpdPassthrough) {
+        const char* mqttPos = nullptr;
+        uint16_t mqttOff = 0;
+
+        // Search for +MQTTSUBRECV: or +IPD, anywhere in buffer
+        for (uint16_t i = 0; i + 13 <= mRxLen; i++) {
+            if (mRxBuf[i] == '+') {
+                if (strncmp(mRxBuf + i, "+MQTTSUBRECV:", 13) == 0 ||
+                    strncmp(mRxBuf + i, "+IPD,", 5) == 0) {
+                    mqttPos = mRxBuf + i;
+                    mqttOff = i;
+                    break;
+                }
+            }
+        }
+
+        if (mqttPos) {
+            uint16_t dataLen = mRxLen - mqttOff;
+            uint16_t copyLen = dataLen < MQTT_BUF_SIZE - 1 ? dataLen : MQTT_BUF_SIZE - 1;
+            memcpy(mMqttBuf, mqttPos, copyLen);
+            mMqttBuf[copyLen] = '\0';
+            mMqttLen = copyLen;
+            mMqttReady = true;
+            mRxPos = 0;
+            mRxBuf[0] = '\0';
+        }
     }
 
     // Signal that a complete frame was received

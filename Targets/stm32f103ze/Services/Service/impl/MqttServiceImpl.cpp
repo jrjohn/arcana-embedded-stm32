@@ -240,12 +240,12 @@ void MqttServiceImpl::runTask() {
         uint32_t lastNtpTick = xTaskGetTickCount();
 
         // --- Phase 5: Main loop ---
+        // --- Phase 5: Main loop ---
         while (mRunning && mMqttConnected) {
             // Publish sensor data
             if (mSensorPending) {
                 mSensorPending = false;
                 if (!publishSensorData(&mPendingSensor)) {
-                    // Check if still connected
                     if (!isMqttConnected()) {
                         mMqttConnected = false;
                         break;
@@ -262,6 +262,7 @@ void MqttServiceImpl::runTask() {
 
             // Check incoming +MQTTSUBRECV
             if (esp.hasMqttMsg()) {
+                LOG_I(ats::ErrorSource::Mqtt, 0x0030, (uint32_t)esp.getMqttMsgLen());
                 processIncomingMsg();
                 esp.clearMqttMsg();
             }
@@ -271,7 +272,6 @@ void MqttServiceImpl::runTask() {
                 auto& syslog = log::SyslogAppender::getInstance();
                 if (syslog.pending() > 0) {
                     syslog.flushViaUdp(esp);
-                    // If UDP broke, try reopen next cycle
                     if (syslog.pending() > 0) {
                         syslog.openUdp(esp);
                     }
