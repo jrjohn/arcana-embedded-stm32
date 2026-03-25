@@ -34,11 +34,20 @@ uint8_t HttpUploadServiceImpl::uploadPendingFiles(Esp8266& esp) {
     }
     deviceId[8] = '\0';
 
-    // List pending files
+    // Pause ATS recording cooperatively — FatFS not thread-safe
+    storage.pauseRecording();
+    vTaskDelay(pdMS_TO_TICKS(200));  // let ATS task finish current write + enter yield loop
+
+    // List pending files (safe now — ATS task suspended)
     atsstorage::AtsStorageServiceImpl::PendingFile pending[atsstorage::AtsStorageServiceImpl::MAX_PENDING];
     uint8_t count = storage.listPendingUploads(pending, atsstorage::AtsStorageServiceImpl::MAX_PENDING);
 
     LOG_I(ats::ErrorSource::System, 0x0070, (uint32_t)count);  // pending file count
+
+    if (count == 0) {
+        storage.resumeRecording();
+        return 0;
+    }
 
     uint8_t uploaded = 0;
     for (uint8_t i = 0; i < count; i++) {
@@ -56,9 +65,12 @@ uint8_t HttpUploadServiceImpl::uploadPendingFiles(Esp8266& esp) {
     }
 
     // Always upload device.ats blackbox (latest version)
-    if (uploaded > 0 || count == 0) {
+    if (uploaded > 0) {
         uploadFile(esp, "device.ats", deviceId);
     }
+
+    // Resume ATS recording
+    storage.resumeRecording();
 
     return uploaded;
 }
@@ -69,22 +81,30 @@ uint8_t HttpUploadServiceImpl::uploadPendingFiles(Esp8266& esp) {
 
 bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
                                     const char* deviceId) {
+    printf("[UPL] open %s\r\n", filename);
     // Shared FIL with AtsStorage (compact at boot, upload at runtime — never concurrent)
     FIL& fp = atsstorage::AtsStorageServiceImpl::sSharedFil;
     FRESULT fr = f_open(&fp, filename, FA_READ);
-    if (fr != FR_OK) return false;
+    if (fr != FR_OK) {
+        printf("[UPL] open FAIL %d\r\n", (int)fr);
+        return false;
+    }
 
     uint32_t fileSize = (uint32_t)f_size(&fp);
     if (fileSize == 0) { f_close(&fp); return false; }
 
     // SSL connect
+    printf("[UPL] SSL connecting...\r\n");
     if (!sslConnect(esp)) {
+        printf("[UPL] SSL FAIL\r\n");
         f_close(&fp);
         return false;
     }
 
+    printf("[UPL] SSL OK. Sending header...\r\n");
     // Send HTTP header
     if (!sendHttpHeader(esp, filename, deviceId, fileSize)) {
+        printf("[UPL] Header FAIL\r\n");
         sslClose(esp);
         f_close(&fp);
         return false;
@@ -96,6 +116,9 @@ bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
 
     if (ok) {
         ok = waitHttpResponse(esp);
+        if (!ok) LOG_W(ats::ErrorSource::System, 0x0077);  // HTTP response failed
+    } else {
+        LOG_W(ats::ErrorSource::System, 0x0078);  // Stream body failed
     }
 
     sslClose(esp);
@@ -108,7 +131,8 @@ bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
 
 bool HttpUploadServiceImpl::sslConnect(Esp8266& esp) {
     char cmd[80];
-    snprintf(cmd, sizeof(cmd), "AT+CIPSTART=\"SSL\",\"%s\",%u", SERVER, PORT);
+    // Try TCP first (SSL may not be supported on all ESP8266 AT versions)
+    snprintf(cmd, sizeof(cmd), "AT+CIPSTART=\"TCP\",\"%s\",%u", SERVER, PORT);
     if (!esp.sendCmd(cmd, "OK", 10000)) {
         if (!esp.responseContains("ALREADY CONNECTED")) {
             return false;

@@ -52,8 +52,13 @@ public:
     /** Mark date as uploaded in device.ats. */
     void markUploaded(uint32_t dateYYYYMMDD);
 
-    /** Shared 4KB read cache — for upload file streaming (same task, sequential) */
+    /** Shared 4KB read cache — for upload file streaming */
     static uint8_t* getReadCache() { return sReadCache; }
+
+    /** Cooperative pause/resume — ATS task yields cleanly between writes */
+    void pauseRecording()  { mUploadPause = true; }
+    void resumeRecording() { mUploadPause = false; }
+    bool isPaused() const  { return mUploadPause; }
 
     /** Shared FIL for sequential operations (compact at boot, upload at runtime) */
     static FIL sSharedFil;
@@ -121,6 +126,7 @@ private:
     bool mDbReady;
     bool mDeviceDbReady;
     volatile bool mFormatRequested;
+    volatile bool mUploadPause;
 
     // Pending write data
     SensorDataModel mPendingData;

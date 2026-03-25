@@ -97,6 +97,7 @@ AtsStorageServiceImpl::AtsStorageServiceImpl()
     , mDbReady(false)
     , mDeviceDbReady(false)
     , mFormatRequested(false)
+    , mUploadPause(false)
     , mPendingData()
     , mWriteSemBuffer()
     , mWriteSem(0)
@@ -834,6 +835,11 @@ void AtsStorageServiceImpl::taskLoop() {
     bool provisionToastShown = false;
 
     while (mRunning) {
+        // Cooperative pause for upload (yield cleanly after finishing write)
+        while (mUploadPause && mRunning) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+
         // 1kHz pacing — 1 record per ms
         vTaskDelayUntil(&nextWake, 1);
 
