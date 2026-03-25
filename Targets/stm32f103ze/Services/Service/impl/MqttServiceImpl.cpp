@@ -263,6 +263,20 @@ void MqttServiceImpl::runTask() {
             // Check incoming +MQTTSUBRECV
             if (esp.hasMqttMsg()) {
                 LOG_I(ats::ErrorSource::Mqtt, 0x0030, (uint32_t)esp.getMqttMsgLen());
+                // Debug: print first 30 chars of MQTT msg to serial
+                {
+                    const char* raw = esp.getMqttMsg();
+                    uint16_t rawLen = esp.getMqttMsgLen();
+                    char dbg[64];
+                    uint16_t show = rawLen < 50 ? rawLen : 50;
+                    snprintf(dbg, sizeof(dbg), "[MQTT] raw: ");
+                    for (uint16_t i = 0; i < show && i < 20; i++) {
+                        char hex[4];
+                        snprintf(hex, sizeof(hex), "%02X ", (uint8_t)raw[i]);
+                        strncat(dbg, hex, sizeof(dbg) - strlen(dbg) - 1);
+                    }
+                    printf("%s\r\n", dbg);
+                }
                 processIncomingMsg();
                 esp.clearMqttMsg();
             }
@@ -318,16 +332,30 @@ void MqttServiceImpl::processIncomingMsg() {
     uint16_t bufLen = esp.getMqttMsgLen();
 
     // Format: +MQTTSUBRECV:0,"topic",len,payload
-    // Find the payload after the third comma
+    // Parse: skip to second comma, read length, skip third comma → payload
     const char* p = buf;
     int commas = 0;
-    while (p < buf + bufLen && commas < 3) {
+    // Skip to second comma (after topic)
+    while (p < buf + bufLen && commas < 2) {
         if (*p == ',') commas++;
         p++;
     }
-    if (commas < 3) return;
+    if (commas < 2) return;
 
-    uint16_t payloadLen = bufLen - (uint16_t)(p - buf);
+    // Parse length field (decimal digits before third comma)
+    uint16_t declaredLen = 0;
+    while (p < buf + bufLen && *p >= '0' && *p <= '9') {
+        declaredLen = declaredLen * 10 + (*p - '0');
+        p++;
+    }
+    if (p >= buf + bufLen || *p != ',') return;
+    p++;  // skip third comma
+
+    // Use declared length (not buffer arithmetic) to avoid trailing \r\n
+    uint16_t payloadLen = declaredLen;
+    uint16_t available = bufLen - (uint16_t)(p - buf);
+    if (payloadLen > available) payloadLen = available;
+
 
     // Safe eject command
     if (payloadLen == 5 && memcmp(p, "eject", 5) == 0) {

@@ -168,8 +168,18 @@ void Esp8266::isr_onIdle() {
             mMqttBuf[copyLen] = '\0';
             mMqttLen = copyLen;
             mMqttReady = true;
-            mRxPos = 0;
-            mRxBuf[0] = '\0';
+
+            // Truncate mRxBuf to keep only the AT response before +MQTTSUBRECV
+            // so sendCmd can still find "OK" / "SEND OK" etc.
+            if (mqttOff > 0) {
+                mRxBuf[mqttOff] = '\0';
+                mRxLen = mqttOff;
+                mRxPos = mqttOff;
+            } else {
+                // Entire buffer is MQTT — clear it
+                mRxPos = 0;
+                mRxBuf[0] = '\0';
+            }
         }
     }
 
