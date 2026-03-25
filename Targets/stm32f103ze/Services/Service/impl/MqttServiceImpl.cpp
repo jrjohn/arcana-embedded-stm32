@@ -241,16 +241,28 @@ void MqttServiceImpl::runTask() {
 
         // --- Phase 5: Main loop ---
         // --- Phase 5: Main loop ---
+        uint32_t lastSuccessTick = xTaskGetTickCount();
+        static const uint32_t ESP_WATCHDOG_MS = 30000;  // 30s no publish → hard reset
+
         while (mRunning && mMqttConnected) {
             // Publish sensor data
             if (mSensorPending) {
                 mSensorPending = false;
-                if (!publishSensorData(&mPendingSensor)) {
+                if (publishSensorData(&mPendingSensor)) {
+                    lastSuccessTick = xTaskGetTickCount();
+                } else {
                     if (!isMqttConnected()) {
                         mMqttConnected = false;
                         break;
                     }
                 }
+            }
+
+            // ESP8266 watchdog: hard reset if no successful publish for 30s
+            if ((xTaskGetTickCount() - lastSuccessTick) > pdMS_TO_TICKS(ESP_WATCHDOG_MS)) {
+                LOG_W(ats::ErrorSource::Wifi, 0x00F0);  // ESP watchdog triggered
+                mMqttConnected = false;
+                break;  // → outer loop → resetAndConnect() → hardware reset
             }
 
             // NTP resync every 6 hours
@@ -263,20 +275,6 @@ void MqttServiceImpl::runTask() {
             // Check incoming +MQTTSUBRECV
             if (esp.hasMqttMsg()) {
                 LOG_I(ats::ErrorSource::Mqtt, 0x0030, (uint32_t)esp.getMqttMsgLen());
-                // Debug: print first 30 chars of MQTT msg to serial
-                {
-                    const char* raw = esp.getMqttMsg();
-                    uint16_t rawLen = esp.getMqttMsgLen();
-                    char dbg[64];
-                    uint16_t show = rawLen < 50 ? rawLen : 50;
-                    snprintf(dbg, sizeof(dbg), "[MQTT] raw: ");
-                    for (uint16_t i = 0; i < show && i < 20; i++) {
-                        char hex[4];
-                        snprintf(hex, sizeof(hex), "%02X ", (uint8_t)raw[i]);
-                        strncat(dbg, hex, sizeof(dbg) - strlen(dbg) - 1);
-                    }
-                    printf("%s\r\n", dbg);
-                }
                 processIncomingMsg();
                 esp.clearMqttMsg();
             }

@@ -226,6 +226,8 @@ CLUSTER_SYSTEM = 0x00
 CLUSTER_SENSOR = 0x01
 CLUSTER_DEVICE = 0x02
 
+CLUSTER_SECURITY = 0x04
+
 COMMANDS = {
     "ping":        (CLUSTER_SYSTEM, 0x01),
     "fw_version":  (CLUSTER_SYSTEM, 0x02),
@@ -235,9 +237,135 @@ COMMANDS = {
     "light":       (CLUSTER_SENSOR, 0x04),
     "model":       (CLUSTER_DEVICE, 0x01),
     "serial":      (CLUSTER_DEVICE, 0x02),
+    "key_exchange":(CLUSTER_SECURITY, 0x01),
 }
 
 STATUS_NAMES = {0: "OK", 1: "NotFound", 2: "InvalidParam", 3: "Busy", 4: "Error"}
+
+# ---------------------------------------------------------------------------
+# ECDH P-256 Key Exchange (client side)
+# ---------------------------------------------------------------------------
+
+def perform_key_exchange(crypto_engine, mqtt_client, topic_cmd, topic_rsp, timeout=15):
+    """
+    Perform ECDH P-256 key exchange with STM32.
+    Returns a new CryptoEngine initialized with the session key, or None.
+    """
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives import hashes, serialization
+    import hmac as hmac_mod
+
+    psk = bytes.fromhex(PSK_HEX)
+
+    # Generate client P-256 keypair
+    private_key = ec.generate_private_key(ec.SECP256R1())
+    pub_numbers = private_key.public_key().public_numbers()
+    client_pub = pub_numbers.x.to_bytes(32, 'big') + pub_numbers.y.to_bytes(32, 'big')
+
+    print(f"[KE] Client public key: {client_pub[:8].hex()}...{client_pub[-8:].hex()}")
+
+    # Build KeyExchange request: protobuf with 64-byte payload
+    pb = encode_cmd_request(CLUSTER_SECURITY, 0x01, client_pub)
+    enc = crypto_engine.encrypt(pb)
+    framed = frame_encode(enc)
+
+    result = [None]
+    done = [False]
+
+    def on_ke_message(client, userdata, msg):
+        if msg.topic != topic_rsp:
+            return
+        raw = msg.payload
+        try:
+            raw = bytes.fromhex(raw.decode('ascii'))
+        except:
+            return
+
+        r = frame_decode(raw)
+        if not r:
+            print("[KE] Deframe fail")
+            done[0] = True
+            return
+
+        payload, flags, sid = r
+        try:
+            plain = crypto_engine.decrypt(payload)
+        except Exception as e:
+            print(f"[KE] Decrypt fail: {e}")
+            done[0] = True
+            return
+
+        rsp = decode_cmd_response(plain)
+        if rsp['status'] != 0:
+            print(f"[KE] Server rejected: status={rsp['status']}")
+            done[0] = True
+            return
+
+        if len(rsp['payload']) != 96:
+            print(f"[KE] Bad payload size: {len(rsp['payload'])}")
+            done[0] = True
+            return
+
+        server_pub_bytes = rsp['payload'][:64]
+        auth_tag = rsp['payload'][64:96]
+
+        print(f"[KE] Server public key: {server_pub_bytes[:8].hex()}...{server_pub_bytes[-8:].hex()}")
+
+        # Verify auth tag: HMAC-SHA256(PSK, serverPub || clientPub)
+        auth_data = server_pub_bytes + client_pub
+        expected_tag = hmac_mod.new(psk, auth_data, 'sha256').digest()
+        if auth_tag != expected_tag:
+            print("[KE] Auth tag MISMATCH — possible MITM!")
+            done[0] = True
+            return
+        print("[KE] Auth tag verified OK")
+
+        # Compute ECDH shared secret
+        server_pub_numbers = ec.EllipticCurvePublicNumbers(
+            x=int.from_bytes(server_pub_bytes[:32], 'big'),
+            y=int.from_bytes(server_pub_bytes[32:64], 'big'),
+            curve=ec.SECP256R1()
+        )
+        server_pub_key = server_pub_numbers.public_key()
+        shared_secret = private_key.exchange(ec.ECDH(), server_pub_key)
+
+        print(f"[KE] Shared secret: {shared_secret[:8].hex()}...")
+
+        # Derive session key: HKDF(ikm=sharedSecret, salt=PSK, info="ARCANA-SESSION")
+        session_key = hkdf_sha256(shared_secret, psk, b"ARCANA-SESSION", 32)
+
+        print(f"[KE] Session key: {session_key[:8].hex()}...")
+
+        # Create new CryptoEngine with session key
+        session_engine = CryptoEngine.__new__(CryptoEngine)
+        session_engine.nonce_prefix = hashlib.sha256(session_key + b"ARCANA").digest()[:9]
+        session_engine.aesccm = AESCCM(session_key, tag_length=8)
+        session_engine.tx_counter = 0
+        session_engine.rx_counter = -1
+
+        result[0] = session_engine
+        done[0] = True
+        print("[KE] Session established! Perfect Forward Secrecy active.")
+
+    mqtt_client.on_message = on_ke_message
+    mqtt_client.publish(topic_cmd, framed, qos=0)
+    print(f"[KE] Sent KeyExchange request ({len(framed)}B)")
+
+    deadline = time.time() + timeout
+    while not done[0] and time.time() < deadline:
+        time.sleep(0.1)
+
+    return result[0]
+
+
+def hkdf_sha256(ikm, salt, info, length):
+    """Manual HKDF-SHA256 (extract + expand, 1 block)."""
+    import hmac as hmac_mod
+    # Extract
+    prk = hmac_mod.new(salt, ikm, 'sha256').digest()
+    # Expand (single block, max 32 bytes)
+    t = hmac_mod.new(prk, info + b'\x01', 'sha256').digest()
+    return t[:length]
 
 # ---------------------------------------------------------------------------
 # MQTT client
@@ -257,6 +385,8 @@ def main():
                         help="Send plaintext (no AES-256-CCM)")
     parser.add_argument("--binary", action="store_true",
                         help="Use STM32 binary codec instead of protobuf")
+    parser.add_argument("--key-exchange", action="store_true",
+                        help="Perform ECDH P-256 key exchange first, then send command with session key")
     parser.add_argument("--broker", default=BROKER)
     parser.add_argument("--port", type=int, default=PORT)
     parser.add_argument("--timeout", type=int, default=5, help="Response timeout (sec)")
@@ -398,6 +528,26 @@ def main():
     client.connect(args.broker, args.port, 60)
     client.loop_start()
     time.sleep(1)  # wait for subscribe
+
+    # ECDH Key Exchange (if requested)
+    if args.key_exchange and crypto:
+        print("\n--- ECDH P-256 Key Exchange ---")
+        session = perform_key_exchange(crypto, client, TOPIC_CMD, TOPIC_RSP, timeout=15)
+        if session:
+            crypto = session  # Use session key for subsequent commands
+            # Re-encrypt the command with session key
+            if args.binary:
+                payload = bytes([cluster, command, 0])
+            else:
+                payload = encode_cmd_request(cluster, command)
+            encrypted = crypto.encrypt(payload)
+            framed = frame_encode(encrypted)
+            print(f"\n--- Sending {args.cmd} with session key ---")
+        else:
+            print("[KE] Key exchange failed, using PSK")
+
+    # Restore on_message for command response
+    client.on_message = on_message
 
     # Publish command
     client.publish(TOPIC_CMD, framed, qos=0)
