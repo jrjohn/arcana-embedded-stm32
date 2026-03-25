@@ -37,10 +37,6 @@ private:
     // Block count (for capacity display)
     uint32_t mBlockCount;
 
-    // Format work buffer (reused only during mkfs, then released)
-    static const uint32_t MKFS_BUF_SIZE = 4096;
-    uint8_t mMkfsBuf[MKFS_BUF_SIZE];
-
     // Stats tracking
     Observable<SdBenchmarkModel> mStatsObs;
     SdBenchmarkModel mStats;

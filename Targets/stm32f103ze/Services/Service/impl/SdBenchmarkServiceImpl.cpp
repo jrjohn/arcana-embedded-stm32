@@ -28,7 +28,6 @@ SdBenchmarkServiceImpl::SdBenchmarkServiceImpl()
     : mSd(SdCard::getInstance())
     , mRunning(false)
     , mBlockCount(0)
-    , mMkfsBuf{}
     , mStatsObs("SdBench Stats")
     , mStats()
     , mWindowStartTick(0)
