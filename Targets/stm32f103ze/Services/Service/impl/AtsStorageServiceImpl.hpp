@@ -55,6 +55,9 @@ public:
     /** Shared 4KB read cache — for upload file streaming (same task, sequential) */
     static uint8_t* getReadCache() { return sReadCache; }
 
+    /** Shared FIL for sequential operations (compact at boot, upload at runtime) */
+    static FIL sSharedFil;
+
 private:
     AtsStorageServiceImpl();
     ~AtsStorageServiceImpl();

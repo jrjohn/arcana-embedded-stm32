@@ -61,11 +61,13 @@ namespace sdbench { extern FATFS sFatFs; }
 extern lcd::MainView* g_mainView;
 namespace atsstorage {
 
+
 // Static storage
 uint8_t AtsStorageServiceImpl::sKey[crypto::ChaCha20::KEY_SIZE] = {};
 uint8_t AtsStorageServiceImpl::sSlowBuf[ats::BLOCK_SIZE] = {};
 uint8_t AtsStorageServiceImpl::sReadCache[ats::BLOCK_SIZE] = {};
 uint8_t AtsStorageServiceImpl::sDevSlowBuf[ats::BLOCK_SIZE] = {};
+FIL AtsStorageServiceImpl::sSharedFil = {};
 
 // Time source for ArcanaTS — uses SystemClock epoch or tick fallback
 static uint32_t atsGetTime() {
@@ -258,7 +260,7 @@ void AtsStorageServiceImpl::storageTask(void* param) {
 
             bool compacted = false;
             if (self->mFilePort.open("sensor.ats", ats::ATS_MODE_READ)) {
-                static FIL sDst;  // static — too large for 4KB task stack
+                FIL& sDst = sSharedFil;
                 if (f_open(&sDst, "sensor_new.ats",
                            FA_WRITE | FA_CREATE_ALWAYS) == FR_OK) {
                     uint32_t copied = 0;

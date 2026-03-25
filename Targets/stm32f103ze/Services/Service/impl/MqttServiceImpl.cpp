@@ -1,6 +1,7 @@
 #include "MqttServiceImpl.hpp"
 #include "WifiServiceImpl.hpp"
 #include "AtsStorageServiceImpl.hpp"
+#include "HttpUploadServiceImpl.hpp"
 #include "Credentials.hpp"
 #include "Esp8266.hpp"
 #include "CommandBridge.hpp"
@@ -199,6 +200,14 @@ void MqttServiceImpl::runTask() {
             }
         }
 
+        // --- Phase 2.8: Upload pending .ats files (before MQTT connect) ---
+        {
+            uint8_t uploaded = HttpUploadServiceImpl::uploadPendingFiles(esp);
+            if (uploaded > 0) {
+                LOG_I(ats::ErrorSource::System, 0x0074, (uint32_t)uploaded);
+            }
+        }
+
         // --- Phase 3: MQTT config + connect ---
         LOG_I(ats::ErrorSource::Mqtt, 0x0001);  // MQTT connecting
         LOG_D(ats::ErrorSource::Mqtt, 0x0010);  // MQTT config start
@@ -244,7 +253,6 @@ void MqttServiceImpl::runTask() {
 
         uint32_t lastNtpTick = xTaskGetTickCount();
 
-        // --- Phase 5: Main loop ---
         // --- Phase 5: Main loop ---
         uint32_t lastSuccessTick = xTaskGetTickCount();
         static const uint32_t ESP_WATCHDOG_MS = 30000;  // 30s no publish → hard reset

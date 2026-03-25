@@ -69,8 +69,8 @@ uint8_t HttpUploadServiceImpl::uploadPendingFiles(Esp8266& esp) {
 
 bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
                                     const char* deviceId) {
-    // Open file
-    static FIL fp;  // static — too large for stack
+    // Shared FIL with AtsStorage (compact at boot, upload at runtime — never concurrent)
+    FIL& fp = atsstorage::AtsStorageServiceImpl::sSharedFil;
     FRESULT fr = f_open(&fp, filename, FA_READ);
     if (fr != FR_OK) return false;
 
