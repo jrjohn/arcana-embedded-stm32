@@ -107,27 +107,41 @@ bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
 
     uint32_t fileSize = (uint32_t)f_size(&fp);
     if (fileSize == 0) { f_close(&fp); return false; }
-    printf("[UPL] size=%luKB\r\n", (unsigned long)(fileSize / 1024));
 
-    // SSL connect
-    printf("[UPL] SSL connecting...\r\n");
+    // --- Resume: query server for already uploaded bytes ---
+    uint32_t resumeOffset = queryServerOffset(esp, filename, deviceId);
+    if (resumeOffset >= fileSize) {
+        printf("[UPL] already complete (%luKB)\r\n", (unsigned long)(fileSize / 1024));
+        f_close(&fp);
+        return true;  // already fully uploaded
+    }
+    if (resumeOffset > 0) {
+        f_lseek(&fp, resumeOffset);
+        printf("[UPL] resume at %luKB / %luKB\r\n",
+               (unsigned long)(resumeOffset / 1024), (unsigned long)(fileSize / 1024));
+    } else {
+        printf("[UPL] size=%luKB\r\n", (unsigned long)(fileSize / 1024));
+    }
+
+    uint32_t remainSize = fileSize - resumeOffset;
+
+    // --- TCP connect ---
     if (!sslConnect(esp)) {
-        printf("[UPL] SSL FAIL\r\n");
+        printf("[UPL] TCP FAIL\r\n");
         f_close(&fp);
         return false;
     }
 
-    printf("[UPL] SSL OK. Sending header...\r\n");
-    // Send HTTP header
-    if (!sendHttpHeader(esp, filename, deviceId, fileSize)) {
+    // --- HTTP header with Content-Range for resume ---
+    if (!sendHttpHeader(esp, filename, deviceId, remainSize, resumeOffset, fileSize)) {
         printf("[UPL] Header FAIL\r\n");
         sslClose(esp);
         f_close(&fp);
         return false;
     }
 
-    // Stream file body
-    bool ok = streamFileBody(esp, &fp, fileSize);
+    // Stream file body (from resumeOffset)
+    bool ok = streamFileBody(esp, &fp, remainSize);
     f_close(&fp);
 
     if (ok) {
@@ -166,18 +180,83 @@ void HttpUploadServiceImpl::sslClose(Esp8266& esp) {
 // HTTP POST header
 // ---------------------------------------------------------------------------
 
-bool HttpUploadServiceImpl::sendHttpHeader(Esp8266& esp, const char* filename,
-                                        const char* deviceId, uint32_t fileSize) {
-    // Build HTTP header
+// ---------------------------------------------------------------------------
+// Query server for resume offset
+// ---------------------------------------------------------------------------
+
+uint32_t HttpUploadServiceImpl::queryServerOffset(Esp8266& esp, const char* filename,
+                                                    const char* deviceId) {
+    if (!sslConnect(esp)) return 0;
+
     char header[256];
     int hLen = snprintf(header, sizeof(header),
-        "POST /upload/%s/%s HTTP/1.1\r\n"
+        "GET /upload/%s/%s/status HTTP/1.1\r\n"
         "Host: %s\r\n"
-        "Content-Length: %lu\r\n"
-        "Content-Type: application/octet-stream\r\n"
         "Connection: close\r\n"
         "\r\n",
-        deviceId, filename, SERVER, (unsigned long)fileSize);
+        deviceId, filename, SERVER);
+
+    char cipsend[24];
+    snprintf(cipsend, sizeof(cipsend), "AT+CIPSEND=%d", hLen);
+    if (!esp.sendCmd(cipsend, ">", 3000)) { sslClose(esp); return 0; }
+    esp.sendData(reinterpret_cast<const uint8_t*>(header), hLen, 3000);
+    if (!esp.waitFor("SEND OK", 5000)) { sslClose(esp); return 0; }
+
+    // Wait for response with "size"
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    if (!esp.waitFor("+IPD", 5000)) { sslClose(esp); return 0; }
+
+    // Parse "size":NNNN from JSON response
+    const char* resp = esp.getResponse();
+    const char* sizeStr = strstr(resp, "\"size\":");
+    uint32_t offset = 0;
+    if (sizeStr) {
+        sizeStr += 7;  // skip "size":
+        while (*sizeStr >= '0' && *sizeStr <= '9') {
+            offset = offset * 10 + (*sizeStr - '0');
+            sizeStr++;
+        }
+    }
+
+    sslClose(esp);
+    return offset;
+}
+
+// ---------------------------------------------------------------------------
+// HTTP POST header
+// ---------------------------------------------------------------------------
+
+bool HttpUploadServiceImpl::sendHttpHeader(Esp8266& esp, const char* filename,
+                                        const char* deviceId, uint32_t bodySize,
+                                        uint32_t rangeStart, uint32_t totalSize) {
+    char header[320];
+    int hLen;
+
+    if (rangeStart > 0 && totalSize > 0) {
+        // Resume: Content-Range header
+        uint32_t rangeEnd = rangeStart + bodySize - 1;
+        hLen = snprintf(header, sizeof(header),
+            "POST /upload/%s/%s HTTP/1.1\r\n"
+            "Host: %s\r\n"
+            "Content-Length: %lu\r\n"
+            "Content-Range: bytes %lu-%lu/%lu\r\n"
+            "Content-Type: application/octet-stream\r\n"
+            "Connection: close\r\n"
+            "\r\n",
+            deviceId, filename, SERVER,
+            (unsigned long)bodySize,
+            (unsigned long)rangeStart, (unsigned long)rangeEnd,
+            (unsigned long)totalSize);
+    } else {
+        hLen = snprintf(header, sizeof(header),
+            "POST /upload/%s/%s HTTP/1.1\r\n"
+            "Host: %s\r\n"
+            "Content-Length: %lu\r\n"
+            "Content-Type: application/octet-stream\r\n"
+            "Connection: close\r\n"
+            "\r\n",
+            deviceId, filename, SERVER, (unsigned long)bodySize);
+    }
 
     if (hLen <= 0 || hLen >= (int)sizeof(header)) return false;
 

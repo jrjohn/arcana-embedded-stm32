@@ -38,8 +38,11 @@ public:
 private:
     static bool sslConnect(Esp8266& esp);
     static void sslClose(Esp8266& esp);
+    static uint32_t queryServerOffset(Esp8266& esp, const char* filename,
+                                       const char* deviceId);
     static bool sendHttpHeader(Esp8266& esp, const char* filename,
-                               const char* deviceId, uint32_t fileSize);
+                               const char* deviceId, uint32_t bodySize,
+                               uint32_t rangeStart = 0, uint32_t totalSize = 0);
     static bool streamFileBody(Esp8266& esp, FIL* fp, uint32_t fileSize);
     static bool waitHttpResponse(Esp8266& esp);
 
