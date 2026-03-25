@@ -62,6 +62,11 @@ bool WifiServiceImpl::resetAndConnect() {
     }
     LOG_I(ats::ErrorSource::Wifi, evt::WIFI_AT_OK);
 
+    // Speed up UART: 115200 → 460800 (4x faster file upload)
+    if (mEsp.speedUp(460800)) {
+        LOG_I(ats::ErrorSource::Wifi, 0x0320);  // UART speedup OK
+    }
+
     return connectWifi();
 }
 

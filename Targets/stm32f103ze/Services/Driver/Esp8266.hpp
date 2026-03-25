@@ -14,6 +14,9 @@ public:
     bool initHAL();
     void reset();
 
+    /** Upgrade UART baud rate after reset (ESP8266 boots at 115200) */
+    bool speedUp(uint32_t baud = 460800);
+
     // Send AT command and wait for expected response (default "OK")
     bool sendCmd(const char* cmd, const char* expect = "OK",
                  uint32_t timeoutMs = 2000);

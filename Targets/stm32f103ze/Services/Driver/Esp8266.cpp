@@ -1,5 +1,6 @@
 #include "Esp8266.hpp"
 #include <cstring>
+#include <cstdio>
 
 // Global USART3 handle for IRQ handler
 static UART_HandleTypeDef sHuart3;
@@ -110,6 +111,34 @@ bool Esp8266::initHAL() {
 
     mInitialized = true;
     return true;
+}
+
+bool Esp8266::speedUp(uint32_t baud) {
+    // Send baud change command at current 115200
+    char cmd[48];
+    snprintf(cmd, sizeof(cmd), "AT+UART_CUR=%lu,8,1,0,0", (unsigned long)baud);
+    if (!sendCmd(cmd, "OK", 2000)) return false;
+
+    // ESP8266 switches immediately after OK — change STM32 to match
+    vTaskDelay(pdMS_TO_TICKS(50));  // let ESP8266 settle
+
+    __HAL_UART_DISABLE_IT(&sHuart3, UART_IT_RXNE);
+    __HAL_UART_DISABLE_IT(&sHuart3, UART_IT_IDLE);
+
+    sHuart3.Init.BaudRate = baud;
+    HAL_UART_Init(&sHuart3);
+
+    __HAL_UART_ENABLE_IT(&sHuart3, UART_IT_RXNE);
+    __HAL_UART_ENABLE_IT(&sHuart3, UART_IT_IDLE);
+
+    mRxPos = 0;
+    mRxLen = 0;
+    mRxBuf[0] = '\0';
+
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    // Verify with AT
+    return sendCmd("AT", "OK", 1000);
 }
 
 void Esp8266::reset() {
