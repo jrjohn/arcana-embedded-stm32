@@ -35,6 +35,23 @@ public:
     uint16_t queryByDate(uint32_t dateYYYYMMDD,
                          SensorDataModel* out, uint16_t maxCount) override;
 
+    /** Upload support: list pending .ats files and track upload status */
+    struct PendingFile {
+        char name[16];      // "YYYYMMDD.ats"
+        uint32_t size;      // file size in bytes
+        uint32_t date;      // YYYYMMDD as uint32
+    };
+    static const uint8_t MAX_PENDING = 8;
+
+    /** Scan SD for YYYYMMDD.ats files not yet uploaded. Returns count. */
+    uint8_t listPendingUploads(PendingFile* out, uint8_t maxCount);
+
+    /** Check if a date has been uploaded (search device.ats LIFECYCLE). */
+    bool isDateUploaded(uint32_t dateYYYYMMDD);
+
+    /** Mark date as uploaded in device.ats. */
+    void markUploaded(uint32_t dateYYYYMMDD);
+
 private:
     AtsStorageServiceImpl();
     ~AtsStorageServiceImpl();

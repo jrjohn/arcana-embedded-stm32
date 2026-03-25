@@ -702,6 +702,82 @@ void AtsStorageServiceImpl::writeRecoveryEvents(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Upload support: file enumeration + upload tracking
+// ---------------------------------------------------------------------------
+
+uint8_t AtsStorageServiceImpl::listPendingUploads(PendingFile* out, uint8_t maxCount) {
+    uint8_t count = 0;
+
+    DIR dir;
+    FILINFO fno;
+    if (f_opendir(&dir, "") != FR_OK) return 0;
+
+    while (f_readdir(&dir, &fno) == FR_OK && fno.fname[0] && count < maxCount) {
+        // Match YYYYMMDD.ats (8 digits + ".ats" = 12 chars)
+        const char* name = fno.fname;
+        uint16_t len = strlen(name);
+        if (len != 12) continue;
+        if (name[8] != '.' || name[9] != 'a' || name[10] != 't' || name[11] != 's') continue;
+
+        // Skip sensor.ats and device.ats
+        if (strcmp(name, "sensor.ats") == 0 || strcmp(name, "device.ats") == 0) continue;
+
+        // Parse date
+        uint32_t date = 0;
+        bool valid = true;
+        for (int i = 0; i < 8; i++) {
+            if (name[i] < '0' || name[i] > '9') { valid = false; break; }
+            date = date * 10 + (name[i] - '0');
+        }
+        if (!valid || date < 20200101) continue;
+
+        // Check if already uploaded
+        if (isDateUploaded(date)) continue;
+
+        // Add to list
+        strncpy(out[count].name, name, 15);
+        out[count].name[15] = '\0';
+        out[count].size = (uint32_t)fno.fsize;
+        out[count].date = date;
+        count++;
+    }
+    f_closedir(&dir);
+    return count;
+}
+
+bool AtsStorageServiceImpl::isDateUploaded(uint32_t dateYYYYMMDD) {
+    if (!mDeviceDbReady) return false;
+
+    // Query latest 64 LIFECYCLE records using shared read cache
+    // Each LIFECYCLE record = 12 bytes: [ts:4][evtType:1][evtCode:2][rsv:1][param:4]
+    static const uint16_t REC_SIZE = 12;
+    static const uint16_t SCAN_COUNT = ats::BLOCK_SIZE / REC_SIZE;  // ~341 records fit in 4KB
+    uint8_t* buf = sReadCache;  // reuse 4KB read cache (same task, sequential)
+
+    uint16_t n = mDeviceDb.queryLatest(0, buf, SCAN_COUNT);
+    for (uint16_t i = 0; i < n; i++) {
+        uint8_t* rec = buf + i * REC_SIZE;
+        uint8_t evtType = rec[4];
+        uint32_t param;
+        memcpy(&param, rec + 8, 4);
+
+        if (evtType == static_cast<uint8_t>(ats::LifecycleEventType::UploadDone) &&
+            param == dateYYYYMMDD) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void AtsStorageServiceImpl::markUploaded(uint32_t dateYYYYMMDD) {
+    writeLifecycleEvent(
+        static_cast<uint8_t>(ats::LifecycleEventType::UploadDone),
+        dateYYYYMMDD);
+}
+
+// ---------------------------------------------------------------------------
+
 bool AtsStorageServiceImpl::loadTzConfig(int16_t& offsetMin, uint8_t& autoCheck) {
     // Try device.ats ch1 (CONFIG) first
     if (mDeviceDbReady && mDeviceDb.getChannelCount() > 1) {

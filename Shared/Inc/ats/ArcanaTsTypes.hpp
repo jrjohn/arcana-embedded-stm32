@@ -232,8 +232,10 @@ enum class LifecycleEventType : uint8_t {
     HwChange = 0x11,
     Calibrate = 0x20,
     Error    = 0x30,
-    Config   = 0x40,
-    Maintain = 0x50,
+    Config       = 0x40,
+    Maintain     = 0x50,
+    UploadDone   = 0x60,  // param = dateYYYYMMDD
+    UploadPartial= 0x61,  // param = dateYYYYMMDD (offset stored separately)
 };
 
 } // namespace ats
