@@ -17,9 +17,10 @@ namespace arcana {
  * @brief Command cluster enumeration (first-level routing)
  */
 enum class Cluster : uint8_t {
-    System = 0x00,
-    Sensor = 0x01,
-    Device = 0x02,
+    System   = 0x00,
+    Sensor   = 0x01,
+    Device   = 0x02,
+    Security = 0x04,
 };
 
 /**
@@ -63,6 +64,10 @@ namespace DeviceCommand {
     constexpr uint8_t GetModel        = 0x01;
     constexpr uint8_t GetSerialNumber = 0x02;
     constexpr uint8_t StartOta        = 0x10;
+}
+
+namespace SecurityCommand {
+    constexpr uint8_t KeyExchange     = 0x01;
 }
 
 /**

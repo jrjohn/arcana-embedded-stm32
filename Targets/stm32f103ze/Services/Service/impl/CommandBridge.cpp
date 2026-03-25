@@ -97,6 +97,9 @@ CommandBridge::CommandBridge()
         "dfcb40b40d06ac9132b23f15c160a1cdaa21ad7637e36dddd8e908d34a656bb3";
     uint8_t key[CryptoEngine::kKeyLen];
     mEncryptionEnabled = CryptoEngine::hexToKey(CMD_PSK_HEX, key) && mCrypto.init(key);
+    if (mEncryptionEnabled) {
+        mKeyExchange.init(key);
+    }
 #endif
 
     LOG_I(ats::ErrorSource::Cmd, evt::CMD_REGISTERED, (uint32_t)mCommandCount);
@@ -172,25 +175,36 @@ void CommandBridge::bridgeTask(void* param) {
             // Decode command request
             CommandRequest req;
 #ifdef ARCANA_CMD_CRYPTO
+            // Track source for session key lookup
+            uint8_t cmdSource = static_cast<uint8_t>(frame.source);
+            arcana_CmdRequest msg = arcana_CmdRequest_init_zero;
             {
                 const uint8_t* pbData = payload;
                 size_t pbLen = payloadLen;
                 uint8_t plainBuf[arcana_CmdRequest_size];
 
-                // Decrypt if enabled
                 if (self->mEncryptionEnabled) {
                     size_t plainLen = 0;
-                    if (!self->mCrypto.decrypt(payload, payloadLen,
-                                                plainBuf, sizeof(plainBuf), plainLen)) {
-                        LOG_W(ats::ErrorSource::Cmd, evt::CMD_BAD_FRAME, 0xDE);
-                        continue;
+                    bool decrypted = false;
+
+                    // Try session key first
+                    decrypted = self->mKeyExchange.decryptWithSession(
+                        cmdSource, 0, payload, payloadLen,
+                        plainBuf, sizeof(plainBuf), plainLen);
+
+                    // Fallback to PSK
+                    if (!decrypted) {
+                        if (!self->mCrypto.decrypt(payload, payloadLen,
+                                                    plainBuf, sizeof(plainBuf), plainLen)) {
+                            LOG_W(ats::ErrorSource::Cmd, evt::CMD_BAD_FRAME, 0xDE);
+                            continue;
+                        }
                     }
                     pbData = plainBuf;
                     pbLen = plainLen;
                 }
 
                 // Decode protobuf
-                arcana_CmdRequest msg = arcana_CmdRequest_init_zero;
                 pb_istream_t stream = pb_istream_from_buffer(pbData, pbLen);
                 if (!pb_decode(&stream, arcana_CmdRequest_fields, &msg)) {
                     LOG_W(ats::ErrorSource::Cmd, evt::CMD_BAD_FRAME, 0xFB);
@@ -222,11 +236,37 @@ void CommandBridge::bridgeTask(void* param) {
             // Execute
             CommandResponseModel rsp;
             rsp.key = req.key;
-            ICommand* cmd = self->findCommand(req.key);
-            if (cmd) {
-                cmd->execute(req, rsp);
-            } else {
-                rsp.status = CommandStatus::NotFound;
+
+#ifdef ARCANA_CMD_CRYPTO
+            // KeyExchange: handle directly (payload too large for ICommand)
+            // KeyExchange response buffer (96B = serverPub:64 + authTag:32)
+            static uint8_t kePayload[96];
+            uint8_t kePayloadLen = 0;
+
+            if (req.key.cluster == Cluster::Security &&
+                req.key.commandId == SecurityCommand::KeyExchange) {
+                if (msg.payload.size == KeyExchangeManager::kPubKeyLen) {
+                    uint8_t* serverPub = kePayload;
+                    uint8_t* authTag = kePayload + 64;
+                    if (self->mKeyExchange.performKeyExchange(
+                            cmdSource, 0, msg.payload.bytes, serverPub, authTag)) {
+                        kePayloadLen = 96;
+                        rsp.status = CommandStatus::Success;
+                    } else {
+                        rsp.status = CommandStatus::Error;
+                    }
+                } else {
+                    rsp.status = CommandStatus::InvalidParam;
+                }
+            } else
+#endif
+            {
+                ICommand* cmd = self->findCommand(req.key);
+                if (cmd) {
+                    cmd->execute(req, rsp);
+                } else {
+                    rsp.status = CommandStatus::NotFound;
+                }
             }
 
             // Encode response
@@ -235,14 +275,25 @@ void CommandBridge::bridgeTask(void* param) {
 
 #ifdef ARCANA_CMD_CRYPTO
             {
+                bool isKeyExchangeOk = (rsp.key.cluster == Cluster::Security &&
+                    rsp.key.commandId == SecurityCommand::KeyExchange &&
+                    rsp.status == CommandStatus::Success);
+
                 // Protobuf encode
                 arcana_CmdResponse rspMsg = arcana_CmdResponse_init_zero;
                 rspMsg.cluster = static_cast<uint32_t>(rsp.key.cluster);
                 rspMsg.command = static_cast<uint32_t>(rsp.key.commandId);
                 rspMsg.status = static_cast<uint32_t>(rsp.status);
-                rspMsg.payload.size = rsp.dataLength;
-                if (rsp.dataLength > 0) {
-                    memcpy(rspMsg.payload.bytes, rsp.data, rsp.dataLength);
+
+                if (isKeyExchangeOk && kePayloadLen > 0) {
+                    // KeyExchange: full 96 bytes (serverPub:64 + authTag:32)
+                    rspMsg.payload.size = kePayloadLen;
+                    memcpy(rspMsg.payload.bytes, kePayload, kePayloadLen);
+                } else {
+                    rspMsg.payload.size = rsp.dataLength;
+                    if (rsp.dataLength > 0) {
+                        memcpy(rspMsg.payload.bytes, rsp.data, rsp.dataLength);
+                    }
                 }
 
                 uint8_t pbBuf[arcana_CmdResponse_size];
@@ -250,12 +301,28 @@ void CommandBridge::bridgeTask(void* param) {
                 if (!pb_encode(&ostream, arcana_CmdResponse_fields, &rspMsg)) continue;
                 size_t pbLen = ostream.bytes_written;
 
-                // Encrypt if enabled
+                // Encrypt: KE response always uses PSK, others try session first
                 uint8_t innerBuf[arcana_CmdResponse_size + CryptoEngine::kOverhead];
                 size_t innerLen = 0;
                 if (self->mEncryptionEnabled) {
-                    if (!self->mCrypto.encrypt(pbBuf, pbLen,
-                                                innerBuf, sizeof(innerBuf), innerLen)) continue;
+                    bool encrypted = false;
+
+                    if (!isKeyExchangeOk) {
+                        // Try session key first
+                        encrypted = self->mKeyExchange.encryptWithSession(
+                            cmdSource, 0, pbBuf, pbLen,
+                            innerBuf, sizeof(innerBuf), innerLen);
+                    }
+                    // PSK fallback (or always for KE response)
+                    if (!encrypted) {
+                        if (!self->mCrypto.encrypt(pbBuf, pbLen,
+                                                    innerBuf, sizeof(innerBuf), innerLen)) continue;
+                    }
+
+                    // Install session AFTER encrypting KE response with PSK
+                    if (isKeyExchangeOk) {
+                        self->mKeyExchange.installPendingSession(cmdSource, 0);
+                    }
                 } else {
                     memcpy(innerBuf, pbBuf, pbLen);
                     innerLen = pbLen;

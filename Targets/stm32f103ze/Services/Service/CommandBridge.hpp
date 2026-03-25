@@ -5,6 +5,7 @@
 #include "FrameCodec.hpp"
 #ifdef ARCANA_CMD_CRYPTO
 #include "CryptoEngine.hpp"
+#include "KeyExchangeManager.hpp"
 #endif
 #include "SensorDataCache.hpp"
 #include "FreeRTOS.h"
@@ -127,6 +128,7 @@ private:
 #ifdef ARCANA_CMD_CRYPTO
     // CryptoEngine for command encryption (PSK-based, AES-256-CCM)
     CryptoEngine mCrypto;
+    KeyExchangeManager mKeyExchange;
     bool mEncryptionEnabled;
 
     // Larger bridge stack for protobuf + crypto buffers on stack
