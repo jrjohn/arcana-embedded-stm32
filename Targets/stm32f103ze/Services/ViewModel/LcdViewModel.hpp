@@ -39,11 +39,17 @@ struct LcdOutput {
     bool mqttConnected;
     bool mqttKnown;       // false = no status yet (show "---")
 
+#ifdef ARCANA_ECG_DISPLAY
     // ECG waveform (ring buffer + cursor)
     static const uint16_t ECG_WIDTH = 240;
     uint8_t ecgY[ECG_WIDTH];
     uint8_t ecgCursor;
     uint8_t ecgPrevY;    // for line connection
+#else
+    static const uint16_t ECG_WIDTH = 1;
+    uint8_t ecgCursor;
+    uint8_t ecgPrevY;
+#endif
 
     // Dirty flags (set when field changes, cleared after render)
     uint8_t dirty;
@@ -167,11 +173,13 @@ public:
             break;
 
         case LcdInput::EcgSample: {
+#ifdef ARCANA_ECG_DISPLAY
             uint8_t y = input.ecg.y;
             if (y >= LcdOutput::ECG_WIDTH) y = 99;
             mOutput.ecgY[mOutput.ecgCursor] = y;
             mOutput.ecgCursor = (mOutput.ecgCursor + 1) % LcdOutput::ECG_WIDTH;
             mOutput.dirty |= LcdOutput::DIRTY_ECG;
+#endif
             break;
         }
         }

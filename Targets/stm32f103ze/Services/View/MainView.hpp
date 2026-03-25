@@ -57,11 +57,13 @@ private:
     StackType_t mRenderTaskStack[RENDER_TASK_STACK];
     TaskHandle_t mRenderTaskHandle;
 
+#ifdef ARCANA_ECG_DISPLAY
     // ECG sample queue
     static const uint8_t ECG_QUEUE_LEN = 16;
     QueueHandle_t mEcgQueue;
     StaticQueue_t mEcgQueueBuf;
     uint8_t mEcgQueueStorage[ECG_QUEUE_LEN];
+#endif
 
     // LCD mutex + render diff
     SemaphoreHandle_t mLcdMutex;

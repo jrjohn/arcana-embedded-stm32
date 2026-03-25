@@ -17,7 +17,9 @@ MainView::MainView()
     , mRenderTaskBuf()
     , mRenderTaskStack{}
     , mRenderTaskHandle(0)
+#ifdef ARCANA_ECG_DISPLAY
     , mEcgQueue(0)
+#endif
     , mLcdMutex(0)
     , mRendered()
 {
@@ -27,8 +29,10 @@ MainView::MainView()
 
 void MainView::init() {
     mLcdMutex = xSemaphoreCreateMutexStatic(&mLcdMutexBuf);
+#ifdef ARCANA_ECG_DISPLAY
     mEcgQueue = xQueueCreateStatic(ECG_QUEUE_LEN, 1,
                                     mEcgQueueStorage, &mEcgQueueBuf);
+#endif
 }
 
 void MainView::start() {
@@ -40,10 +44,14 @@ void MainView::start() {
 }
 
 void MainView::pushEcgSample(uint8_t y) {
+#ifdef ARCANA_ECG_DISPLAY
     if (mEcgQueue) {
         xQueueSend(mEcgQueue, &y, 0);
         if (mRenderTaskHandle) xTaskNotifyGive(mRenderTaskHandle);
     }
+#else
+    (void)y;
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -65,6 +73,7 @@ void MainView::processRender() {
     LcdViewModel& vm = *input.viewModel;
     display::IDisplay& lcd = *input.lcd;
 
+#ifdef ARCANA_ECG_DISPLAY
     // 1. Drain all pending ECG samples → ViewModel → render
     uint8_t y;
     while (xQueueReceive(mEcgQueue, &y, 0) == pdTRUE) {
@@ -79,6 +88,7 @@ void MainView::processRender() {
 
         renderEcgColumn(lcd, cursor, y, prevY);
     }
+#endif
 
     // 2. Render dirty fields
     if (vm.output().dirty) {
