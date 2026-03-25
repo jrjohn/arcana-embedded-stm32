@@ -7,6 +7,11 @@
 #include "SyslogAppender.hpp"
 #include "SystemClock.hpp"
 #include "Log.hpp"
+#ifdef ARCANA_CMD_CRYPTO
+#include "arcana_cmd.pb.h"
+#include <pb_encode.h>
+#include <pb_decode.h>
+#endif
 #include <cstdio>
 #include <cstring>
 
@@ -361,6 +366,86 @@ void MqttServiceImpl::processIncomingMsg() {
         ats_safe_eject();
         return;
     }
+
+#ifdef ARCANA_CMD_CRYPTO
+    // Intercept KeyExchange in MQTT task context (needs ~1.5KB stack,
+    // bridgeTask only has 2KB with protobuf overhead → not enough).
+    // Deframe + decrypt here, check if KeyExchange, handle directly.
+    {
+        const uint8_t* framePayload = nullptr;
+        size_t framePayloadLen = 0;
+        uint8_t flags = 0, sid = 0;
+
+        if (FrameCodec::deframe(reinterpret_cast<const uint8_t*>(p), payloadLen,
+                                 framePayload, framePayloadLen, flags, sid)) {
+            // Try decrypt (PSK only for KE request)
+            uint8_t plain[arcana_CmdRequest_size];
+            size_t plainLen = 0;
+            auto& bridge = CommandBridge::getInstance();
+
+            if (bridge.mEncryptionEnabled &&
+                bridge.mCrypto.decrypt(framePayload, framePayloadLen,
+                                        plain, sizeof(plain), plainLen)) {
+                arcana_CmdRequest msg = arcana_CmdRequest_init_zero;
+                pb_istream_t stream = pb_istream_from_buffer(plain, plainLen);
+                if (pb_decode(&stream, arcana_CmdRequest_fields, &msg) &&
+                    msg.cluster == static_cast<uint32_t>(Cluster::Security) &&
+                    msg.command == SecurityCommand::KeyExchange &&
+                    msg.payload.size == KeyExchangeManager::kPubKeyLen) {
+
+                    LOG_I(ats::ErrorSource::Cmd, 0x0B20);  // KE request received
+
+                    uint8_t serverPub[64], authTag[32];
+                    if (bridge.mKeyExchange.performKeyExchange(
+                            1 /*MQTT*/, 0, msg.payload.bytes, serverPub, authTag)) {
+
+                        // Build protobuf response
+                        arcana_CmdResponse rspMsg = arcana_CmdResponse_init_zero;
+                        rspMsg.cluster = static_cast<uint32_t>(Cluster::Security);
+                        rspMsg.command = SecurityCommand::KeyExchange;
+                        rspMsg.status = 0;  // OK
+                        rspMsg.payload.size = 96;
+                        memcpy(rspMsg.payload.bytes, serverPub, 64);
+                        memcpy(rspMsg.payload.bytes + 64, authTag, 32);
+
+                        uint8_t pbBuf[arcana_CmdResponse_size];
+                        pb_ostream_t ostream = pb_ostream_from_buffer(pbBuf, sizeof(pbBuf));
+                        if (pb_encode(&ostream, arcana_CmdResponse_fields, &rspMsg)) {
+                            // Encrypt with PSK (session not installed yet)
+                            uint8_t encBuf[arcana_CmdResponse_size + CryptoEngine::kOverhead];
+                            size_t encLen = 0;
+                            if (bridge.mCrypto.encrypt(pbBuf, ostream.bytes_written,
+                                                        encBuf, sizeof(encBuf), encLen)) {
+                                uint8_t frameBuf[TxItem::MAX_DATA];
+                                size_t frameLen = 0;
+                                if (FrameCodec::frame(encBuf, encLen,
+                                                       FrameCodec::kFlagFin, sid,
+                                                       frameBuf, sizeof(frameBuf), frameLen)) {
+                                    // Hex-encode + publish response
+                                    char hexBuf[TxItem::MAX_DATA * 2 + 1];
+                                    for (size_t i = 0; i < frameLen && i < TxItem::MAX_DATA; i++) {
+                                        static const char hex[] = "0123456789ABCDEF";
+                                        hexBuf[i * 2]     = hex[frameBuf[i] >> 4];
+                                        hexBuf[i * 2 + 1] = hex[frameBuf[i] & 0x0F];
+                                    }
+                                    hexBuf[frameLen * 2] = '\0';
+                                    mqttPublish(TOPIC_RSP, hexBuf, 0);
+
+                                    // Install session AFTER response sent
+                                    bridge.mKeyExchange.installPendingSession(1, 0);
+                                    LOG_I(ats::ErrorSource::Cmd, 0x0B21);  // KE success
+                                }
+                            }
+                        }
+                    } else {
+                        LOG_W(ats::ErrorSource::Cmd, 0x0B22);  // KE failed
+                    }
+                    return;  // Don't submit to CommandBridge
+                }
+            }
+        }
+    }
+#endif
 
     // Submit to CommandBridge frame queue
     if (payloadLen > 0 && payloadLen <= CmdFrameItem::MAX_DATA) {

@@ -126,10 +126,13 @@ private:
 #endif
 
 #ifdef ARCANA_CMD_CRYPTO
+public:
     // CryptoEngine for command encryption (PSK-based, AES-256-CCM)
+    // Public: MqttServiceImpl needs direct access for KeyExchange in MQTT task context
     CryptoEngine mCrypto;
     KeyExchangeManager mKeyExchange;
     bool mEncryptionEnabled;
+private:
 
     // Larger bridge stack for protobuf + crypto buffers on stack
     static const uint16_t BRIDGE_STACK_SIZE = 512;

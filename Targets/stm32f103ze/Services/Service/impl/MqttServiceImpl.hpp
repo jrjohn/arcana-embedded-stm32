@@ -60,7 +60,11 @@ private:
     static const char* TOPIC_CMD;
     static const char* TOPIC_RSP;
 
+#ifdef ARCANA_CMD_CRYPTO
+    static const uint16_t TASK_STACK_SIZE = 640;  // ECDH needs ~1.7KB stack
+#else
     static const uint16_t TASK_STACK_SIZE = 512;
+#endif
 
     Observable<MqttCommandModel>    mCmdObs;
     Observable<MqttConnectionModel> mConnObs;
