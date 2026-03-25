@@ -367,7 +367,7 @@ void MqttServiceImpl::processIncomingMsg() {
         return;
     }
 
-#ifdef ARCANA_CMD_CRYPTO
+#ifdef ARCANA_ECDH_ENABLED
     // Intercept KeyExchange in MQTT task context (needs ~1.5KB stack,
     // bridgeTask only has 2KB with protobuf overhead → not enough).
     // Deframe + decrypt here, check if KeyExchange, handle directly.
