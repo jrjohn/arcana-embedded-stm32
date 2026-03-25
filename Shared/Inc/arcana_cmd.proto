@@ -1,0 +1,15 @@
+syntax = "proto3";
+package arcana;
+
+message CmdRequest {
+  uint32 cluster = 1;    // Cluster domain (System, Sensor, Ble, Mqtt, Security)
+  uint32 command = 2;    // Command ID within cluster
+  bytes  payload = 3;    // Command-specific params (max 128 bytes)
+}
+
+message CmdResponse {
+  uint32 cluster = 1;    // Cluster domain (echo)
+  uint32 command = 2;    // Command ID (echo)
+  uint32 status  = 3;    // 0 = OK
+  bytes  payload = 4;    // Command-specific data (max 256 bytes)
+}
