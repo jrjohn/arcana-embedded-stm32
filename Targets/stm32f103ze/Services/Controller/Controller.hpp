@@ -4,7 +4,9 @@
 #include "LedService.hpp"
 #include "SensorService.hpp"
 #include "LcdService.hpp"
+#ifdef ARCANA_LIGHT_SENSOR
 #include "LightService.hpp"
+#endif
 #include "SdBenchmarkService.hpp"
 #include "AtsStorageService.hpp"
 #include "WifiService.hpp"
@@ -43,7 +45,9 @@ private:
     led::LedService*                 mLed;
     sensor::SensorService*           mSensor;
     lcd::LcdService*                 mLcd;
+#ifdef ARCANA_LIGHT_SENSOR
     light::LightService*             mLight;
+#endif
     sdbench::SdBenchmarkService*     mSdBench;
     atsstorage::AtsStorageService*    mSdStorage;
     wifi::WifiService*               mWifi;

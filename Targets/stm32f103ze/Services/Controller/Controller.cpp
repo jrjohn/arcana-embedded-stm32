@@ -3,7 +3,9 @@
 #include "LedServiceImpl.hpp"
 #include "SensorServiceImpl.hpp"
 #include "LcdServiceImpl.hpp"
+#ifdef ARCANA_LIGHT_SENSOR
 #include "LightServiceImpl.hpp"
+#endif
 #include "SdBenchmarkServiceImpl.hpp"
 #include "AtsStorageServiceImpl.hpp"
 #include "WifiServiceImpl.hpp"
@@ -27,7 +29,9 @@ Controller::Controller()
     , mLed(0)
     , mSensor(0)
     , mLcd(0)
+#ifdef ARCANA_LIGHT_SENSOR
     , mLight(0)
+#endif
     , mSdBench(0)
     , mSdStorage(0)
     , mWifi(0)
@@ -64,7 +68,9 @@ void Controller::wireServices() {
     mLed       = &led::LedServiceImpl::getInstance();
     mSensor    = &sensor::SensorServiceImpl::getInstance();
     mLcd       = &lcd::LcdServiceImpl::getInstance();
+#ifdef ARCANA_LIGHT_SENSOR
     mLight     = &light::LightServiceImpl::getInstance();
+#endif
     mSdBench   = &sdbench::SdBenchmarkServiceImpl::getInstance();
     mSdStorage = &atsstorage::AtsStorageServiceImpl::getInstance();
     mWifi      = &wifi::WifiServiceImpl::getInstance();
@@ -84,17 +90,23 @@ void Controller::wireServices() {
     // Wire MQTT <- WiFi + Sensor + Light
     mMqtt->input.Wifi       = mWifi;
     mMqtt->input.SensorData = mSensor->output.DataEvents;
+#ifdef ARCANA_LIGHT_SENSOR
     mMqtt->input.LightData  = mLight->output.DataEvents;
+#endif
 
     // Wire BLE <- Sensor + Light (JSON streaming)
     mBle->input.SensorData = mSensor->output.DataEvents;
+#ifdef ARCANA_LIGHT_SENSOR
     mBle->input.LightData  = mLight->output.DataEvents;
+#endif
 }
 
 void Controller::wireViews() {
     // ViewModel ← Service outputs (ViewModel subscribes to data sources)
     sViewModel.input.SensorData   = mSensor->output.DataEvents;
+#ifdef ARCANA_LIGHT_SENSOR
     sViewModel.input.LightData    = mLight->output.DataEvents;
+#endif
     sViewModel.input.StorageStats = mSdStorage->output.StatsEvents;
     sViewModel.input.SdBenchmark  = mSdBench->output.StatsEvents;
     sViewModel.input.BaseTimer    = mTimer->output.BaseTimer;
@@ -109,7 +121,9 @@ void Controller::initHAL() {
     mTimer->initHAL();
     mLed->initHAL();
     mSensor->initHAL();
+#ifdef ARCANA_LIGHT_SENSOR
     mLight->initHAL();
+#endif
     mLcd->initHAL();          // LCD hardware init
 
     // Global display for ad-hoc status callers (statusLine, headerBar)
@@ -130,7 +144,9 @@ void Controller::initServices() {
     mTimer->init();
     mLed->init();
     mSensor->init();
+#ifdef ARCANA_LIGHT_SENSOR
     mLight->init();
+#endif
     mSdBench->init();
     mSdStorage->init();
     mWifi->init();
@@ -145,7 +161,9 @@ void Controller::startServices() {
     mTimer->start();
     mLed->start();
     mSensor->start();
+#ifdef ARCANA_LIGHT_SENSOR
     mLight->start();
+#endif
     mSdBench->start();
     mSdStorage->start();
     mWifi->start();
