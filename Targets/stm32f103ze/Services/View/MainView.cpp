@@ -17,9 +17,7 @@ MainView::MainView()
     , mRenderTaskBuf()
     , mRenderTaskStack{}
     , mRenderTaskHandle(0)
-#ifdef ARCANA_ECG_DISPLAY
     , mEcgQueue(0)
-#endif
     , mLcdMutex(0)
     , mRendered()
 {
@@ -29,10 +27,8 @@ MainView::MainView()
 
 void MainView::init() {
     mLcdMutex = xSemaphoreCreateMutexStatic(&mLcdMutexBuf);
-#ifdef ARCANA_ECG_DISPLAY
     mEcgQueue = xQueueCreateStatic(ECG_QUEUE_LEN, 1,
                                     mEcgQueueStorage, &mEcgQueueBuf);
-#endif
 }
 
 void MainView::start() {
@@ -44,14 +40,10 @@ void MainView::start() {
 }
 
 void MainView::pushEcgSample(uint8_t y) {
-#ifdef ARCANA_ECG_DISPLAY
     if (mEcgQueue) {
         xQueueSend(mEcgQueue, &y, 0);
         if (mRenderTaskHandle) xTaskNotifyGive(mRenderTaskHandle);
     }
-#else
-    (void)y;
-#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -73,7 +65,6 @@ void MainView::processRender() {
     LcdViewModel& vm = *input.viewModel;
     display::IDisplay& lcd = *input.lcd;
 
-#ifdef ARCANA_ECG_DISPLAY
     // 1. Drain all pending ECG samples → ViewModel → render
     uint8_t y;
     while (xQueueReceive(mEcgQueue, &y, 0) == pdTRUE) {
@@ -88,7 +79,6 @@ void MainView::processRender() {
 
         renderEcgColumn(lcd, cursor, y, prevY);
     }
-#endif
 
     // 2. Render dirty fields
     if (vm.output().dirty) {
@@ -270,23 +260,28 @@ void MainView::renderMqtt(display::IDisplay& lcd, const LcdOutput& out, LcdOutpu
 }
 
 void MainView::renderEcgColumn(display::IDisplay& lcd, uint8_t x, uint8_t y, uint8_t prevY) {
-    // Scale 0-99 → 8-92 to leave top/bottom margin (avoid touching borders)
+    // Half-resolution: cursor 0-119, each maps to 2px on 240px wide LCD
+    uint16_t px = (uint16_t)x * 2;
+
+    // Scale 0-99 → 8-92 to leave top/bottom margin
     y    = (uint8_t)(y    * 84 / 100 + 8);
     prevY = (uint8_t)(prevY * 84 / 100 + 8);
     if (y >= ECG_HEIGHT) y = ECG_HEIGHT - 1;
     if (prevY >= ECG_HEIGHT) prevY = ECG_HEIGHT - 1;
 
-    uint16_t eraseX = (x + 1) % ECG_WIDTH;
-    for (int i = 0; i < 4; i++) {
+    // Erase ahead (6px = 3 half-res columns)
+    uint16_t eraseX = ((x + 1) % LcdOutput::ECG_WIDTH) * 2;
+    for (int i = 0; i < 6; i++) {
         lcd.fillRect(eraseX, ECG_TOP_Y, 1, ECG_HEIGHT, display::colors::BLACK);
-        eraseX = (eraseX + 1) % ECG_WIDTH;
+        eraseX = (eraseX + 1) % 240;
     }
 
+    // Draw 2px wide column
     uint8_t minY = (prevY < y) ? prevY : y;
     uint8_t maxY = (prevY > y) ? prevY : y;
     uint16_t lineH = maxY - minY + 1;
     if (lineH < 2) lineH = 2;
-    lcd.fillRect(x, ECG_TOP_Y + minY, 1, lineH, display::colors::GREEN);
+    lcd.fillRect(px, ECG_TOP_Y + minY, 2, lineH, display::colors::GREEN);
 }
 
 void MainView::uint32ToStr(char* buf, uint32_t value) {
