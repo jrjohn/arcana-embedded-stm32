@@ -45,8 +45,9 @@ void IoServiceImpl::disarmCancel() {
     mCancelArmed = false;
     mCancelRequested = false;
     mUploadRequested = false;
-    // Cooldown: ignore KEY2 for 2s after cancel (prevent re-trigger)
-    mCooldownUntil = xTaskGetTickCount() + pdMS_TO_TICKS(2000);
+    mKey2Prev = false;  // prevent stale rising edge from same press
+    // Cooldown: ignore KEY2 for 5s after cancel
+    mCooldownUntil = xTaskGetTickCount() + pdMS_TO_TICKS(5000);
 }
 
 void IoServiceImpl::taskFunc(void* param) {

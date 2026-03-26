@@ -445,10 +445,9 @@ bool HttpUploadServiceImpl::streamFileBody(Esp8266& esp, FIL* fp, uint32_t fileS
             display::toast(msg, 30000, (uint32_t)xTaskGetTickCount(),
                            display::colors::WHITE, 0x001F);  // blue bg
 
-            // Cancel check — IoServiceImpl handles KEY2 debounce independently
+            // Cancel check — don't clear flag here, let retry loop see it
             if (io::IoServiceImpl::getInstance().isCancelRequested()) {
                 printf("[UPL] cancelled by KEY2\r\n");
-                io::IoServiceImpl::getInstance().disarmCancel();
                 return false;
             }
         }
