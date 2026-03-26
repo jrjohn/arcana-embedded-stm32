@@ -133,7 +133,7 @@ bool RegistrationServiceImpl::httpRegister(Esp8266& esp) {
 
     // --- TCP connect ---
     char cmd[80];
-    snprintf(cmd, sizeof(cmd), "AT+CIPSTART=\"TCP\",\"%s\",%u", REG_SERVER, REG_PORT);
+    snprintf(cmd, sizeof(cmd), "AT+CIPSTART=\"SSL\",\"%s\",%u", REG_SERVER, REG_PORT);
     if (!esp.sendCmd(cmd, "OK", 10000)) {
         if (!esp.responseContains("ALREADY CONNECTED")) {
             printf("[REG] TCP FAIL\r\n");

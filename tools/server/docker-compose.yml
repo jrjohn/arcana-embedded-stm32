@@ -19,6 +19,7 @@ services:
       - UPLOAD_DIR=/uploads
     volumes:
       - uploads:/uploads
+      - /root/docker/mqtt/mosquitto/certs:/certs:ro,z
     networks:
       - mysql_default
 

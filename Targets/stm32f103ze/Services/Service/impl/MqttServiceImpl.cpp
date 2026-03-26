@@ -113,6 +113,8 @@ bool MqttServiceImpl::mqttConfig() {
         pass = regSvc.credentials().mqttPass;
     }
 
+    // scheme=1: plain MQTT (scheme=2 TLS not supported on this ESP8266 AT FW)
+    // TODO: test scheme=2 on ESP8266 AT v2.2+ with TLS support
     snprintf(cmd, sizeof(cmd),
              "AT+MQTTUSERCFG=0,1,\"%s\",\"%s\",\"%s\",0,0,\"\"",
              MQTT_CLIENT_ID, user, pass);

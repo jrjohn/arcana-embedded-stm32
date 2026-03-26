@@ -217,7 +217,7 @@ def verify_upload_token(token, device_id):
 app = Flask(__name__)
 UPLOAD_DIR = os.environ.get("UPLOAD_DIR", "./uploads")
 MQTT_BROKER = os.environ.get("MQTT_BROKER", "arcana.boo")
-MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
+MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))  # ESP8266 AT v2.2 MQTTS not stable
 
 @app.route("/health", methods=["GET"])
 def health():
@@ -429,4 +429,17 @@ if __name__ == "__main__":
     print()
 
     app.config['MAX_CONTENT_LENGTH'] = None
-    app.run(host=args.host, port=args.port, debug=True, threaded=True)
+
+    # TLS: use Let's Encrypt certs if available
+    ssl_ctx = None
+    cert = os.environ.get("TLS_CERT", "/certs/fullchain.pem")
+    key = os.environ.get("TLS_KEY", "/certs/privkey.pem")
+    if os.path.exists(cert) and os.path.exists(key):
+        import ssl
+        ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ssl_ctx.load_cert_chain(cert, key)
+        print(f"  TLS: {cert}")
+    else:
+        print(f"  TLS: disabled (no certs)")
+
+    app.run(host=args.host, port=args.port, debug=True, threaded=True, ssl_context=ssl_ctx)
