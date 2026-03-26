@@ -75,9 +75,7 @@ void IoServiceImpl::taskLoop() {
                     // During upload: cancel
                     mCancelRequested = true;
                     printf("[KEY2] cancel\r\n");
-                    display::toast("Cancelled", 2000,
-                                   (uint32_t)xTaskGetTickCount(),
-                                   display::colors::WHITE, 0xF800);
+                    display::toastState().dismissTick = 0;  // dismiss upload toast
                 } else if (!mUploadRequested) {
                     // Signal ESP8266 lock — MQTT will yield and run upload
                     mUploadRequested = true;
