@@ -437,9 +437,9 @@ bool HttpUploadServiceImpl::streamFileBody(Esp8266& esp, FIL* fp, uint32_t fileS
         // Progress log + LCD update + cancel check every ~20KB
         if (sent % (TX_CHUNK * 10) == 0 || sent == fileSize) {
             printf("[UPL] %lu/%lu\r\n", (unsigned long)sent, (unsigned long)fileSize);
-            // LCD toast: "Upload 1/7 23%"
+            // LCD toast: "Upload 1/7 23%" — static buffer (toast stores pointer)
             uint8_t pct = (uint8_t)(sent * 100ULL / fileSize);
-            char msg[24];
+            static char msg[24];
             snprintf(msg, sizeof(msg), "Upload %u/%u %u%%",
                      g_uploadProgress.currentFile,
                      g_uploadProgress.totalFiles, pct);
