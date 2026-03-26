@@ -104,8 +104,9 @@ uint8_t HttpUploadServiceImpl::uploadPendingFiles(Esp8266& esp) {
         uploadFile(esp, "device.ats", deviceId);
     }
 
-    // Clear upload progress
+    // Clear upload progress + dismiss toast (safe: runs in MQTT task, same as render)
     g_uploadProgress.currentFile = 0;
+    display::toastState().active = false;
 
     // Restore DMA write direction before resuming ATS recording
     sd_disable_dma_reads();
