@@ -254,6 +254,8 @@ bool RegistrationServiceImpl::parseResponse(const uint8_t* payload, uint16_t len
     // Store credentials
     strncpy(mCreds.mqttUser, resp.mqtt_user, sizeof(mCreds.mqttUser) - 1);
     strncpy(mCreds.mqttPass, resp.mqtt_pass, sizeof(mCreds.mqttPass) - 1);
+    strncpy(mCreds.mqttBroker, resp.mqtt_broker, sizeof(mCreds.mqttBroker) - 1);
+    mCreds.mqttPort = (uint16_t)resp.mqtt_port;
     strncpy(mCreds.uploadToken, resp.upload_token, sizeof(mCreds.uploadToken) - 1);
     strncpy(mCreds.topicPrefix, resp.topic_prefix, sizeof(mCreds.topicPrefix) - 1);
     mCreds.valid = true;

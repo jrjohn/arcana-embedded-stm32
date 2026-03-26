@@ -122,10 +122,19 @@ bool MqttServiceImpl::mqttConfig() {
 bool MqttServiceImpl::mqttConnect() {
     Esp8266& esp = input.Wifi->getEsp();
     char cmd[128];
-    // AT+MQTTCONN=<LinkID>,<"host">,<port>,<reconnect>
+
+    // Use broker from registration response, fallback to Credentials.hpp
+    auto& regSvc = reg::RegistrationServiceImpl::getInstance();
+    const char* broker = MQTT_BROKER;
+    uint16_t port = MQTT_PORT;
+    if (regSvc.isRegistered()) {
+        broker = regSvc.credentials().mqttBroker;
+        port = regSvc.credentials().mqttPort;
+    }
+
     snprintf(cmd, sizeof(cmd),
-             "AT+MQTTCONN=0,\"%s\",%u,1",  // reconnect=1: auto-reconnect
-             MQTT_BROKER, MQTT_PORT);
+             "AT+MQTTCONN=0,\"%s\",%u,1",
+             broker, port);
     return esp.sendCmd(cmd, "OK", 10000);
 }
 

@@ -14,10 +14,12 @@ namespace reg {
 class RegistrationService {
 public:
     struct Credentials {
-        char mqttUser[32];
-        char mqttPass[32];
-        char uploadToken[64];
-        char topicPrefix[32];
+        char mqttUser[36];
+        char mqttPass[36];
+        char mqttBroker[36];
+        uint16_t mqttPort;
+        char uploadToken[72];
+        char topicPrefix[36];
         bool valid;
     };
 

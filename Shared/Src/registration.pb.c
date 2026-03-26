@@ -9,7 +9,7 @@
 PB_BIND(arcana_RegisterRequest, arcana_RegisterRequest, AUTO)
 
 
-PB_BIND(arcana_RegisterResponse, arcana_RegisterResponse, AUTO)
+PB_BIND(arcana_RegisterResponse, arcana_RegisterResponse, 2)
 
 
 PB_BIND(arcana_AuthChallenge, arcana_AuthChallenge, AUTO)

@@ -19,13 +19,13 @@ typedef struct _arcana_RegisterRequest {
 
 typedef struct _arcana_RegisterResponse {
     bool success;
-    char mqtt_user[32]; /* "dev-32FFD605" */
-    char mqtt_pass[32]; /* random 32 chars */
-    char mqtt_broker[32]; /* "arcana.boo" */
+    char mqtt_user[36]; /* "dev-32FFD605" */
+    char mqtt_pass[36]; /* random 32 chars */
+    char mqtt_broker[36]; /* "arcana.boo" */
     uint32_t mqtt_port; /* 1883 */
-    char upload_token[64]; /* HMAC signed token */
-    char topic_prefix[32]; /* "/arcana/32FFD605" */
-    char error[32]; /* error message if !success */
+    char upload_token[72]; /* HMAC signed token */
+    char topic_prefix[36]; /* "/arcana/32FFD605" */
+    char error[36]; /* error message if !success */
 } arcana_RegisterResponse;
 
 typedef PB_BYTES_ARRAY_T(32) arcana_AuthChallenge_nonce_t;
@@ -138,7 +138,7 @@ extern const pb_msgdesc_t arcana_AuthResult_msg;
 #define arcana_AuthResponse_size                 91
 #define arcana_AuthResult_size                   100
 #define arcana_RegisterRequest_size              89
-#define arcana_RegisterResponse_size             238
+#define arcana_RegisterResponse_size             266
 
 #ifdef __cplusplus
 } /* extern "C" */

@@ -1,12 +1,12 @@
 arcana.RegisterRequest.device_id    max_size:16
 arcana.RegisterRequest.public_key   max_size:64
 
-arcana.RegisterResponse.mqtt_user      max_size:32
-arcana.RegisterResponse.mqtt_pass      max_size:32
-arcana.RegisterResponse.mqtt_broker    max_size:32
-arcana.RegisterResponse.upload_token   max_size:64
-arcana.RegisterResponse.topic_prefix   max_size:32
-arcana.RegisterResponse.error          max_size:32
+arcana.RegisterResponse.mqtt_user      max_size:36
+arcana.RegisterResponse.mqtt_pass      max_size:36
+arcana.RegisterResponse.mqtt_broker    max_size:36
+arcana.RegisterResponse.upload_token   max_size:72
+arcana.RegisterResponse.topic_prefix   max_size:36
+arcana.RegisterResponse.error          max_size:36
 
 arcana.AuthChallenge.nonce          max_size:32
 
