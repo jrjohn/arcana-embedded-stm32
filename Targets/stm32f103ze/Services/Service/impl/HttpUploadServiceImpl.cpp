@@ -63,6 +63,9 @@ uint8_t HttpUploadServiceImpl::uploadPendingFiles(Esp8266& esp) {
         return 0;
     }
 
+    // Enable IPD passthrough so +IPD stays in mRxBuf (not intercepted as MQTT)
+    esp.setIpdPassthrough(true);
+
     uint8_t uploaded = 0;
     for (uint8_t i = 0; i < count; i++) {
         LOG_I(ats::ErrorSource::System, 0x0071, pending[i].date);  // uploading date
@@ -82,6 +85,9 @@ uint8_t HttpUploadServiceImpl::uploadPendingFiles(Esp8266& esp) {
     if (uploaded > 0) {
         uploadFile(esp, "device.ats", deviceId);
     }
+
+    // Restore normal +IPD handling for MQTT
+    esp.setIpdPassthrough(false);
 
     // Resume ATS recording
     storage.resumeRecording();
@@ -108,50 +114,96 @@ bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
     uint32_t fileSize = (uint32_t)f_size(&fp);
     if (fileSize == 0) { f_close(&fp); return false; }
 
-    // --- Resume: query server for already uploaded bytes ---
-    uint32_t resumeOffset = queryServerOffset(esp, filename, deviceId);
-    if (resumeOffset >= fileSize) {
-        printf("[UPL] already complete (%luKB)\r\n", (unsigned long)(fileSize / 1024));
-        f_close(&fp);
-        return true;  // already fully uploaded
-    }
-    if (resumeOffset > 0) {
-        f_lseek(&fp, resumeOffset);
-        printf("[UPL] resume at %luKB / %luKB\r\n",
-               (unsigned long)(resumeOffset / 1024), (unsigned long)(fileSize / 1024));
-    } else {
-        printf("[UPL] size=%luKB\r\n", (unsigned long)(fileSize / 1024));
-    }
+    printf("[UPL] size=%luKB\r\n", (unsigned long)(fileSize / 1024));
 
-    uint32_t remainSize = fileSize - resumeOffset;
+    // --- Retry loop: resume from server offset on each attempt ---
+    // Safety valve: give up if 3 consecutive retries make no progress
+    static const int MAX_ATTEMPTS = 200;
+    static const int MAX_STALL = 3;
+    bool ok = false;
+    uint32_t lastOffset = 0;
+    int stallCount = 0;
 
-    // --- TCP connect ---
-    if (!sslConnect(esp)) {
-        printf("[UPL] TCP FAIL\r\n");
-        f_close(&fp);
-        return false;
-    }
+    for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        if (attempt > 0) {
+            printf("[UPL] retry %d\r\n", attempt + 1);
+            // Full SDIO reinit between retries
+            sd_card_full_reinit();
+            vTaskDelay(pdMS_TO_TICKS(3000));  // 3s recovery
 
-    // --- HTTP header with Content-Range for resume ---
-    if (!sendHttpHeader(esp, filename, deviceId, remainSize, resumeOffset, fileSize)) {
-        printf("[UPL] Header FAIL\r\n");
+            // Re-open file after SDIO reinit
+            memset(&fp, 0, sizeof(FIL));
+            fr = f_open(&fp, filename, FA_READ);
+            if (fr != FR_OK) {
+                printf("[UPL] reopen FAIL %d\r\n", (int)fr);
+                break;
+            }
+        }
+
+        // Query server for already uploaded bytes
+        uint32_t resumeOffset = queryServerOffset(esp, filename, deviceId);
+        if (resumeOffset >= fileSize) {
+            printf("[UPL] already complete (%luKB)\r\n", (unsigned long)(fileSize / 1024));
+            f_close(&fp);
+            return true;
+        }
+
+        // Stall detection: give up if no progress for MAX_STALL consecutive retries
+        if (attempt > 0) {
+            if (resumeOffset <= lastOffset) {
+                stallCount++;
+                if (stallCount >= MAX_STALL) {
+                    printf("[UPL] stalled %d retries, giving up\r\n", MAX_STALL);
+                    break;
+                }
+            } else {
+                stallCount = 0;  // progress made, reset
+            }
+        }
+        lastOffset = resumeOffset;
+
+        if (resumeOffset > 0) {
+            printf("[UPL] resume at %luKB / %luKB\r\n",
+                   (unsigned long)(resumeOffset / 1024), (unsigned long)(fileSize / 1024));
+            fp.err = 0;  // clear sticky FatFS error
+            f_lseek(&fp, resumeOffset);
+        }
+
+        uint32_t remainSize = fileSize - resumeOffset;
+
+        // TCP connect
+        if (!sslConnect(esp)) {
+            printf("[UPL] TCP FAIL\r\n");
+            continue;  // retry
+        }
+
+        // HTTP header with Content-Range for resume
+        if (!sendHttpHeader(esp, filename, deviceId, remainSize, resumeOffset, fileSize)) {
+            printf("[UPL] Header FAIL\r\n");
+            sslClose(esp);
+            continue;  // retry
+        }
+
+        // Stream file body
+        ok = streamFileBody(esp, &fp, remainSize);
+        if (ok) {
+            ok = waitHttpResponse(esp);
+            if (!ok) LOG_W(ats::ErrorSource::System, 0x0077);
+        } else {
+            LOG_W(ats::ErrorSource::System, 0x0078);
+        }
+
         sslClose(esp);
+
+        if (ok) break;  // success!
+
+        printf("[UPL] attempt %d failed\r\n", attempt + 1);
         f_close(&fp);
-        return false;
+        memset(&fp, 0, sizeof(FIL));
     }
 
-    // Stream file body (from resumeOffset)
-    bool ok = streamFileBody(esp, &fp, remainSize);
+    // Always close — safe on zeroed FIL (returns FR_INVALID_OBJECT, no side effects)
     f_close(&fp);
-
-    if (ok) {
-        ok = waitHttpResponse(esp);
-        if (!ok) LOG_W(ats::ErrorSource::System, 0x0077);  // HTTP response failed
-    } else {
-        LOG_W(ats::ErrorSource::System, 0x0078);  // Stream body failed
-    }
-
-    sslClose(esp);
     return ok;
 }
 
@@ -186,7 +238,10 @@ void HttpUploadServiceImpl::sslClose(Esp8266& esp) {
 
 uint32_t HttpUploadServiceImpl::queryServerOffset(Esp8266& esp, const char* filename,
                                                     const char* deviceId) {
-    if (!sslConnect(esp)) return 0;
+    if (!sslConnect(esp)) {
+        printf("[UPL] resume: TCP FAIL\r\n");
+        return 0;
+    }
 
     char header[256];
     int hLen = snprintf(header, sizeof(header),
@@ -198,13 +253,24 @@ uint32_t HttpUploadServiceImpl::queryServerOffset(Esp8266& esp, const char* file
 
     char cipsend[24];
     snprintf(cipsend, sizeof(cipsend), "AT+CIPSEND=%d", hLen);
-    if (!esp.sendCmd(cipsend, ">", 3000)) { sslClose(esp); return 0; }
+    if (!esp.sendCmd(cipsend, ">", 3000)) {
+        printf("[UPL] resume: CIPSEND FAIL\r\n");
+        sslClose(esp); return 0;
+    }
     esp.sendData(reinterpret_cast<const uint8_t*>(header), hLen, 3000);
-    if (!esp.waitFor("SEND OK", 5000)) { sslClose(esp); return 0; }
+    if (!esp.waitFor("SEND OK", 5000)) {
+        printf("[UPL] resume: SEND FAIL\r\n");
+        sslClose(esp); return 0;
+    }
 
-    // Wait for response with "size"
-    vTaskDelay(pdMS_TO_TICKS(2000));
-    if (!esp.waitFor("+IPD", 5000)) { sslClose(esp); return 0; }
+    // Clear buffer before waiting for server response
+    esp.clearRx();
+
+    // Wait for JSON body (may arrive in 2nd +IPD after headers)
+    if (!esp.waitFor("\"size\"", 8000)) {
+        printf("[UPL] resume: no size in resp (%u bytes)\r\n", esp.getResponseLen());
+        sslClose(esp); return 0;
+    }
 
     // Parse "size":NNNN from JSON response
     const char* resp = esp.getResponse();
@@ -212,11 +278,13 @@ uint32_t HttpUploadServiceImpl::queryServerOffset(Esp8266& esp, const char* file
     uint32_t offset = 0;
     if (sizeStr) {
         sizeStr += 7;  // skip "size":
+        while (*sizeStr == ' ') sizeStr++;  // skip space after colon
         while (*sizeStr >= '0' && *sizeStr <= '9') {
             offset = offset * 10 + (*sizeStr - '0');
             sizeStr++;
         }
     }
+    printf("[UPL] resume: offset=%luKB\r\n", (unsigned long)(offset / 1024));
 
     sslClose(esp);
     return offset;
@@ -232,31 +300,20 @@ bool HttpUploadServiceImpl::sendHttpHeader(Esp8266& esp, const char* filename,
     char header[320];
     int hLen;
 
-    if (rangeStart > 0 && totalSize > 0) {
-        // Resume: Content-Range header
-        uint32_t rangeEnd = rangeStart + bodySize - 1;
-        hLen = snprintf(header, sizeof(header),
-            "POST /upload/%s/%s HTTP/1.1\r\n"
-            "Host: %s\r\n"
-            "Content-Length: %lu\r\n"
-            "Content-Range: bytes %lu-%lu/%lu\r\n"
-            "Content-Type: application/octet-stream\r\n"
-            "Connection: close\r\n"
-            "\r\n",
-            deviceId, filename, SERVER,
-            (unsigned long)bodySize,
-            (unsigned long)rangeStart, (unsigned long)rangeEnd,
-            (unsigned long)totalSize);
-    } else {
-        hLen = snprintf(header, sizeof(header),
-            "POST /upload/%s/%s HTTP/1.1\r\n"
-            "Host: %s\r\n"
-            "Content-Length: %lu\r\n"
-            "Content-Type: application/octet-stream\r\n"
-            "Connection: close\r\n"
-            "\r\n",
-            deviceId, filename, SERVER, (unsigned long)bodySize);
-    }
+    // Always send Content-Range to prevent server from truncating partial uploads
+    uint32_t rangeEnd = rangeStart + bodySize - 1;
+    hLen = snprintf(header, sizeof(header),
+        "POST /upload/%s/%s HTTP/1.1\r\n"
+        "Host: %s\r\n"
+        "Content-Length: %lu\r\n"
+        "Content-Range: bytes %lu-%lu/%lu\r\n"
+        "Content-Type: application/octet-stream\r\n"
+        "Connection: close\r\n"
+        "\r\n",
+        deviceId, filename, SERVER,
+        (unsigned long)bodySize,
+        (unsigned long)rangeStart, (unsigned long)rangeEnd,
+        (unsigned long)totalSize);
 
     if (hLen <= 0 || hLen >= (int)sizeof(header)) return false;
 

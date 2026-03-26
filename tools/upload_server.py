@@ -82,7 +82,7 @@ def upload_file(device_id, filename):
     is_gzip = request.headers.get("Content-Encoding", "").lower() == "gzip"
 
     # Streaming write — handle large files without buffering entire body
-    mode = "r+b" if (is_partial and filepath.exists()) else "wb"
+    mode = "r+b" if (is_partial and write_offset > 0 and filepath.exists()) else "wb"
     sha256_hash = hashlib.sha256()
     written = 0
     start_time = time.time()
@@ -149,7 +149,7 @@ def upload_file(device_id, filename):
         result["total_size"] = total_size
         result["progress"] = f"{file_size}/{total_size} ({100*file_size//total_size}%)"
 
-    print(f"[UPLOAD] {device_id}/{filename}: {len(data)}B @ offset {write_offset} "
+    print(f"[UPLOAD] {device_id}/{filename}: {written}B @ offset {write_offset} "
           f"→ {file_size}B {'COMPLETE' if complete else 'PARTIAL'}")
 
     return jsonify(result), 200 if complete else 206
