@@ -38,6 +38,10 @@ Esp8266::Esp8266()
     , mFrameSem(0)
     , mInitialized(false)
     , mIpdPassthrough(false)
+    , mAccessSemBuf()
+    , mAccessSem(0)
+    , mCurrentUser(User::None)
+    , mRequestedUser(User::None)
 {
 }
 
@@ -106,6 +110,9 @@ bool Esp8266::initHAL() {
     mFrameSem = xSemaphoreCreateBinaryStatic(&mFrameSemBuf);
     if (!mFrameSem) return false;
 
+    mAccessSem = xSemaphoreCreateBinaryStatic(&mAccessSemBuf);
+    xSemaphoreGive(mAccessSem);  // start unlocked
+
     initGpio();
     initUsart();
 
@@ -149,6 +156,15 @@ void Esp8266::reset() {
 
     HAL_GPIO_WritePin(GPIOG, GPIO_PIN_14, GPIO_PIN_SET);    // RST = HIGH
     HAL_GPIO_WritePin(GPIOG, GPIO_PIN_13, GPIO_PIN_SET);    // CH_PD = HIGH (enable)
+
+    // Reset UART to 115200 (ESP8266 always boots at 115200, regardless of previous speedUp)
+    __HAL_UART_DISABLE_IT(&sHuart3, UART_IT_RXNE);
+    __HAL_UART_DISABLE_IT(&sHuart3, UART_IT_IDLE);
+    sHuart3.Init.BaudRate = 115200;
+    HAL_UART_Init(&sHuart3);
+    __HAL_UART_ENABLE_IT(&sHuart3, UART_IT_RXNE);
+    __HAL_UART_ENABLE_IT(&sHuart3, UART_IT_IDLE);
+
     vTaskDelay(pdMS_TO_TICKS(2000));  // Wait for ESP8266 boot
 
     // Clear any boot messages
@@ -304,6 +320,21 @@ bool Esp8266::waitFor(const char* expect, uint32_t timeoutMs) {
         }
     }
     return responseContains(expect);
+}
+
+// --- Resource lock ---
+
+void Esp8266::requestAccess(User who) {
+    mRequestedUser = who;
+    // Block until semaphore available (current owner releases)
+    xSemaphoreTake(mAccessSem, portMAX_DELAY);
+    mCurrentUser = who;
+    mRequestedUser = User::None;
+}
+
+void Esp8266::releaseAccess() {
+    mCurrentUser = User::None;
+    xSemaphoreGive(mAccessSem);
 }
 
 } // namespace arcana

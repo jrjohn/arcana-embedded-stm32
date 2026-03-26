@@ -53,6 +53,20 @@ public:
     void setIpdPassthrough(bool enable) { mIpdPassthrough = enable; }
     bool isIpdPassthrough() const { return mIpdPassthrough; }
 
+    // --- Resource lock: cooperative ESP8266 sharing ---
+    enum class User : uint8_t { None, Mqtt, Upload };
+
+    /** Block until ESP8266 access granted. */
+    void requestAccess(User who);
+    /** Non-blocking: signal that a user wants access (MQTT checks and yields). */
+    void requestAccessAsync(User who) { mRequestedUser = who; }
+    /** Release ESP8266 for other users. */
+    void releaseAccess();
+    /** MQTT polls this — true means another user wants the ESP8266. */
+    bool isAccessRequested() const { return mRequestedUser != User::None && mRequestedUser != mCurrentUser; }
+    /** Clear request after handling. */
+    void clearRequest() { mRequestedUser = User::None; }
+
     static const uint16_t RX_BUF_SIZE = 512;
     static const uint16_t MQTT_BUF_SIZE = 256;
 
@@ -76,6 +90,12 @@ private:
 
     bool mInitialized;
     volatile bool mIpdPassthrough;  // When true, +IPD stays in mRxBuf
+
+    // Resource lock state
+    StaticSemaphore_t mAccessSemBuf;
+    SemaphoreHandle_t mAccessSem;
+    volatile User mCurrentUser;
+    volatile User mRequestedUser;
 };
 
 } // namespace arcana

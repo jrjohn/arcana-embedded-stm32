@@ -54,7 +54,7 @@ private:
     // KEY1 state
     uint8_t mKey1Hold;  // hold counter (×100ms)
 
-    static const uint16_t TASK_STACK_SIZE = 128;
+    static const uint16_t TASK_STACK_SIZE = 128;  // KEY polling only, upload runs in MQTT task
     StaticTask_t mTaskBuffer;
     StackType_t mTaskStack[TASK_STACK_SIZE];
     TaskHandle_t mTaskHandle;

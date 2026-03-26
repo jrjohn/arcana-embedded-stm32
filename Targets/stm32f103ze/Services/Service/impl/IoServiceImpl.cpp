@@ -1,4 +1,5 @@
 #include "IoServiceImpl.hpp"
+#include "Esp8266.hpp"
 #include "DisplayStatus.hpp"
 #include <cstdio>
 
@@ -77,8 +78,9 @@ void IoServiceImpl::taskLoop() {
                                    (uint32_t)xTaskGetTickCount(),
                                    display::colors::WHITE, 0xF800);
                 } else if (!mUploadRequested) {
-                    // Normal: request upload
+                    // Signal ESP8266 lock — MQTT will yield and run upload
                     mUploadRequested = true;
+                    Esp8266::getInstance().requestAccessAsync(Esp8266::User::Upload);
                     printf("[KEY2] upload\r\n");
                     display::toast("Uploading...", 10000,
                                    (uint32_t)xTaskGetTickCount(),

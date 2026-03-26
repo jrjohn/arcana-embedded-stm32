@@ -2,7 +2,7 @@
 #include "WifiServiceImpl.hpp"
 #include "AtsStorageServiceImpl.hpp"
 #include "HttpUploadServiceImpl.hpp"
-#include "IoServiceImpl.hpp"
+// No IoServiceImpl include — decoupled via Esp8266 resource lock
 #include "Credentials.hpp"
 #include "Esp8266.hpp"
 #include "CommandBridge.hpp"
@@ -167,15 +167,17 @@ void MqttServiceImpl::runTask() {
 
     while (mRunning) {
 
+        // Acquire ESP8266 (blocks if upload is using it)
+        esp.requestAccess(Esp8266::User::Mqtt);
+
         // --- Phase 1: WiFi ---
         LOG_I(ats::ErrorSource::Wifi, 0x0001);  // WiFi connecting
         while (mRunning) {
             if (wifi->resetAndConnect()) break;
             LOG_W(ats::ErrorSource::Wifi, 0x0002);  // WiFi retry
-            // KEY2 check during WiFi retry — flag persists until WiFi up
             vTaskDelay(pdMS_TO_TICKS(10000));
         }
-        if (!mRunning) break;
+        if (!mRunning) { esp.releaseAccess(); break; }
 
         // --- Phase 2: NTP ---
         wifi->syncNtp();
@@ -199,14 +201,11 @@ void MqttServiceImpl::runTask() {
             }
         }
 
-        // --- KEY2 upload check (WiFi up, no MQTT needed) ---
-        {
-            auto& ioSvc = io::IoServiceImpl::getInstance();
-            if (ioSvc.isUploadRequested()) {
-                ioSvc.clearUploadRequest();
-                LOG_I(ats::ErrorSource::System, 0x0075);
-                HttpUploadServiceImpl::uploadPendingFiles(esp);
-            }
+        // ESP8266 lock: upload requested by IoServiceImpl → run upload here (has stack)
+        if (esp.isAccessRequested()) {
+            HttpUploadServiceImpl::uploadPendingFiles(esp);
+            esp.clearRequest();  // done
+            // Fall through to MQTT connect
         }
 
         // --- Phase 3: MQTT config + connect ---
@@ -272,24 +271,16 @@ void MqttServiceImpl::runTask() {
                 }
             }
 
-            // KEY2 short press: upload requested → disconnect MQTT → upload → reconnect
-            {
-                auto& storage = static_cast<atsstorage::AtsStorageServiceImpl&>(
-                    atsstorage::AtsStorageServiceImpl::getInstance());
-                if (storage.isUploadRequested()) {
-                    storage.clearUploadRequest();
-                    LOG_I(ats::ErrorSource::System, 0x0075);
-                    // Fully exit MQTT mode before TCP upload
-                    mqttDisconnect();
-                    esp.sendCmd("AT+CIPCLOSE", "OK", 1000);
-                    esp.sendCmd("AT+MQTTCLEAN=0", "OK", 1000);
-                    mMqttConnected = false;
-                    vTaskDelay(pdMS_TO_TICKS(3000));
-                    // Verify ESP8266 responsive
-                    esp.sendCmd("AT", "OK", 1000);
+            // ESP8266 lock: yield MQTT, reset ESP8266, upload, reconnect
+            if (esp.isAccessRequested()) {
+                mqttDisconnect();
+                mMqttConnected = false;
+                // Full ESP8266 reset + WiFi reconnect (clean MQTT→TCP transition)
+                if (wifi->resetAndConnect()) {
                     HttpUploadServiceImpl::uploadPendingFiles(esp);
-                    break;  // → outer loop → reconnect
                 }
+                esp.clearRequest();
+                break;  // → outer loop → reconnect
             }
 
             // ESP8266 watchdog: hard reset if no successful publish for 30s
@@ -331,6 +322,7 @@ void MqttServiceImpl::runTask() {
         log::SyslogAppender::getInstance().closeUdp(esp);
         mqttDisconnect();
         mMqttConnected = false;
+        esp.releaseAccess();  // release ESP8266 for outer loop re-acquire
         mConnModel.connected = false;
         mConnModel.updateTimestamp();
         mConnObs.publish(&mConnModel);
