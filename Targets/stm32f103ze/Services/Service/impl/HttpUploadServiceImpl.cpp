@@ -396,6 +396,7 @@ bool HttpUploadServiceImpl::streamFileBody(Esp8266& esp, FIL* fp, uint32_t fileS
     static const uint16_t TX_CHUNK = 2048;  // DMA reads stable at 2KB
 
     printf("[UPL] stream %luB\r\n", (unsigned long)fileSize);
+    bool cancelArmed = false;  // must see KEY2 released before cancel
     uint32_t sent = 0;
     while (sent < fileSize) {
         uint32_t remaining = fileSize - sent;
@@ -440,8 +441,11 @@ bool HttpUploadServiceImpl::streamFileBody(Esp8266& esp, FIL* fp, uint32_t fileS
             display::toast(msg, 30000, (uint32_t)xTaskGetTickCount(),
                            display::colors::WHITE, 0x001F);  // blue bg
 
-            // KEY2 cancel: check GPIO directly (ATS task is paused)
-            if (sent > TX_CHUNK * 20  // skip first ~40KB (debounce initial press)
+            // KEY2 cancel: rising-edge (must release first, then press again)
+            if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_SET) {
+                cancelArmed = true;  // KEY2 released — now watching for new press
+            }
+            if (cancelArmed
                 && HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_RESET) {
                 printf("[UPL] cancelled by KEY2\r\n");
                 display::toast("Cancelled", 2000,

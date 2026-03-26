@@ -282,9 +282,14 @@ void MqttServiceImpl::runTask() {
                 if (storage.isUploadRequested()) {
                     storage.clearUploadRequest();
                     LOG_I(ats::ErrorSource::System, 0x0075);
+                    // Fully exit MQTT mode before TCP upload
                     mqttDisconnect();
+                    esp.sendCmd("AT+CIPCLOSE", "OK", 1000);
+                    esp.sendCmd("AT+MQTTCLEAN=0", "OK", 1000);
                     mMqttConnected = false;
-                    vTaskDelay(pdMS_TO_TICKS(1000));
+                    vTaskDelay(pdMS_TO_TICKS(3000));
+                    // Verify ESP8266 responsive
+                    esp.sendCmd("AT", "OK", 1000);
                     HttpUploadServiceImpl::uploadPendingFiles(esp);
                     break;  // → outer loop → reconnect
                 }
