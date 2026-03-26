@@ -61,6 +61,10 @@ public:
     /** Cooperative pause/resume — ATS task yields cleanly between writes */
     void pauseRecording()  { mUploadPause = true; }
     void resumeRecording() { mUploadPause = false; }
+
+    // KEY2 short press → upload request
+    bool isUploadRequested() const { return mUploadRequested; }
+    void clearUploadRequest() { mUploadRequested = false; }
     bool isPaused() const  { return mUploadPause; }
 
     /** Shared FIL for sequential operations (compact at boot, upload at runtime) */
@@ -130,6 +134,7 @@ private:
     bool mDeviceDbReady;
     volatile bool mFormatRequested;
     volatile bool mUploadPause;
+    volatile bool mUploadRequested;
 
     // Pending write data
     SensorDataModel mPendingData;

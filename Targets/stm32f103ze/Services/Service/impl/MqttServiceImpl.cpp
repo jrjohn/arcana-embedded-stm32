@@ -200,13 +200,7 @@ void MqttServiceImpl::runTask() {
             }
         }
 
-        // --- Phase 2.8: Upload pending .ats files (before MQTT connect) ---
-        {
-            uint8_t uploaded = HttpUploadServiceImpl::uploadPendingFiles(esp);
-            if (uploaded > 0) {
-                LOG_I(ats::ErrorSource::System, 0x0074, (uint32_t)uploaded);
-            }
-        }
+        // Upload triggered by KEY2 short press (not auto on boot)
 
         // --- Phase 3: MQTT config + connect ---
         LOG_I(ats::ErrorSource::Mqtt, 0x0001);  // MQTT connecting
@@ -268,6 +262,24 @@ void MqttServiceImpl::runTask() {
                         mMqttConnected = false;
                         break;
                     }
+                }
+            }
+
+            // KEY2 short press: upload requested → disconnect MQTT → upload → reconnect
+            {
+                auto& storage = static_cast<atsstorage::AtsStorageServiceImpl&>(
+                    atsstorage::AtsStorageServiceImpl::getInstance());
+                if (storage.isUploadRequested()) {
+                    storage.clearUploadRequest();
+                    LOG_I(ats::ErrorSource::System, 0x0075);  // upload requested by KEY2
+                    mqttDisconnect();
+                    mMqttConnected = false;
+                    // Wait for ESP8266 to exit MQTT mode before TCP upload
+                    vTaskDelay(pdMS_TO_TICKS(2000));
+                    esp.sendCmd("AT+CIPCLOSE", "OK", 1000);
+                    vTaskDelay(pdMS_TO_TICKS(500));
+                    HttpUploadServiceImpl::uploadPendingFiles(esp);
+                    break;  // → outer loop → reconnect WiFi/MQTT
                 }
             }
 

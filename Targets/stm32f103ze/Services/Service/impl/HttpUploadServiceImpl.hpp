@@ -7,6 +7,15 @@
 
 namespace arcana {
 
+/** Global upload progress — read by LCD, written by upload task */
+struct UploadProgress {
+    volatile uint8_t  currentFile;  // 1-based, 0 = not uploading
+    volatile uint8_t  totalFiles;
+    volatile uint32_t bytesSent;
+    volatile uint32_t totalBytes;
+};
+extern UploadProgress g_uploadProgress;
+
 /**
  * HTTPS file upload service — uploads .ats files to cloud server.
  *

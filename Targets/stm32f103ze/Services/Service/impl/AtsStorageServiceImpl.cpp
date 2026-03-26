@@ -98,6 +98,7 @@ AtsStorageServiceImpl::AtsStorageServiceImpl()
     , mDeviceDbReady(false)
     , mFormatRequested(false)
     , mUploadPause(false)
+    , mUploadRequested(false)
     , mPendingData()
     , mWriteSemBuffer()
     , mWriteSem(0)
@@ -829,8 +830,9 @@ void AtsStorageServiceImpl::taskLoop() {
     memset(rec, 0, RECORD_SIZE);
     uint32_t ecgPhase = 0;  // LUT index for synthetic ECG
     uint8_t key1Hold = 0;   // KEY1 hold counter (seconds)
-    uint8_t key2Hold = 0;   // KEY2 hold counter (seconds)
+    uint8_t key2Hold = 0;   // KEY2 state (0=released, 1=pressed)
     bool key2Seen = false;  // KEY2 must be seen released (HIGH) before first detect
+    uint32_t key2PressStart = 0;  // tick when KEY2 was first pressed
 
     bool provisionToastShown = false;
 
@@ -965,25 +967,18 @@ void AtsStorageServiceImpl::taskLoop() {
                 key1Hold = 0;
             }
 
-            // KEY2 (PC13) safe eject — detect 2-second hold
-            // PC13 is backup-domain pin: internal pull-up unreliable.
-            // Require seeing HIGH (released) at least once before accepting LOW.
-            if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_SET) {
-                key2Seen = true;  // Pin is working, not floating
-                if (key2Hold > 0) display::toastState().dismissTick = 0;
-                key2Hold = 0;
-            } else if (key2Seen) {
-                if (key2Hold == 0) {
-                    display::toast("Eject?", 2000,
+            // KEY2 (PC13) — rising edge (release) = upload trigger
+            {
+                bool key2Now = (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_RESET);
+                if (!key2Now && key2Hold && key2Seen && !mUploadRequested) {
+                    // Rising edge: was pressed, now released → upload
+                    mUploadRequested = true;
+                    display::toast("Uploading...", 5000,
                                    (uint32_t)xTaskGetTickCount(),
-                                   display::colors::WHITE, 0xFD20);
+                                   display::colors::WHITE, 0x07E0);
                 }
-                if (++key2Hold >= 2) {
-                    LOG_W(ats::ErrorSource::Tsdb, evt::ATS_KEY2_EJECT, mTotalRecords);
-                    LOG_W(ats::ErrorSource::System, evt::SYS_BOOT_OK,
-                          mTotalRecords);
-                    mRunning = false;
-                }
+                if (!key2Now) key2Seen = true;  // seen HIGH at least once
+                key2Hold = key2Now ? 1 : 0;
             }
         }
     }

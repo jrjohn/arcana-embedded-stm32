@@ -7,6 +7,7 @@
 #include "EventCodes.hpp"
 #include "FreeRTOS.h"
 #include "task.h"
+#include "DisplayStatus.hpp"
 #include <cstdio>
 #include <cstring>
 
@@ -21,6 +22,8 @@ namespace arcana {
 
 const char* HttpUploadServiceImpl::SERVER = UPLOAD_SERVER_VALUE;
 const uint16_t HttpUploadServiceImpl::PORT = UPLOAD_PORT_VALUE;
+
+UploadProgress g_uploadProgress = {0, 0, 0, 0};
 
 // ---------------------------------------------------------------------------
 // Upload all pending files
@@ -72,8 +75,15 @@ uint8_t HttpUploadServiceImpl::uploadPendingFiles(Esp8266& esp) {
     // Enable DMA reads — ATS paused, no writes, no direction switching
     sd_enable_dma_reads();
 
+    // Set global progress for LCD
+    g_uploadProgress.totalFiles = count;
+    g_uploadProgress.currentFile = 0;
+    g_uploadProgress.bytesSent = 0;
+    g_uploadProgress.totalBytes = 0;
+
     uint8_t uploaded = 0;
     for (uint8_t i = 0; i < count; i++) {
+        g_uploadProgress.currentFile = i + 1;
         LOG_I(ats::ErrorSource::System, 0x0071, pending[i].date);  // uploading date
 
         if (uploadFile(esp, pending[i].name, deviceId)) {
@@ -91,6 +101,9 @@ uint8_t HttpUploadServiceImpl::uploadPendingFiles(Esp8266& esp) {
     if (uploaded > 0) {
         uploadFile(esp, "device.ats", deviceId);
     }
+
+    // Clear upload progress
+    g_uploadProgress.currentFile = 0;
 
     // Restore DMA write direction before resuming ATS recording
     sd_disable_dma_reads();
@@ -124,6 +137,8 @@ bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
     if (fileSize == 0) { f_close(&fp); return false; }
 
     printf("[UPL] size=%luKB\r\n", (unsigned long)(fileSize / 1024));
+    g_uploadProgress.totalBytes = fileSize;
+    g_uploadProgress.bytesSent = 0;
 
     // --- Retry loop: resume from server offset on each attempt ---
     // Safety valve: give up if 3 consecutive retries make no progress
@@ -407,10 +422,19 @@ bool HttpUploadServiceImpl::streamFileBody(Esp8266& esp, FIL* fp, uint32_t fileS
         }
 
         sent += br;
+        g_uploadProgress.bytesSent = sent;
 
-        // Progress log every ~20KB
+        // Progress log + LCD update every ~20KB
         if (sent % (TX_CHUNK * 10) == 0 || sent == fileSize) {
             printf("[UPL] %lu/%lu\r\n", (unsigned long)sent, (unsigned long)fileSize);
+            // LCD toast: "Upload 1/7 23%"
+            uint8_t pct = (uint8_t)(sent * 100ULL / fileSize);
+            char msg[24];
+            snprintf(msg, sizeof(msg), "Upload %u/%u %u%%",
+                     g_uploadProgress.currentFile,
+                     g_uploadProgress.totalFiles, pct);
+            display::toast(msg, 30000, (uint32_t)xTaskGetTickCount(),
+                           display::colors::WHITE, 0x001F);  // blue bg
         }
     }
     return true;
