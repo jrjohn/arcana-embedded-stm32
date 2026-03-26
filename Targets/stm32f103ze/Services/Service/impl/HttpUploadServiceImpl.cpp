@@ -13,6 +13,8 @@
 extern "C" {
     void sdio_force_reinit(void);
     void sd_card_full_reinit(void);
+    void sd_enable_dma_reads(void);
+    void sd_disable_dma_reads(void);
 }
 
 namespace arcana {
@@ -67,6 +69,9 @@ uint8_t HttpUploadServiceImpl::uploadPendingFiles(Esp8266& esp) {
     // Enable IPD passthrough so +IPD stays in mRxBuf (not intercepted as MQTT)
     esp.setIpdPassthrough(true);
 
+    // Enable DMA reads — ATS paused, no writes, no direction switching
+    sd_enable_dma_reads();
+
     uint8_t uploaded = 0;
     for (uint8_t i = 0; i < count; i++) {
         LOG_I(ats::ErrorSource::System, 0x0071, pending[i].date);  // uploading date
@@ -86,6 +91,9 @@ uint8_t HttpUploadServiceImpl::uploadPendingFiles(Esp8266& esp) {
     if (uploaded > 0) {
         uploadFile(esp, "device.ats", deviceId);
     }
+
+    // Restore DMA write direction before resuming ATS recording
+    sd_disable_dma_reads();
 
     // Restore normal +IPD handling for MQTT
     esp.setIpdPassthrough(false);
@@ -178,15 +186,46 @@ bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
             continue;  // retry
         }
 
-        // HTTP header with Content-Range for resume
-        if (!sendHttpHeader(esp, filename, deviceId, remainSize, resumeOffset, fileSize)) {
-            printf("[UPL] Header FAIL\r\n");
+        // Enter transparent passthrough mode
+        if (!esp.sendCmd("AT+CIPMODE=1", "OK", 2000)) {
+            printf("[UPL] CIPMODE FAIL\r\n");
             sslClose(esp);
-            continue;  // retry
+            continue;
+        }
+        if (!esp.sendCmd("AT+CIPSEND", ">", 3000)) {
+            printf("[UPL] transparent FAIL\r\n");
+            esp.sendCmd("AT+CIPMODE=0", "OK", 1000);
+            sslClose(esp);
+            continue;
         }
 
-        // Stream file body (AT mode — reliable per-chunk acknowledgment)
+        // Send HTTP header (raw bytes, transparent mode)
+        {
+            char header[320];
+            uint32_t rangeEnd = resumeOffset + remainSize - 1;
+            int hLen = snprintf(header, sizeof(header),
+                "POST /upload/%s/%s HTTP/1.1\r\n"
+                "Host: %s\r\n"
+                "Content-Length: %lu\r\n"
+                "Content-Range: bytes %lu-%lu/%lu\r\n"
+                "Content-Type: application/octet-stream\r\n"
+                "Connection: close\r\n"
+                "\r\n",
+                deviceId, filename, SERVER,
+                (unsigned long)remainSize,
+                (unsigned long)resumeOffset, (unsigned long)rangeEnd,
+                (unsigned long)fileSize);
+            esp.sendData(reinterpret_cast<const uint8_t*>(header), hLen, 3000);
+        }
+
+        // Stream file body (transparent + DMA read)
         ok = streamFileBody(esp, &fp, remainSize);
+
+        // Exit transparent mode: 1s silence → +++ → 1s silence
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        esp.sendData(reinterpret_cast<const uint8_t*>("+++"), 3, 1000);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        esp.sendCmd("AT+CIPMODE=0", "OK", 2000);
 
         if (ok) {
             ok = waitHttpResponse(esp);
@@ -335,14 +374,15 @@ bool HttpUploadServiceImpl::sendHttpHeader(Esp8266& esp, const char* filename,
 
 bool HttpUploadServiceImpl::streamFileBody(Esp8266& esp, FIL* fp, uint32_t fileSize) {
     uint8_t* chunkBuf = atsstorage::AtsStorageServiceImpl::getReadCache();
+    static const uint16_t TX_CHUNK = 2048;  // DMA reads stable at 2KB
 
     printf("[UPL] stream %luB\r\n", (unsigned long)fileSize);
     uint32_t sent = 0;
     while (sent < fileSize) {
         uint32_t remaining = fileSize - sent;
-        uint16_t chunkLen = (remaining > CHUNK_SIZE) ? CHUNK_SIZE : (uint16_t)remaining;
+        uint16_t chunkLen = (remaining > TX_CHUNK) ? TX_CHUNK : (uint16_t)remaining;
 
-        // Read from SD with retry + SDIO reinit on failure
+        // DMA read from SD with retry
         UINT br = 0;
         FRESULT fr = FR_DISK_ERR;
         for (int retry = 0; retry < 3; retry++) {
@@ -360,28 +400,16 @@ bool HttpUploadServiceImpl::streamFileBody(Esp8266& esp, FIL* fp, uint32_t fileS
             return false;
         }
 
-        // AT+CIPSEND=<len>
-        char cipsend[24];
-        snprintf(cipsend, sizeof(cipsend), "AT+CIPSEND=%u", (unsigned)br);
-        if (!esp.sendCmd(cipsend, ">", 5000)) {
-            printf("[UPL] CIPSEND FAIL at %lu\r\n", (unsigned long)sent);
-            return false;
-        }
-
-        esp.sendData(chunkBuf, br, 5000);
-        if (!esp.waitFor("SEND OK", 10000)) {
+        // Transparent mode: send directly to TCP (no AT overhead)
+        if (!esp.sendData(chunkBuf, br, 5000)) {
             printf("[UPL] SEND FAIL at %lu\r\n", (unsigned long)sent);
             return false;
         }
 
         sent += br;
 
-        // Proactive SDIO reinit every 32KB
-        if (sent % 32768 == 0) {
-            sdio_force_reinit();
-        }
-
-        if (sent % (CHUNK_SIZE * 10) == 0 || sent == fileSize) {
+        // Progress log every ~20KB
+        if (sent % (TX_CHUNK * 10) == 0 || sent == fileSize) {
             printf("[UPL] %lu/%lu\r\n", (unsigned long)sent, (unsigned long)fileSize);
         }
     }

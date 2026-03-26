@@ -32,6 +32,9 @@ extern SemaphoreHandle_t g_sd_dma_sem;
  * 72MHz / (1+2) = 24MHz — maximum Default Speed. */
 #define SDIO_CLKDIV_FAST 1U
 
+static void sdio_reinit(void);  /* forward declaration */
+static volatile int g_sd_dma_read_mode = 0;
+
 /* Ensure SDIO hardware and HAL state machine are both ready.
  * HAL_SD_ReadBlocks (polling) leaves SDIO->DCTRL.DTEN set after every read.
  * This blocks subsequent writes. Unconditionally clear the data path. */
@@ -105,23 +108,43 @@ DRESULT disk_read(BYTE pdrv, BYTE *buff, LBA_t sector, UINT count)
     for (int retry = 0; retry < 3; retry++) {
         ensure_hal_ready();
 
-        /* Slow down SDIO clock for polling (avoid FIFO overflow under IRQ load) */
-        MODIFY_REG(SDIO->CLKCR, 0xFFU, SDIO_CLKDIV_SLOW);
+        HAL_StatusTypeDef hal;
 
-        HAL_StatusTypeDef hal = HAL_SD_ReadBlocks(&g_hsd, buff, sector, count, 5000);
+        if (g_sd_dma_read_mode && g_sd_dma_sem) {
+            /* DMA read at full clock — used during upload (no concurrent writes) */
+            MODIFY_REG(SDIO->CLKCR, 0xFFU, SDIO_CLKDIV_FAST);
+            xSemaphoreTake(g_sd_dma_sem, 0);  /* drain stale */
 
-        /* Restore fast clock */
-        MODIFY_REG(SDIO->CLKCR, 0xFFU, SDIO_CLKDIV_FAST);
+            hal = HAL_SD_ReadBlocks_DMA(&g_hsd, buff, sector, count);
+            if (hal != HAL_OK) {
+                sdio_reinit();
+                continue;
+            }
 
-        /* Always clear DCTRL after polling read — HAL_SD_ReadBlocks can leave
-         * DTEN set (stuck RXACT) if the transfer partially completes or the
-         * data CRC arrives after the HAL timeout. */
+            if (xSemaphoreTake(g_sd_dma_sem, pdMS_TO_TICKS(5000)) != pdTRUE) {
+                sdio_reinit();
+                continue;
+            }
+
+            if (g_hsd.ErrorCode != HAL_SD_ERROR_NONE) {
+                sdio_reinit();
+                continue;
+            }
+        } else {
+            /* Polling read at reduced clock (safe for mixed read/write) */
+            MODIFY_REG(SDIO->CLKCR, 0xFFU, SDIO_CLKDIV_SLOW);
+            hal = HAL_SD_ReadBlocks(&g_hsd, buff, sector, count, 5000);
+            MODIFY_REG(SDIO->CLKCR, 0xFFU, SDIO_CLKDIV_FAST);
+
+            if (hal != HAL_OK) {
+                SDIO->DCTRL = 0;
+                __HAL_SD_CLEAR_FLAG(&g_hsd, SDIO_STATIC_FLAGS);
+                continue;
+            }
+        }
+
         SDIO->DCTRL = 0;
         __HAL_SD_CLEAR_FLAG(&g_hsd, SDIO_STATIC_FLAGS);
-
-        if (hal != HAL_OK) {
-            continue;
-        }
 
         /* Wait for card to return to transfer state */
         uint32_t timeout = HAL_GetTick() + 5000;
@@ -176,6 +199,28 @@ static void sdio_reinit(void) {
 void sdio_force_reinit(void) {
     sdio_reinit();
     g_sdio_write_count = 0;
+}
+
+/* --- DMA Read Mode (for upload — no writes during this window) --- */
+
+void sd_enable_dma_reads(void) {
+    extern DMA_HandleTypeDef g_hdma_sdio;
+    sdio_reinit();
+    /* Reconfigure DMA for read direction (PERIPH → MEMORY) */
+    __HAL_DMA_DISABLE(&g_hdma_sdio);
+    g_hdma_sdio.Init.Direction = DMA_PERIPH_TO_MEMORY;
+    HAL_DMA_Init(&g_hdma_sdio);
+    g_sd_dma_read_mode = 1;
+}
+
+void sd_disable_dma_reads(void) {
+    extern DMA_HandleTypeDef g_hdma_sdio;
+    sdio_reinit();
+    /* Restore DMA for write direction (MEMORY → PERIPH) */
+    __HAL_DMA_DISABLE(&g_hdma_sdio);
+    g_hdma_sdio.Init.Direction = DMA_MEMORY_TO_PERIPH;
+    HAL_DMA_Init(&g_hdma_sdio);
+    g_sd_dma_read_mode = 0;
 }
 
 /* Full card re-enumeration after physical card swap (CMD0/CMD8/ACMD41).
