@@ -8,6 +8,7 @@ CPP_SRCS += \
 ../Services/Service/impl/AtsStorageServiceImpl.cpp \
 ../Services/Service/impl/BleServiceImpl.cpp \
 ../Services/Service/impl/HttpUploadServiceImpl.cpp \
+../Services/Service/impl/IoServiceImpl.cpp \
 ../Services/Service/impl/CommandBridge.cpp \
 ../Services/Service/impl/LcdServiceImpl.cpp \
 ../Services/Service/impl/LedServiceImpl.cpp \
@@ -24,6 +25,7 @@ OBJS += \
 ./Services/Service/impl/AtsStorageServiceImpl.o \
 ./Services/Service/impl/BleServiceImpl.o \
 ./Services/Service/impl/HttpUploadServiceImpl.o \
+./Services/Service/impl/IoServiceImpl.o \
 ./Services/Service/impl/CommandBridge.o \
 ./Services/Service/impl/LcdServiceImpl.o \
 ./Services/Service/impl/LedServiceImpl.o \
@@ -41,6 +43,7 @@ CPP_DEPS += \
 ./Services/Service/impl/BleServiceImpl.d \
 ./Services/Service/impl/CommandBridge.d \
 ./Services/Service/impl/HttpUploadServiceImpl.d \
+./Services/Service/impl/IoServiceImpl.d \
 ./Services/Service/impl/LcdServiceImpl.d \
 ./Services/Service/impl/LedServiceImpl.d \
 ./Services/Service/impl/LightServiceImpl.d \

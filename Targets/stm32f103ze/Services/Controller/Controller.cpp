@@ -12,6 +12,7 @@
 #include "MqttServiceImpl.hpp"
 #include "BleServiceImpl.hpp"
 #include "OtaServiceImpl.hpp"
+#include "IoServiceImpl.hpp"
 #include "LcdViewModel.hpp"
 #include "MainView.hpp"
 #include "IDisplay.hpp"
@@ -169,6 +170,9 @@ void Controller::startServices() {
     mWifi->start();
     mMqtt->start();
     mBle->start();
+
+    // IO key service (independent KEY1/KEY2 polling task)
+    io::IoServiceImpl::getInstance().start();
 
     // View layer start (render task + ViewModel subscriptions)
     sMainView.start();

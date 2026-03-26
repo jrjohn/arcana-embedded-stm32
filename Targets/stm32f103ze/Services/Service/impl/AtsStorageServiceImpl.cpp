@@ -1,5 +1,6 @@
 #include "stm32f1xx_hal.h"
 #include "AtsStorageServiceImpl.hpp"
+#include "IoServiceImpl.hpp"
 #include "DeviceKey.hpp"
 #include "SystemClock.hpp"
 #include "MainView.hpp"
@@ -950,35 +951,15 @@ void AtsStorageServiceImpl::taskLoop() {
 
             // Size guard removed — IFilePort now uses uint64_t, no 4GB limit
 
-            // KEY1 (PA0) runtime format — detect 2-second hold (active-HIGH)
-            if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET) {
-                if (key1Hold == 0) {
-                    display::toast("Format?", 2000,
-                                   (uint32_t)xTaskGetTickCount(),
-                                   display::colors::WHITE, 0xFD20);
-                }
-                if (++key1Hold >= 2) {
+            // KEY1/KEY2 handled by IoServiceImpl (independent task)
+            {
+                auto& ioSvc = io::IoServiceImpl::getInstance();
+                if (ioSvc.isFormatRequested()) {
+                    ioSvc.clearFormatRequest();
                     LOG_W(ats::ErrorSource::Tsdb, evt::ATS_KEY1_FORMAT);
                     mRunning = false;
                     mFormatRequested = true;
                 }
-            } else {
-                if (key1Hold > 0) display::toastState().dismissTick = 0;
-                key1Hold = 0;
-            }
-
-            // KEY2 (PC13) — rising edge (release) = upload trigger
-            {
-                bool key2Now = (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_RESET);
-                if (!key2Now && key2Hold && key2Seen && !mUploadRequested) {
-                    // Rising edge: was pressed, now released → upload
-                    mUploadRequested = true;
-                    display::toast("Uploading...", 5000,
-                                   (uint32_t)xTaskGetTickCount(),
-                                   display::colors::WHITE, 0x07E0);
-                }
-                if (!key2Now) key2Seen = true;  // seen HIGH at least once
-                key2Hold = key2Now ? 1 : 0;
             }
         }
     }

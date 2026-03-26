@@ -8,6 +8,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "DisplayStatus.hpp"
+#include "IoServiceImpl.hpp"
 #include <cstdio>
 #include <cstring>
 
@@ -255,7 +256,10 @@ bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
         if (ok) break;  // success!
 
         // KEY2 cancel — stop all retries
-        if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_RESET) break;
+        if (io::IoServiceImpl::getInstance().isCancelRequested()) {
+            io::IoServiceImpl::getInstance().disarmCancel();
+            break;
+        }
 
         printf("[UPL] attempt %d failed\r\n", attempt + 1);
         f_close(&fp);
@@ -396,7 +400,7 @@ bool HttpUploadServiceImpl::streamFileBody(Esp8266& esp, FIL* fp, uint32_t fileS
     static const uint16_t TX_CHUNK = 2048;  // DMA reads stable at 2KB
 
     printf("[UPL] stream %luB\r\n", (unsigned long)fileSize);
-    bool cancelArmed = false;  // must see KEY2 released before cancel
+    io::IoServiceImpl::getInstance().armCancel();
     uint32_t sent = 0;
     while (sent < fileSize) {
         uint32_t remaining = fileSize - sent;
@@ -441,16 +445,10 @@ bool HttpUploadServiceImpl::streamFileBody(Esp8266& esp, FIL* fp, uint32_t fileS
             display::toast(msg, 30000, (uint32_t)xTaskGetTickCount(),
                            display::colors::WHITE, 0x001F);  // blue bg
 
-            // KEY2 cancel: rising-edge (must release first, then press again)
-            if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_SET) {
-                cancelArmed = true;  // KEY2 released — now watching for new press
-            }
-            if (cancelArmed
-                && HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_RESET) {
+            // Cancel check — IoServiceImpl handles KEY2 debounce independently
+            if (io::IoServiceImpl::getInstance().isCancelRequested()) {
                 printf("[UPL] cancelled by KEY2\r\n");
-                display::toast("Cancelled", 2000,
-                               (uint32_t)xTaskGetTickCount(),
-                               display::colors::WHITE, 0xF800);  // red bg
+                io::IoServiceImpl::getInstance().disarmCancel();
                 return false;
             }
         }

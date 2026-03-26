@@ -57,6 +57,7 @@
 "./Services/Service/impl/AtsStorageServiceImpl.o"
 "./Services/Service/impl/BleServiceImpl.o"
 "./Services/Service/impl/HttpUploadServiceImpl.o"
+"./Services/Service/impl/IoServiceImpl.o"
 "./Services/Service/impl/CommandBridge.o"
 "./Services/Service/impl/LcdServiceImpl.o"
 "./Services/Service/impl/LedServiceImpl.o"

@@ -2,6 +2,7 @@
 #include "WifiServiceImpl.hpp"
 #include "AtsStorageServiceImpl.hpp"
 #include "HttpUploadServiceImpl.hpp"
+#include "IoServiceImpl.hpp"
 #include "Credentials.hpp"
 #include "Esp8266.hpp"
 #include "CommandBridge.hpp"
@@ -171,6 +172,7 @@ void MqttServiceImpl::runTask() {
         while (mRunning) {
             if (wifi->resetAndConnect()) break;
             LOG_W(ats::ErrorSource::Wifi, 0x0002);  // WiFi retry
+            // KEY2 check during WiFi retry — flag persists until WiFi up
             vTaskDelay(pdMS_TO_TICKS(10000));
         }
         if (!mRunning) break;
@@ -182,18 +184,15 @@ void MqttServiceImpl::runTask() {
         {
             auto& clock = SystemClock::getInstance();
             auto* wifiImpl = static_cast<wifi::WifiServiceImpl*>(wifi);
-            auto& storage = static_cast<atsstorage::AtsStorageServiceImpl&>(
+            auto& tzStorage = static_cast<atsstorage::AtsStorageServiceImpl&>(
                 atsstorage::AtsStorageServiceImpl::getInstance());
 
             int16_t currentTz = clock.tzOffsetMin();
             int16_t detectedTz = 0;
-
             if (wifiImpl->detectTimezone(detectedTz)) {
                 if (currentTz != detectedTz) {
-                    // First boot (currentTz==0 and no config) → apply silently
-                    // Otherwise → TODO: LCD prompt KEY1=update KEY2=ignore
                     clock.setTzOffset(detectedTz);
-                    storage.saveTzConfig(detectedTz, 1);
+                    tzStorage.saveTzConfig(detectedTz, 1);
                     LOG_I(ats::ErrorSource::System, 0x0031,
                           (uint32_t)(uint16_t)detectedTz);
                 }
@@ -202,13 +201,11 @@ void MqttServiceImpl::runTask() {
 
         // --- KEY2 upload check (WiFi up, no MQTT needed) ---
         {
-            auto& storage = static_cast<atsstorage::AtsStorageServiceImpl&>(
-                atsstorage::AtsStorageServiceImpl::getInstance());
-            if (storage.isUploadRequested()) {
-                storage.clearUploadRequest();
+            auto& ioSvc = io::IoServiceImpl::getInstance();
+            if (ioSvc.isUploadRequested()) {
+                ioSvc.clearUploadRequest();
                 LOG_I(ats::ErrorSource::System, 0x0075);
                 HttpUploadServiceImpl::uploadPendingFiles(esp);
-                // After upload, fall through to MQTT connect
             }
         }
 
