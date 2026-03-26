@@ -75,7 +75,9 @@ void IoServiceImpl::taskLoop() {
                     // During upload: cancel
                     mCancelRequested = true;
                     printf("[KEY2] cancel\r\n");
-                    display::toastState().dismissTick = 0;  // dismiss upload toast
+                    // Force-clear toast (dismiss + deactivate)
+                    display::toastState().active = false;
+                    display::toastState().dismissTick = 0;
                 } else if (!mUploadRequested) {
                     // Signal ESP8266 lock — MQTT will yield and run upload
                     mUploadRequested = true;
@@ -92,12 +94,12 @@ void IoServiceImpl::taskLoop() {
 
         // --- KEY1 (PA0, active-HIGH) — long press 2s = format ---
         if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET) {
-            if (mKey1Hold == 0) {
+            mKey1Hold++;
+            if (mKey1Hold == 3) {  // show toast after 300ms (debounce)
                 display::toast("Format?", 2000,
                                (uint32_t)xTaskGetTickCount(),
                                display::colors::WHITE, 0xFD20);
             }
-            mKey1Hold++;
             if (mKey1Hold >= 20) {  // 20 × 100ms = 2s
                 mFormatRequested = true;
                 mKey1Hold = 0;

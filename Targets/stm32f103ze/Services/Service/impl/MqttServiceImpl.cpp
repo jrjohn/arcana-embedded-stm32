@@ -275,12 +275,11 @@ void MqttServiceImpl::runTask() {
             if (esp.isAccessRequested()) {
                 mqttDisconnect();
                 mMqttConnected = false;
-                // Full ESP8266 reset + WiFi reconnect (clean MQTT→TCP transition)
                 if (wifi->resetAndConnect()) {
                     HttpUploadServiceImpl::uploadPendingFiles(esp);
+                    esp.clearRequest();  // only clear after upload ran
                 }
-                esp.clearRequest();
-                break;  // → outer loop → reconnect
+                break;  // → outer loop (Phase 2 retries if request still set)
             }
 
             // ESP8266 watchdog: hard reset if no successful publish for 30s
