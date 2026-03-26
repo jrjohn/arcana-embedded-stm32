@@ -134,11 +134,16 @@ void Controller::initHAL() {
     display::g_display = &mLcd->getDisplay();
     mSdBench->initHAL();
     mSdStorage->initHAL();
+#ifndef ESP_FLASH_MODE
     mWifi->initHAL();
     mMqtt->initHAL();
-
-    // BLE (HC-08 on USART2)
     Hc08Ble::getInstance().initHAL();
+#else
+    __HAL_RCC_GPIOG_CLK_ENABLE();
+    GPIO_InitTypeDef g={};g.Mode=GPIO_MODE_OUTPUT_PP;g.Speed=GPIO_SPEED_FREQ_HIGH;
+    g.Pin=GPIO_PIN_13;HAL_GPIO_Init(GPIOG,&g);HAL_GPIO_WritePin(GPIOG,GPIO_PIN_13,GPIO_PIN_SET);
+    g.Pin=GPIO_PIN_14;HAL_GPIO_Init(GPIOG,&g);HAL_GPIO_WritePin(GPIOG,GPIO_PIN_14,GPIO_PIN_SET);
+#endif
 }
 
 void Controller::initServices() {
@@ -159,6 +164,10 @@ void Controller::initServices() {
 }
 
 void Controller::startServices() {
+#ifdef ESP_FLASH_MODE
+    printf("[BOOT] ESP_FLASH_MODE — STM32 idle\r\n");
+    for (;;) vTaskDelay(pdMS_TO_TICKS(1000));
+#endif
     mTimer->start();
     mLed->start();
 
