@@ -172,38 +172,52 @@ bool RegistrationServiceImpl::httpRegister(Esp8266& esp) {
         return false;
     }
 
-    // --- Wait for response ---
+    // --- Wait for response (headers + body may come in separate +IPD chunks) ---
     esp.clearRx();
     esp.setIpdPassthrough(true);
 
-    // Wait for response body (FrameCodec frame)
-    if (!esp.waitFor("\"size\"", 8000) && !esp.waitFor("+IPD", 8000)) {
-        // Try waiting for any data
-        vTaskDelay(pdMS_TO_TICKS(3000));
-    }
+    // Wait for first +IPD (HTTP headers)
+    esp.waitFor("+IPD", 8000);
+    // Wait for second +IPD (HTTP body with FrameCodec frame)
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    esp.waitFor("+IPD", 3000);
+    vTaskDelay(pdMS_TO_TICKS(500));
 
-    // Find FrameCodec magic in response buffer
-    const char* resp = esp.getResponse();
+    // Use mRxPos (actual bytes received) not mRxLen (last idle snapshot)
+    const uint8_t* raw = reinterpret_cast<const uint8_t*>(esp.getResponse());
     uint16_t respLen = esp.getResponseLen();
+    // Check if more bytes in buffer than reported by idle
+    // (mRxPos may be ahead of mRxLen)
+    if (respLen < 200) {
+        // Probably missing body — wait more
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        respLen = esp.getResponseLen();
+    }
+    printf("[REG] resp %u bytes\r\n", respLen);
 
-    // Search for 0xAC 0xDA in response (skip HTTP headers)
-    const uint8_t* raw = reinterpret_cast<const uint8_t*>(resp);
+    // Search for FrameCodec magic 0xAC 0xDA 0x01 in response (after HTTP headers)
     bool found = false;
     for (uint16_t i = 0; i + 9 <= respLen; i++) {
-        if (raw[i] == 0xAC && raw[i + 1] == 0xDA) {
-            // Found frame magic — extract
+        if (raw[i] == 0xAC && raw[i + 1] == 0xDA && raw[i + 2] == FRAME_VER) {
             uint16_t pLen = raw[i + 5] | (raw[i + 6] << 8);
             uint16_t totalFrame = 7 + pLen + 2;
             if (i + totalFrame <= respLen) {
-                // Verify CRC
-                uint16_t expectedCrc = crc16(0,raw + i, 7 + pLen);
+                uint16_t expectedCrc = crc16(0, raw + i, 7 + pLen);
                 uint16_t receivedCrc = raw[i + 7 + pLen] | (raw[i + 7 + pLen + 1] << 8);
+                printf("[REG] frame @%u len=%u crc=%s\r\n",
+                       i, pLen, expectedCrc == receivedCrc ? "OK" : "FAIL");
                 if (expectedCrc == receivedCrc) {
                     found = parseResponse(raw + i + 7, pLen);
                 }
+            } else {
+                printf("[REG] frame @%u truncated (need %u, have %u)\r\n",
+                       i, i + totalFrame, respLen);
             }
             break;
         }
+    }
+    if (!found) {
+        printf("[REG] no frame found in %u bytes\r\n", respLen);
     }
 
     esp.setIpdPassthrough(false);
@@ -224,7 +238,11 @@ bool RegistrationServiceImpl::parseResponse(const uint8_t* payload, uint16_t len
     arcana_RegisterResponse resp = arcana_RegisterResponse_init_zero;
     pb_istream_t stream = pb_istream_from_buffer(payload, len);
     if (!pb_decode(&stream, arcana_RegisterResponse_fields, &resp)) {
-        printf("[REG] pb decode fail\r\n");
+        printf("[REG] pb decode fail: %s (len=%u)\r\n", PB_GET_ERROR(&stream), len);
+        // Dump first 16 bytes of payload for debug
+        printf("[REG] payload: ");
+        for (uint16_t j = 0; j < (len < 16 ? len : 16); j++) printf("%02X ", payload[j]);
+        printf("\r\n");
         return false;
     }
 
