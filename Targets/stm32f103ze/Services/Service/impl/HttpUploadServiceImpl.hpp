@@ -11,8 +11,9 @@ namespace arcana {
 struct UploadProgress {
     volatile uint8_t  currentFile;  // 1-based, 0 = not uploading
     volatile uint8_t  totalFiles;
-    volatile uint32_t bytesSent;
-    volatile uint32_t totalBytes;
+    volatile uint32_t bytesSent;     // session bytes sent
+    volatile uint32_t totalBytes;    // total file size
+    volatile uint32_t resumeOffset;  // resume start point
 };
 extern UploadProgress g_uploadProgress;
 

@@ -142,6 +142,7 @@ bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
     printf("[UPL] size=%luKB\r\n", (unsigned long)(fileSize / 1024));
     g_uploadProgress.totalBytes = fileSize;
     g_uploadProgress.bytesSent = 0;
+    g_uploadProgress.resumeOffset = 0;
 
     // --- Retry loop: resume from server offset on each attempt ---
     static const int MAX_ATTEMPTS = 200;
@@ -188,6 +189,8 @@ bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
             }
         }
         lastOffset = resumeOffset;
+
+        g_uploadProgress.resumeOffset = resumeOffset;
 
         if (resumeOffset > 0) {
             printf("[UPL] resume at %luKB / %luKB\r\n",
@@ -438,7 +441,9 @@ bool HttpUploadServiceImpl::streamFileBody(Esp8266& esp, FIL* fp, uint32_t fileS
         if (sent % (TX_CHUNK * 10) == 0 || sent == fileSize) {
             printf("[UPL] %lu/%lu\r\n", (unsigned long)sent, (unsigned long)fileSize);
             // LCD toast: "Upload 1/7 23%" — static buffer (toast stores pointer)
-            uint8_t pct = (uint8_t)(sent * 100ULL / fileSize);
+            uint32_t totalSent = g_uploadProgress.resumeOffset + sent;
+            uint32_t totalSize = g_uploadProgress.totalBytes;
+            uint8_t pct = totalSize > 0 ? (uint8_t)(totalSent * 100ULL / totalSize) : 0;
             static char msg[24];
             snprintf(msg, sizeof(msg), "Upload %u/%u %u%%",
                      g_uploadProgress.currentFile,
