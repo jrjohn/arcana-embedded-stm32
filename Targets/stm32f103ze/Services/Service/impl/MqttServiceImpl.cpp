@@ -1,4 +1,5 @@
 #include "MqttServiceImpl.hpp"
+#include "MqttPacket.hpp"
 #include "WifiServiceImpl.hpp"
 #include "AtsStorageServiceImpl.hpp"
 #include "HttpUploadServiceImpl.hpp"
@@ -47,6 +48,7 @@ MqttServiceImpl::MqttServiceImpl()
     , mTaskHandle(0)
     , mRunning(false)
     , mMqttConnected(false)
+    , mNextPacketId(1)
 {
     output.CommandEvents    = &mCmdObs;
     output.ConnectionStatus = &mConnObs;
@@ -98,35 +100,11 @@ void MqttServiceImpl::onLightData(LightDataModel* model, void* ctx) {
     self->mLatestLight = *model;
 }
 
-// --- AT+MQTT helpers ---
+// --- TCP SSL + raw MQTT 3.1.1 ---
 
-bool MqttServiceImpl::mqttConfig() {
+bool MqttServiceImpl::sslConnect() {
     Esp8266& esp = input.Wifi->getEsp();
-    char cmd[160];
 
-    // Use per-device credentials from registration (or fallback to hardcoded)
-    auto& regSvc = reg::RegistrationServiceImpl::getInstance();
-    const char* user = "arcana";
-    const char* pass = "arcana";
-    if (regSvc.isRegistered()) {
-        user = regSvc.credentials().mqttUser;
-        pass = regSvc.credentials().mqttPass;
-    }
-
-    // scheme=2: MQTT over TLS (no cert verify)
-    snprintf(cmd, sizeof(cmd),
-             "AT+MQTTUSERCFG=0,2,\"%s\",\"%s\",\"%s\",0,0,\"\"",
-             MQTT_CLIENT_ID, user, pass);
-    bool cfgOk = esp.sendCmd(cmd, "OK", 3000);
-    printf("[MQTT] USERCFG scheme=2: %s\r\n", cfgOk ? "OK" : esp.getResponse());
-    return cfgOk;
-}
-
-bool MqttServiceImpl::mqttConnect() {
-    Esp8266& esp = input.Wifi->getEsp();
-    char cmd[128];
-
-    // Use broker from registration response, fallback to Credentials.hpp
     auto& regSvc = reg::RegistrationServiceImpl::getInstance();
     const char* broker = MQTT_BROKER;
     uint16_t port = MQTT_PORT;
@@ -135,53 +113,112 @@ bool MqttServiceImpl::mqttConnect() {
         port = regSvc.credentials().mqttPort;
     }
 
-    // Use IP to bypass DNS (ESP8266 TLS + DNS may have issues)
-    printf("[MQTT] connecting %s:%u (MQTTS)\r\n", broker, port);
-    // Resolve hostname to IP for MQTTS reliability
-    const char* mqttHost = broker;
-    if (strcmp(broker, "arcana.boo") == 0) {
-        mqttHost = "161.118.206.170";  // arcana.boo IP
-    }
+    char cmd[80];
     snprintf(cmd, sizeof(cmd),
-             "AT+MQTTCONN=0,\"%s\",%u,1",
-             mqttHost, port);
-    bool ok = esp.sendCmd(cmd, "OK", 20000);
-    printf("[MQTT] CONN: %s\r\n", ok ? "OK" : esp.getResponse());
+             "AT+CIPSTART=\"SSL\",\"%s\",%u", broker, port);
+    printf("[MQTT] SSL %s:%u...\r\n", broker, port);
+    bool ok = esp.sendCmd(cmd, "CONNECT", 20000);
+    printf("[MQTT] SSL: %s\r\n", ok ? "ok" : "fail");
     return ok;
 }
 
-bool MqttServiceImpl::mqttSubscribe(const char* topic, uint8_t qos) {
+void MqttServiceImpl::sslClose() {
     Esp8266& esp = input.Wifi->getEsp();
-    char cmd[128];
-    snprintf(cmd, sizeof(cmd), "AT+MQTTSUB=0,\"%s\",%u", topic, qos);
-    return esp.sendCmd(cmd, "OK", 5000);
+    esp.sendCmd("AT+CIPCLOSE", "OK", 2000);
 }
 
-bool MqttServiceImpl::mqttPublish(const char* topic, const char* payload, uint8_t qos) {
+bool MqttServiceImpl::sendMqttPacket(const uint8_t* pkt, uint16_t len) {
     Esp8266& esp = input.Wifi->getEsp();
-    uint16_t payloadLen = strlen(payload);
-    char cmd[128];
-    // AT+MQTTPUBRAW=<LinkID>,<"topic">,<length>,<qos>,<retain>
-    snprintf(cmd, sizeof(cmd), "AT+MQTTPUBRAW=0,\"%s\",%u,%u,0", topic, payloadLen, qos);
-    if (!esp.sendCmd(cmd, ">", 3000)) {
+    char cmd[20];
+    snprintf(cmd, sizeof(cmd), "AT+CIPSEND=%u", len);
+    if (!esp.sendCmd(cmd, ">", 5000)) return false;
+    esp.sendData(pkt, len, 2000);
+    return esp.waitFor("SEND OK", 5000);
+}
+
+bool MqttServiceImpl::waitMqttPacket(uint8_t* buf, uint16_t& len,
+                                      uint32_t timeoutMs) {
+    Esp8266& esp = input.Wifi->getEsp();
+    uint32_t start = xTaskGetTickCount();
+    while ((xTaskGetTickCount() - start) < pdMS_TO_TICKS(timeoutMs)) {
+        if (esp.hasMqttMsg()) {
+            const uint8_t* data;
+            uint16_t dataLen;
+            if (MqttPacket::parseIpd(esp.getMqttMsg(), esp.getMqttMsgLen(),
+                                      data, dataLen)) {
+                uint16_t n = dataLen < len ? dataLen : len;
+                memcpy(buf, data, n);
+                len = n;
+                esp.clearMqttMsg();
+                return true;
+            }
+            esp.clearMqttMsg();
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    return false;
+}
+
+bool MqttServiceImpl::mqttHandshake() {
+    auto& regSvc = reg::RegistrationServiceImpl::getInstance();
+    const char* user = "arcana";
+    const char* pass = "arcana";
+    if (regSvc.isRegistered()) {
+        user = regSvc.credentials().mqttUser;
+        pass = regSvc.credentials().mqttPass;
+    }
+
+    uint8_t pkt[128];
+    uint16_t len = MqttPacket::buildConnect(pkt, sizeof(pkt),
+                                             MQTT_CLIENT_ID, user, pass,
+                                             KEEPALIVE_SEC);
+    printf("[MQTT] CONNECT user=%s keepAlive=%u\r\n", user, KEEPALIVE_SEC);
+    if (!sendMqttPacket(pkt, len)) {
+        printf("[MQTT] CONNECT send fail\r\n");
         return false;
     }
-    // Send raw payload after ">" prompt
-    esp.sendData((const uint8_t*)payload, payloadLen, 2000);
-    return esp.waitFor("OK", 5000);
+
+    // Wait CONNACK via +IPD
+    uint8_t resp[16];
+    uint16_t respLen = sizeof(resp);
+    if (!waitMqttPacket(resp, respLen, 10000)) {
+        printf("[MQTT] no CONNACK\r\n");
+        return false;
+    }
+
+    int rc = MqttPacket::parseConnack(resp, respLen);
+    printf("[MQTT] CONNACK rc=%d\r\n", rc);
+    return rc == 0;
 }
 
-bool MqttServiceImpl::mqttDisconnect() {
-    Esp8266& esp = input.Wifi->getEsp();
-    return esp.sendCmd("AT+MQTTCLEAN=0", "OK", 2000);
+bool MqttServiceImpl::mqttSubscribeRaw(const char* topic, uint8_t qos) {
+    uint8_t pkt[80];
+    uint16_t pid = mNextPacketId++;
+    uint16_t len = MqttPacket::buildSubscribe(pkt, sizeof(pkt), pid, topic, qos);
+    if (!sendMqttPacket(pkt, len)) return false;
+
+    // Wait SUBACK
+    uint8_t resp[8];
+    uint16_t respLen = sizeof(resp);
+    if (!waitMqttPacket(resp, respLen, 5000)) return false;
+    int rc = MqttPacket::parseSuback(resp, respLen);
+    printf("[MQTT] SUB %s rc=%d\r\n", topic, rc);
+    return rc != -1 && rc != 0x80;
 }
 
-bool MqttServiceImpl::isMqttConnected() {
-    Esp8266& esp = input.Wifi->getEsp();
-    if (!esp.sendCmd("AT+MQTTCONN?", "OK", 2000)) return false;
-    // Response contains state: +MQTTCONN:0,<state>,...
-    // state 3 = CONNECTED, state 4 = CONNECTED_NO_SUB
-    return esp.responseContains(",3,") || esp.responseContains(",4,");
+bool MqttServiceImpl::mqttPublishRaw(const char* topic, const char* payload) {
+    uint16_t payloadLen = (uint16_t)strlen(payload);
+    uint8_t pkt[300];
+    uint16_t len = MqttPacket::buildPublish(pkt, sizeof(pkt), topic,
+                                             (const uint8_t*)payload, payloadLen);
+    if (len > sizeof(pkt)) return false;
+    return sendMqttPacket(pkt, len);
+}
+
+bool MqttServiceImpl::mqttDisconnectRaw() {
+    uint8_t pkt[2];
+    MqttPacket::buildDisconnect(pkt);
+    return sendMqttPacket(pkt, 2);
 }
 
 // --- MQTT task ---
@@ -254,45 +291,36 @@ void MqttServiceImpl::runTask() {
             }
         }
 
-        // ESP8266 lock: upload requested by IoServiceImpl → run upload here (has stack)
+        // ESP8266 lock: upload requested by IoServiceImpl → run upload here
         if (esp.isAccessRequested()) {
             HttpUploadServiceImpl::uploadPendingFiles(esp);
-            esp.clearRequest();  // done
-            // Fall through to MQTT connect
+            esp.clearRequest();
         }
 
-        // --- Phase 3: MQTT config + connect ---
+        // --- Phase 3: TCP SSL + MQTT CONNECT ---
         LOG_I(ats::ErrorSource::Mqtt, 0x0001);  // MQTT connecting
-        LOG_D(ats::ErrorSource::Mqtt, 0x0010);  // MQTT config start
-        if (!mqttConfig()) {
-            LOG_W(ats::ErrorSource::Mqtt, 0x0011);  // MQTT config failed
-            LOG_W(ats::ErrorSource::Mqtt, 0x0004);  // MQTT config fail
-            vTaskDelay(pdMS_TO_TICKS(3000));
-            continue;
-        }
-        LOG_D(ats::ErrorSource::Mqtt, 0x0012);  // MQTT config OK
+        esp.clearMqttMsg();  // flush stale +IPD from registration
 
         bool connected = false;
         for (int i = 0; i < 3 && mRunning; i++) {
-            LOG_D(ats::ErrorSource::Mqtt, 0x0013, (uint32_t)(i+1));  // connect attempt
-            if (mqttConnect()) {
+            esp.clearMqttMsg();
+            if (sslConnect() && mqttHandshake()) {
                 connected = true;
-                LOG_D(ats::ErrorSource::Mqtt, 0x0014);  // connect OK
                 break;
             }
-            LOG_W(ats::ErrorSource::Mqtt, 0x0015, (uint32_t)(i+1));  // connect failed
-            vTaskDelay(pdMS_TO_TICKS(2000));
+            sslClose();
+            LOG_W(ats::ErrorSource::Mqtt, 0x0015, (uint32_t)(i + 1));
+            vTaskDelay(pdMS_TO_TICKS(3000));
         }
         if (!connected) {
-            LOG_W(ats::ErrorSource::Mqtt, 0x0016);  // all attempts failed
-            LOG_W(ats::ErrorSource::Mqtt, 0x0005);  // MQTT connect fail
-            vTaskDelay(pdMS_TO_TICKS(3000));
+            LOG_W(ats::ErrorSource::Mqtt, 0x0005);
+            vTaskDelay(pdMS_TO_TICKS(5000));
+            esp.releaseAccess();
             continue;
         }
 
         // --- Phase 4: Subscribe ---
-        LOG_D(ats::ErrorSource::Mqtt, 0x0017);  // subscribe
-        mqttSubscribe(TOPIC_CMD, 0);
+        mqttSubscribeRaw(TOPIC_CMD, 0);
 
         LOG_I(ats::ErrorSource::Mqtt, 0x0002);  // MQTT connected
         mMqttConnected = true;
@@ -301,14 +329,16 @@ void MqttServiceImpl::runTask() {
         mConnModel.updateTimestamp();
         mConnObs.publish(&mConnModel);
 
-        // Open UDP to syslog server (coexists with AT+MQTT)
-        log::SyslogAppender::getInstance().openUdp(esp);
+        // Syslog UDP disabled — CIPMUX=0, TCP SSL already using the link.
+        // TODO: enable CIPMUX=1 for simultaneous TCP SSL + UDP syslog.
 
-        uint32_t lastNtpTick = xTaskGetTickCount();
+        uint32_t lastNtpTick  = xTaskGetTickCount();
+        uint32_t lastPingTick = xTaskGetTickCount();
 
         // --- Phase 5: Main loop ---
         uint32_t lastSuccessTick = xTaskGetTickCount();
-        static const uint32_t ESP_WATCHDOG_MS = 30000;  // 30s no publish → hard reset
+        static const uint32_t ESP_WATCHDOG_MS = 30000;
+        static const uint32_t PING_INTERVAL_MS = (KEEPALIVE_SEC * 750);  // 75%
 
         while (mRunning && mMqttConnected) {
             // Publish sensor data
@@ -317,69 +347,71 @@ void MqttServiceImpl::runTask() {
                 if (publishSensorData(&mPendingSensor)) {
                     lastSuccessTick = xTaskGetTickCount();
                 } else {
-                    if (!isMqttConnected()) {
-                        mMqttConnected = false;
-                        break;
-                    }
+                    // Publish failed → assume TCP broken
+                    mMqttConnected = false;
+                    break;
                 }
             }
 
             // ESP8266 lock: yield MQTT, reset ESP8266, upload, reconnect
             if (esp.isAccessRequested()) {
-                mqttDisconnect();
+                mqttDisconnectRaw();
+                sslClose();
                 mMqttConnected = false;
                 if (wifi->resetAndConnect()) {
                     HttpUploadServiceImpl::uploadPendingFiles(esp);
-                    esp.clearRequest();  // only clear after upload ran
+                    esp.clearRequest();
                 }
-                break;  // → outer loop (Phase 2 retries if request still set)
+                break;
             }
 
-            // ESP8266 watchdog: hard reset if no successful publish for 30s
+            // ESP8266 watchdog
             if ((xTaskGetTickCount() - lastSuccessTick) > pdMS_TO_TICKS(ESP_WATCHDOG_MS)) {
-                LOG_W(ats::ErrorSource::Wifi, 0x00F0);  // ESP watchdog triggered
+                LOG_W(ats::ErrorSource::Wifi, 0x00F0);
                 mMqttConnected = false;
-                break;  // → outer loop → resetAndConnect() → hardware reset
+                break;
+            }
+
+            // PINGREQ keepalive
+            if ((xTaskGetTickCount() - lastPingTick) > pdMS_TO_TICKS(PING_INTERVAL_MS)) {
+                uint8_t ping[2];
+                MqttPacket::buildPingreq(ping);
+                if (sendMqttPacket(ping, 2)) {
+                    lastPingTick = xTaskGetTickCount();
+                } else {
+                    mMqttConnected = false;
+                    break;
+                }
             }
 
             // NTP resync every 6 hours
             if ((xTaskGetTickCount() - lastNtpTick) >
                 pdMS_TO_TICKS(6UL * 3600UL * 1000UL)) {
-                wifi->syncNtp();
+                // NTP requires its own AT+CIPSTART — skip while MQTT connected.
+                // Will resync on next reconnect cycle.
                 lastNtpTick = xTaskGetTickCount();
             }
 
-            // Check incoming +MQTTSUBRECV
+            // Incoming MQTT packets via +IPD → mMqttBuf
             if (esp.hasMqttMsg()) {
                 LOG_I(ats::ErrorSource::Mqtt, 0x0030, (uint32_t)esp.getMqttMsgLen());
-                processIncomingMsg();
+                processIncomingMqtt();
                 esp.clearMqttMsg();
-            }
-
-            // Flush pending syslog messages via UDP (max 4 per cycle)
-            {
-                auto& syslog = log::SyslogAppender::getInstance();
-                if (syslog.pending() > 0) {
-                    syslog.flushViaUdp(esp);
-                    if (syslog.pending() > 0) {
-                        syslog.openUdp(esp);
-                    }
-                }
             }
 
             vTaskDelay(pdMS_TO_TICKS(100));
         }
 
         // --- Phase 6: Disconnected ---
-        log::SyslogAppender::getInstance().closeUdp(esp);
-        mqttDisconnect();
+        mqttDisconnectRaw();
+        sslClose();
         mMqttConnected = false;
-        esp.releaseAccess();  // release ESP8266 for outer loop re-acquire
+        esp.releaseAccess();
         mConnModel.connected = false;
         mConnModel.updateTimestamp();
         mConnObs.publish(&mConnModel);
 
-        LOG_W(ats::ErrorSource::Mqtt, 0x0003);  // MQTT disconnected
+        LOG_W(ats::ErrorSource::Mqtt, 0x0003);
         vTaskDelay(pdMS_TO_TICKS(3000));
     }
 }
@@ -397,53 +429,55 @@ bool MqttServiceImpl::publishSensorData(SensorDataModel* model) {
              (int)model->accelX, (int)model->accelY, (int)model->accelZ,
              mLatestLight.ambientLight, mLatestLight.proximity);
 
-    return mqttPublish(TOPIC_SENSOR, payload, 0);
+    return mqttPublishRaw(TOPIC_SENSOR, payload);
 }
 
-// --- Process incoming +MQTTSUBRECV ---
+// --- Process incoming +IPD (raw MQTT packets) ---
 
-void MqttServiceImpl::processIncomingMsg() {
+void MqttServiceImpl::processIncomingMqtt() {
     Esp8266& esp = input.Wifi->getEsp();
-    const char* buf = esp.getMqttMsg();
-    uint16_t bufLen = esp.getMqttMsgLen();
 
-    // Format: +MQTTSUBRECV:0,"topic",len,payload
-    // Parse: skip to second comma, read length, skip third comma → payload
-    const char* p = buf;
-    int commas = 0;
-    // Skip to second comma (after topic)
-    while (p < buf + bufLen && commas < 2) {
-        if (*p == ',') commas++;
-        p++;
+    // Parse +IPD to get raw MQTT bytes
+    const uint8_t* mqttData;
+    uint16_t mqttDataLen;
+    if (!MqttPacket::parseIpd(esp.getMqttMsg(), esp.getMqttMsgLen(),
+                               mqttData, mqttDataLen)) return;
+
+    uint8_t pktType = MqttPacket::packetType(mqttData[0]);
+
+    // PINGRESP — just acknowledge
+    if (pktType == MqttPacket::PINGRESP) return;
+
+    // Only handle PUBLISH
+    if (pktType != MqttPacket::PUBLISH) return;
+
+    const char* topic;
+    uint16_t topicLen;
+    const uint8_t* payload;
+    uint16_t payloadLen;
+    uint16_t packetId;
+    if (!MqttPacket::parsePublish(mqttData, mqttDataLen,
+                                   topic, topicLen, payload, payloadLen,
+                                   packetId)) return;
+
+    // QoS 1 → PUBACK
+    if (packetId > 0) {
+        uint8_t ack[4];
+        MqttPacket::buildPuback(ack, packetId);
+        sendMqttPacket(ack, 4);
     }
-    if (commas < 2) return;
 
-    // Parse length field (decimal digits before third comma)
-    uint16_t declaredLen = 0;
-    while (p < buf + bufLen && *p >= '0' && *p <= '9') {
-        declaredLen = declaredLen * 10 + (*p - '0');
-        p++;
-    }
-    if (p >= buf + bufLen || *p != ',') return;
-    p++;  // skip third comma
-
-    // Use declared length (not buffer arithmetic) to avoid trailing \r\n
-    uint16_t payloadLen = declaredLen;
-    uint16_t available = bufLen - (uint16_t)(p - buf);
-    if (payloadLen > available) payloadLen = available;
-
+    const char* p = (const char*)payload;
 
     // Safe eject command
     if (payloadLen == 5 && memcmp(p, "eject", 5) == 0) {
-        LOG_I(ats::ErrorSource::Mqtt, 0x0020);  // eject command received
+        LOG_I(ats::ErrorSource::Mqtt, 0x0020);
         ats_safe_eject();
         return;
     }
 
 #ifdef ARCANA_ECDH_ENABLED
-    // Intercept KeyExchange in MQTT task context (needs ~1.5KB stack,
-    // bridgeTask only has 2KB with protobuf overhead → not enough).
-    // Deframe + decrypt here, check if KeyExchange, handle directly.
+    // Intercept KeyExchange in MQTT task context
     {
         const uint8_t* framePayload = nullptr;
         size_t framePayloadLen = 0;
@@ -451,7 +485,6 @@ void MqttServiceImpl::processIncomingMsg() {
 
         if (FrameCodec::deframe(reinterpret_cast<const uint8_t*>(p), payloadLen,
                                  framePayload, framePayloadLen, flags, sid)) {
-            // Try decrypt (PSK only for KE request)
             uint8_t plain[arcana_CmdRequest_size];
             size_t plainLen = 0;
             auto& bridge = CommandBridge::getInstance();
@@ -466,17 +499,16 @@ void MqttServiceImpl::processIncomingMsg() {
                     msg.command == SecurityCommand::KeyExchange &&
                     msg.payload.size == KeyExchangeManager::kPubKeyLen) {
 
-                    LOG_I(ats::ErrorSource::Cmd, 0x0B20);  // KE request received
+                    LOG_I(ats::ErrorSource::Cmd, 0x0B20);
 
                     uint8_t serverPub[64], authTag[32];
                     if (bridge.mKeyExchange.performKeyExchange(
                             1 /*MQTT*/, 0, msg.payload.bytes, serverPub, authTag)) {
 
-                        // Build protobuf response
                         arcana_CmdResponse rspMsg = arcana_CmdResponse_init_zero;
                         rspMsg.cluster = static_cast<uint32_t>(Cluster::Security);
                         rspMsg.command = SecurityCommand::KeyExchange;
-                        rspMsg.status = 0;  // OK
+                        rspMsg.status = 0;
                         rspMsg.payload.size = 96;
                         memcpy(rspMsg.payload.bytes, serverPub, 64);
                         memcpy(rspMsg.payload.bytes + 64, authTag, 32);
@@ -484,7 +516,6 @@ void MqttServiceImpl::processIncomingMsg() {
                         uint8_t pbBuf[arcana_CmdResponse_size];
                         pb_ostream_t ostream = pb_ostream_from_buffer(pbBuf, sizeof(pbBuf));
                         if (pb_encode(&ostream, arcana_CmdResponse_fields, &rspMsg)) {
-                            // Encrypt with PSK (session not installed yet)
                             uint8_t encBuf[arcana_CmdResponse_size + CryptoEngine::kOverhead];
                             size_t encLen = 0;
                             if (bridge.mCrypto.encrypt(pbBuf, ostream.bytes_written,
@@ -494,7 +525,6 @@ void MqttServiceImpl::processIncomingMsg() {
                                 if (FrameCodec::frame(encBuf, encLen,
                                                        FrameCodec::kFlagFin, sid,
                                                        frameBuf, sizeof(frameBuf), frameLen)) {
-                                    // Hex-encode + publish response
                                     char hexBuf[TxItem::MAX_DATA * 2 + 1];
                                     for (size_t i = 0; i < frameLen && i < TxItem::MAX_DATA; i++) {
                                         static const char hex[] = "0123456789ABCDEF";
@@ -502,18 +532,17 @@ void MqttServiceImpl::processIncomingMsg() {
                                         hexBuf[i * 2 + 1] = hex[frameBuf[i] & 0x0F];
                                     }
                                     hexBuf[frameLen * 2] = '\0';
-                                    mqttPublish(TOPIC_RSP, hexBuf, 0);
+                                    mqttPublishRaw(TOPIC_RSP, hexBuf);
 
-                                    // Install session AFTER response sent
                                     bridge.mKeyExchange.installPendingSession(1, 0);
-                                    LOG_I(ats::ErrorSource::Cmd, 0x0B21);  // KE success
+                                    LOG_I(ats::ErrorSource::Cmd, 0x0B21);
                                 }
                             }
                         }
                     } else {
-                        LOG_W(ats::ErrorSource::Cmd, 0x0B22);  // KE failed
+                        LOG_W(ats::ErrorSource::Cmd, 0x0B22);
                     }
-                    return;  // Don't submit to CommandBridge
+                    return;
                 }
             }
         }
@@ -522,31 +551,26 @@ void MqttServiceImpl::processIncomingMsg() {
 
     // Submit to CommandBridge frame queue
     if (payloadLen > 0 && payloadLen <= CmdFrameItem::MAX_DATA) {
-        CommandBridge::getInstance().submitFrame(
-            reinterpret_cast<const uint8_t*>(p), payloadLen,
-            CmdFrameItem::MQTT);
+        CommandBridge::getInstance().submitFrame(payload, payloadLen,
+                                                 CmdFrameItem::MQTT);
     }
 
     // Also publish via observable
-    if (payloadLen > MqttCommandModel::MAX_DATA) {
-        payloadLen = MqttCommandModel::MAX_DATA;
-    }
-    memcpy(mCmdModel.data, p, payloadLen);
-    mCmdModel.length = (uint8_t)payloadLen;
+    uint16_t obsLen = payloadLen > MqttCommandModel::MAX_DATA
+                      ? MqttCommandModel::MAX_DATA : payloadLen;
+    memcpy(mCmdModel.data, p, obsLen);
+    mCmdModel.length = (uint8_t)obsLen;
     mCmdModel.updateTimestamp();
     mCmdObs.publish(&mCmdModel);
 }
 
-// --- CommandBridge response via AT+MQTTPUB ---
+// --- CommandBridge response ---
 
 bool MqttServiceImpl::mqttSendFn(const uint8_t* data, uint16_t len, void* ctx) {
     MqttServiceImpl* self = static_cast<MqttServiceImpl*>(ctx);
     if (!self->mMqttConnected) return false;
 
-    // Binary frame data → hex-encode for AT+MQTTPUB text payload
-    // For now, publish raw bytes as topic payload
-    // CommandBridge frames are small (<64 bytes), fit in AT command
-    char hexPayload[130];  // 64 bytes × 2 + null
+    char hexPayload[130];
     uint16_t hLen = len > 64 ? 64 : len;
     for (uint16_t i = 0; i < hLen; i++) {
         static const char hex[] = "0123456789ABCDEF";
@@ -555,7 +579,7 @@ bool MqttServiceImpl::mqttSendFn(const uint8_t* data, uint16_t len, void* ctx) {
     }
     hexPayload[hLen * 2] = '\0';
 
-    return self->mqttPublish(TOPIC_RSP, hexPayload, 0);
+    return self->mqttPublishRaw(TOPIC_RSP, hexPayload);
 }
 
 } // namespace mqtt

@@ -254,12 +254,36 @@ def register():
             cur.execute("SELECT id FROM user WHERE username=%s", (device_id,))
             existing = cur.fetchone()
             if existing:
-                # Already registered — return existing credentials info
+                # Verify public key matches (TOFU security)
+                cur.execute("SELECT public_key FROM device WHERE device_id=%s", (device_id,))
+                dev = cur.fetchone()
+                if dev and dev['public_key'] != public_key_hex:
+                    resp_pb = encode_register_response(success=False, error="pubkey mismatch")
+                    return frame_encode(resp_pb, stream_id=SID_REGISTER), 403, \
+                        {"Content-Type": "application/octet-stream"}
+
+                # Re-provision: new password, return full credentials
+                import bcrypt
+                mqtt_pass = secrets.token_hex(16)
+                pass_hash = bcrypt.hashpw(mqtt_pass.encode(), bcrypt.gensalt(rounds=10)).decode()
+                cur.execute("UPDATE user SET password_hash=%s WHERE username=%s",
+                            (pass_hash, device_id))
+                conn.commit()
+
+                upload_token = generate_upload_token(device_id)
+                topic_prefix = f"/arcana/{device_id}"
+                print(f"[REG] RE-PROVISION: user={device_id} topic={topic_prefix}/#")
+
                 resp_pb = encode_register_response(
-                    success=False,
-                    error="already registered"
+                    success=True,
+                    mqtt_user=device_id,
+                    mqtt_pass=mqtt_pass,
+                    mqtt_broker=MQTT_BROKER,
+                    mqtt_port=MQTT_PORT,
+                    upload_token=upload_token,
+                    topic_prefix=topic_prefix,
                 )
-                return frame_encode(resp_pb, stream_id=SID_REGISTER), 409, \
+                return frame_encode(resp_pb, stream_id=SID_REGISTER), 200, \
                     {"Content-Type": "application/octet-stream"}
 
             # Generate MQTT password
