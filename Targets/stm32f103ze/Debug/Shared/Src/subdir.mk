@@ -23,6 +23,7 @@ $(SHARED)/Src/KeyExchangeManager.cpp
 # --- C sources ---
 C_SRCS += \
 $(SHARED)/Src/arcana_cmd.pb.c \
+$(SHARED)/Src/registration.pb.c \
 $(SHARED)/Src/nanopb/pb_common.c \
 $(SHARED)/Src/nanopb/pb_encode.c \
 $(SHARED)/Src/nanopb/pb_decode.c \
@@ -51,6 +52,7 @@ OBJS += \
 ./Shared/Src/CryptoEngine.o \
 ./Shared/Src/KeyExchangeManager.o \
 ./Shared/Src/arcana_cmd.pb.o \
+./Shared/Src/registration.pb.o \
 ./Shared/Src/nanopb/pb_common.o \
 ./Shared/Src/nanopb/pb_encode.o \
 ./Shared/Src/nanopb/pb_decode.o \

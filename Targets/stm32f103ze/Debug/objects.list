@@ -64,6 +64,7 @@
 "./Services/Service/impl/LightServiceImpl.o"
 "./Services/Service/impl/MqttServiceImpl.o"
 "./Services/Service/impl/OtaServiceImpl.o"
+"./Services/Service/impl/RegistrationServiceImpl.o"
 "./Services/Service/impl/SdBenchmarkServiceImpl.o"
 "./Services/Service/impl/SdStorageServiceImpl.o"
 "./Services/Service/impl/SensorServiceImpl.o"
@@ -96,4 +97,5 @@
 "./Shared/Src/mbedtls/entropy_hardware_alt.o"
 "./Shared/Src/mbedtls/ctr_drbg.o"
 "./Shared/Src/mbedtls/md.o"
+"./Shared/Src/registration.pb.o"
 "./Shared/Src/ats/ArcanaTsDb.o"

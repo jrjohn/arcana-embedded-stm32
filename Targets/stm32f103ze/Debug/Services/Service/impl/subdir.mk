@@ -15,6 +15,7 @@ CPP_SRCS += \
 ../Services/Service/impl/LightServiceImpl.cpp \
 ../Services/Service/impl/MqttServiceImpl.cpp \
 ../Services/Service/impl/OtaServiceImpl.cpp \
+../Services/Service/impl/RegistrationServiceImpl.cpp \
 ../Services/Service/impl/SdBenchmarkServiceImpl.cpp \
 ../Services/Service/impl/SdStorageServiceImpl.cpp \
 ../Services/Service/impl/SensorServiceImpl.cpp \
@@ -32,6 +33,7 @@ OBJS += \
 ./Services/Service/impl/LightServiceImpl.o \
 ./Services/Service/impl/MqttServiceImpl.o \
 ./Services/Service/impl/OtaServiceImpl.o \
+./Services/Service/impl/RegistrationServiceImpl.o \
 ./Services/Service/impl/SdBenchmarkServiceImpl.o \
 ./Services/Service/impl/SdStorageServiceImpl.o \
 ./Services/Service/impl/SensorServiceImpl.o \
@@ -49,6 +51,7 @@ CPP_DEPS += \
 ./Services/Service/impl/LightServiceImpl.d \
 ./Services/Service/impl/MqttServiceImpl.d \
 ./Services/Service/impl/OtaServiceImpl.d \
+./Services/Service/impl/RegistrationServiceImpl.d \
 ./Services/Service/impl/SdBenchmarkServiceImpl.d \
 ./Services/Service/impl/SdStorageServiceImpl.d \
 ./Services/Service/impl/SensorServiceImpl.d \

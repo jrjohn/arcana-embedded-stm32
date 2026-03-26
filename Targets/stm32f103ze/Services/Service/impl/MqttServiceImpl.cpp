@@ -2,6 +2,7 @@
 #include "WifiServiceImpl.hpp"
 #include "AtsStorageServiceImpl.hpp"
 #include "HttpUploadServiceImpl.hpp"
+#include "RegistrationServiceImpl.hpp"
 // No IoServiceImpl include — decoupled via Esp8266 resource lock
 #include "Credentials.hpp"
 #include "Esp8266.hpp"
@@ -26,9 +27,13 @@ namespace mqtt {
 // --- Configuration ---
 const char* MqttServiceImpl::MQTT_BROKER    = MQTT_BROKER_VALUE;
 const char* MqttServiceImpl::MQTT_CLIENT_ID = "arcana_f103";
-const char* MqttServiceImpl::TOPIC_SENSOR   = "/arcana/sensor";
-const char* MqttServiceImpl::TOPIC_CMD      = "/arcana/cmd";
-const char* MqttServiceImpl::TOPIC_RSP      = "/arcana/rsp";
+// Per-device topics (populated after registration)
+static char sTopicSensor[40] = "/arcana/sensor";  // fallback
+static char sTopicCmd[40]    = "/arcana/cmd";
+static char sTopicRsp[40]    = "/arcana/rsp";
+const char* MqttServiceImpl::TOPIC_SENSOR   = sTopicSensor;
+const char* MqttServiceImpl::TOPIC_CMD      = sTopicCmd;
+const char* MqttServiceImpl::TOPIC_RSP      = sTopicRsp;
 
 MqttServiceImpl::MqttServiceImpl()
     : mCmdObs("MqttSvc Cmd")
@@ -97,12 +102,20 @@ void MqttServiceImpl::onLightData(LightDataModel* model, void* ctx) {
 
 bool MqttServiceImpl::mqttConfig() {
     Esp8266& esp = input.Wifi->getEsp();
-    char cmd[128];
-    // AT+MQTTUSERCFG=<LinkID>,<scheme>,<"client_id">,<"username">,<"password">,<cert_key_ID>,<CA_ID>,<"path">
-    // scheme=1: MQTT over TCP (ESP8266 TLS too limited for WSS)
+    char cmd[160];
+
+    // Use per-device credentials from registration (or fallback to hardcoded)
+    auto& regSvc = reg::RegistrationServiceImpl::getInstance();
+    const char* user = "arcana";
+    const char* pass = "arcana";
+    if (regSvc.isRegistered()) {
+        user = regSvc.credentials().mqttUser;
+        pass = regSvc.credentials().mqttPass;
+    }
+
     snprintf(cmd, sizeof(cmd),
-             "AT+MQTTUSERCFG=0,1,\"%s\",\"arcana\",\"arcana\",0,0,\"\"",
-             MQTT_CLIENT_ID);
+             "AT+MQTTUSERCFG=0,1,\"%s\",\"%s\",\"%s\",0,0,\"\"",
+             MQTT_CLIENT_ID, user, pass);
     return esp.sendCmd(cmd, "OK", 3000);
 }
 
@@ -198,6 +211,25 @@ void MqttServiceImpl::runTask() {
                     LOG_I(ats::ErrorSource::System, 0x0031,
                           (uint32_t)(uint16_t)detectedTz);
                 }
+            }
+        }
+
+        // --- Phase 2.7: Device registration (TOFU) ---
+        {
+            auto& regSvc = reg::RegistrationServiceImpl::getInstance();
+            if (!regSvc.isRegistered()) {
+                if (regSvc.doRegistration()) {
+                    LOG_I(ats::ErrorSource::System, 0x0080);  // registration OK
+                } else {
+                    LOG_W(ats::ErrorSource::System, 0x0081);  // registration failed
+                }
+            }
+            // Update per-device topics if registered
+            if (regSvc.isRegistered()) {
+                const char* prefix = regSvc.credentials().topicPrefix;
+                snprintf(sTopicSensor, sizeof(sTopicSensor), "%s/sensor", prefix);
+                snprintf(sTopicCmd, sizeof(sTopicCmd), "%s/cmd", prefix);
+                snprintf(sTopicRsp, sizeof(sTopicRsp), "%s/rsp", prefix);
             }
         }
 
