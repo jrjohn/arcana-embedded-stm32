@@ -161,11 +161,23 @@ void Controller::initServices() {
 void Controller::startServices() {
     mTimer->start();
     mLed->start();
+
+    // SD card mount (needed for both normal ops and ESP flash)
+    mSdBench->start();
+
+    // Check if ESP8266 firmware update is pending
+    // If so, only run EspFlasher — skip all other tasks to avoid UART/resource conflicts
+    if (EspFlasher::run()) {
+        printf("[BOOT] ESP8266 flash complete. Remove esp_fw/ and reboot.\r\n");
+        // Halt — user must remove SD files and power cycle
+        for (;;) vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+
+    // Normal boot — start all services
     mSensor->start();
 #ifdef ARCANA_LIGHT_SENSOR
     mLight->start();
 #endif
-    mSdBench->start();
     mSdStorage->start();
     mWifi->start();
     mMqtt->start();
@@ -177,9 +189,6 @@ void Controller::startServices() {
     // View layer start (render task + ViewModel subscriptions)
     sMainView.start();
     sViewModel.init(sMainView.renderTaskHandle());
-
-    // ESP8266 flasher — must run AFTER ViewModel.init() to not block SD stats event
-    EspFlasher::run();
 }
 
 } // namespace arcana
