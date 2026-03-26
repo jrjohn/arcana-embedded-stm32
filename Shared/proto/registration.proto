@@ -1,0 +1,38 @@
+syntax = "proto3";
+package arcana;
+
+// --- Device Registration (TOFU) ---
+
+message RegisterRequest {
+    string device_id = 1;       // "32FFD605" (8-char UID hex)
+    bytes  public_key = 2;      // 64 bytes P-256 raw (x||y)
+    uint32 firmware_ver = 3;    // e.g. 0x0100 = v1.0
+}
+
+message RegisterResponse {
+    bool   success = 1;
+    string mqtt_user = 2;       // "dev-32FFD605"
+    string mqtt_pass = 3;       // random 32 chars
+    string mqtt_broker = 4;     // "arcana.boo"
+    uint32 mqtt_port = 5;       // 1883
+    string upload_token = 6;    // HMAC signed token
+    string topic_prefix = 7;    // "/arcana/32FFD605"
+    string error = 8;           // error message if !success
+}
+
+// --- Challenge-Response Auth ---
+
+message AuthChallenge {
+    bytes nonce = 1;            // 32 bytes random from server
+}
+
+message AuthResponse {
+    string device_id = 1;
+    bytes  signature = 2;       // ECDSA P-256 sign(privateKey, nonce)
+}
+
+message AuthResult {
+    bool   success = 1;
+    string upload_token = 2;    // refreshed token
+    string error = 3;
+}
