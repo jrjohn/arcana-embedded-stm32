@@ -10,6 +10,7 @@ IoServiceImpl::IoServiceImpl()
     , mCancelRequested(false)
     , mFormatRequested(false)
     , mCancelArmed(false)
+    , mCooldownUntil(0)
     , mKey2Seen(false)
     , mKey2Prev(false)
     , mKey1Hold(0)
@@ -34,6 +35,19 @@ ServiceStatus IoServiceImpl::start() {
     return mTaskHandle ? ServiceStatus::OK : ServiceStatus::Error;
 }
 
+void IoServiceImpl::armCancel() {
+    mCancelArmed = true;
+    mCancelRequested = false;
+}
+
+void IoServiceImpl::disarmCancel() {
+    mCancelArmed = false;
+    mCancelRequested = false;
+    mUploadRequested = false;
+    // Cooldown: ignore KEY2 for 2s after cancel (prevent re-trigger)
+    mCooldownUntil = xTaskGetTickCount() + pdMS_TO_TICKS(2000);
+}
+
 void IoServiceImpl::taskFunc(void* param) {
     auto* self = static_cast<IoServiceImpl*>(param);
     vTaskDelay(pdMS_TO_TICKS(2000));  // let boot settle (PC13 backup-domain)
@@ -52,7 +66,7 @@ void IoServiceImpl::taskLoop() {
             mKey2Seen = true;  // seen released at least once
         }
 
-        if (mKey2Seen) {
+        if (mKey2Seen && xTaskGetTickCount() >= mCooldownUntil) {
             // Rising edge: was pressed, now released
             if (!key2Now && mKey2Prev) {
                 if (mCancelArmed) {

@@ -32,8 +32,8 @@ public:
     bool isFormatRequested() const override { return mFormatRequested; }
     void clearFormatRequest() override      { mFormatRequested = false; }
 
-    void armCancel() override   { mCancelArmed = true; mCancelRequested = false; }
-    void disarmCancel() override { mCancelArmed = false; mCancelRequested = false; }
+    void armCancel() override;
+    void disarmCancel() override;
 
 private:
     IoServiceImpl();
@@ -45,6 +45,7 @@ private:
     volatile bool mCancelRequested;
     volatile bool mFormatRequested;
     volatile bool mCancelArmed;
+    uint32_t mCooldownUntil;  // tick — ignore KEY2 until this time
 
     // KEY2 state
     bool mKey2Seen;     // seen HIGH at least once
