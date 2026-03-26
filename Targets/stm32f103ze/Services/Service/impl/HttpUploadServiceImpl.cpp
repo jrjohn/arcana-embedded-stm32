@@ -49,8 +49,9 @@ uint8_t HttpUploadServiceImpl::uploadPendingFiles(Esp8266& esp) {
     storage.pauseRecording();
     vTaskDelay(pdMS_TO_TICKS(500));  // let ATS task finish current write + enter yield loop
 
-    // Reset SDIO state (lighter than full reinit — preserves FatFS mount)
-    sdio_force_reinit();
+    // Full SDIO + FatFS reinit before file access
+    sd_card_full_reinit();
+    vTaskDelay(pdMS_TO_TICKS(500));
 
     // List pending files (safe now — ATS task suspended)
     atsstorage::AtsStorageServiceImpl::PendingFile pending[atsstorage::AtsStorageServiceImpl::MAX_PENDING];
@@ -184,8 +185,9 @@ bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
             continue;  // retry
         }
 
-        // Stream file body
+        // Stream file body (AT mode — reliable per-chunk acknowledgment)
         ok = streamFileBody(esp, &fp, remainSize);
+
         if (ok) {
             ok = waitHttpResponse(esp);
             if (!ok) LOG_W(ats::ErrorSource::System, 0x0077);
@@ -332,7 +334,6 @@ bool HttpUploadServiceImpl::sendHttpHeader(Esp8266& esp, const char* filename,
 // ---------------------------------------------------------------------------
 
 bool HttpUploadServiceImpl::streamFileBody(Esp8266& esp, FIL* fp, uint32_t fileSize) {
-    // Reuse AtsStorage's 4KB read cache (same task, sequential access)
     uint8_t* chunkBuf = atsstorage::AtsStorageServiceImpl::getReadCache();
 
     printf("[UPL] stream %luB\r\n", (unsigned long)fileSize);
@@ -350,7 +351,6 @@ bool HttpUploadServiceImpl::streamFileBody(Esp8266& esp, FIL* fp, uint32_t fileS
             br = 0;
             fr = f_read(fp, chunkBuf, chunkLen, &br);
             if (fr == FR_OK && br > 0) break;
-            // Reinit SDIO and retry
             sdio_force_reinit();
             vTaskDelay(pdMS_TO_TICKS(50));
         }
@@ -368,7 +368,6 @@ bool HttpUploadServiceImpl::streamFileBody(Esp8266& esp, FIL* fp, uint32_t fileS
             return false;
         }
 
-        // Send chunk
         esp.sendData(chunkBuf, br, 5000);
         if (!esp.waitFor("SEND OK", 10000)) {
             printf("[UPL] SEND FAIL at %lu\r\n", (unsigned long)sent);
@@ -378,7 +377,7 @@ bool HttpUploadServiceImpl::streamFileBody(Esp8266& esp, FIL* fp, uint32_t fileS
         sent += br;
 
         // Proactive SDIO reinit every 32KB
-        if (sent % (32768) == 0) {
+        if (sent % 32768 == 0) {
             sdio_force_reinit();
         }
 
