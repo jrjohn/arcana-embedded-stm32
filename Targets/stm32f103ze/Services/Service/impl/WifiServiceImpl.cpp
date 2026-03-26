@@ -50,22 +50,37 @@ bool WifiServiceImpl::resetAndConnect() {
     mEsp.reset();
     vTaskDelay(pdMS_TO_TICKS(1000));  // AT v2.2 FreeRTOS boot needs extra time
 
-    // Retry AT up to 5 times
+    // Try AT at 460800 (expected: AT+UART_DEF already saved)
     bool atOk = false;
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 3; i++) {
         if (mEsp.sendCmd("AT", "OK", 2000)) { atOk = true; break; }
         vTaskDelay(pdMS_TO_TICKS(500));
     }
+
     if (!atOk) {
-        LOG_W(ats::ErrorSource::Wifi, evt::WIFI_AT_NO_RESP);
-        return false;
+        // Fallback: ESP8266 at 115200 (fresh module or flash cleared)
+        printf("[WiFi] 460800 fail, fallback 115200\r\n");
+        mEsp.setBaud(115200);  // STM32 only — no AT command
+        vTaskDelay(pdMS_TO_TICKS(200));
+        for (int i = 0; i < 3; i++) {
+            if (mEsp.sendCmd("AT", "OK", 2000)) { atOk = true; break; }
+            vTaskDelay(pdMS_TO_TICKS(500));
+        }
+        if (!atOk) {
+            LOG_W(ats::ErrorSource::Wifi, evt::WIFI_AT_NO_RESP);
+            return false;
+        }
+        // Permanently save 460800 to ESP8266 flash (takes effect on next boot)
+        printf("[WiFi] AT+UART_DEF=460800\r\n");
+        mEsp.sendCmd("AT+UART_DEF=460800,8,1,0,0", "OK", 2000);
+        // Switch both sides to 460800 now (AT+UART_CUR + STM32)
+        if (!mEsp.speedUp(460800)) {
+            LOG_W(ats::ErrorSource::Wifi, evt::WIFI_AT_NO_RESP);
+            return false;
+        }
+        LOG_I(ats::ErrorSource::Wifi, 0x0321);  // UART_DEF programmed
     }
     LOG_I(ats::ErrorSource::Wifi, evt::WIFI_AT_OK);
-
-    // Speed up UART: 115200 → 460800 (4x faster file upload)
-    if (mEsp.speedUp(460800)) {
-        LOG_I(ats::ErrorSource::Wifi, 0x0320);  // UART speedup OK
-    }
 
     return connectWifi();
 }

@@ -88,7 +88,7 @@ void Esp8266::initGpio() {
 
 void Esp8266::initUsart() {
     sHuart3.Instance = USART3;
-    sHuart3.Init.BaudRate = 115200;
+    sHuart3.Init.BaudRate = 460800;  // match ESP8266 AT+UART_DEF (permanent)
     sHuart3.Init.WordLength = UART_WORDLENGTH_8B;
     sHuart3.Init.StopBits = UART_STOPBITS_1;
     sHuart3.Init.Parity = UART_PARITY_NONE;
@@ -148,6 +148,18 @@ bool Esp8266::speedUp(uint32_t baud) {
     return sendCmd("AT", "OK", 1000);
 }
 
+void Esp8266::setBaud(uint32_t baud) {
+    __HAL_UART_DISABLE_IT(&sHuart3, UART_IT_RXNE);
+    __HAL_UART_DISABLE_IT(&sHuart3, UART_IT_IDLE);
+    sHuart3.Init.BaudRate = baud;
+    HAL_UART_Init(&sHuart3);
+    __HAL_UART_ENABLE_IT(&sHuart3, UART_IT_RXNE);
+    __HAL_UART_ENABLE_IT(&sHuart3, UART_IT_IDLE);
+    mRxPos = 0;
+    mRxLen = 0;
+    mRxBuf[0] = '\0';
+}
+
 void Esp8266::reset() {
     // Disable chip + hardware reset (following 野火 reference)
     HAL_GPIO_WritePin(GPIOG, GPIO_PIN_13, GPIO_PIN_RESET);  // CH_PD = LOW
@@ -157,15 +169,7 @@ void Esp8266::reset() {
     HAL_GPIO_WritePin(GPIOG, GPIO_PIN_14, GPIO_PIN_SET);    // RST = HIGH
     HAL_GPIO_WritePin(GPIOG, GPIO_PIN_13, GPIO_PIN_SET);    // CH_PD = HIGH (enable)
 
-    // Reset UART to 115200 (ESP8266 always boots at 115200, regardless of previous speedUp)
-    __HAL_UART_DISABLE_IT(&sHuart3, UART_IT_RXNE);
-    __HAL_UART_DISABLE_IT(&sHuart3, UART_IT_IDLE);
-    sHuart3.Init.BaudRate = 115200;
-    HAL_UART_Init(&sHuart3);
-    __HAL_UART_ENABLE_IT(&sHuart3, UART_IT_RXNE);
-    __HAL_UART_ENABLE_IT(&sHuart3, UART_IT_IDLE);
-
-    vTaskDelay(pdMS_TO_TICKS(2000));  // Wait for ESP8266 boot
+    vTaskDelay(pdMS_TO_TICKS(2000));  // Wait for ESP8266 boot (AT+UART_DEF=460800)
 
     // Clear any boot messages
     mRxPos = 0;
