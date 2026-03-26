@@ -200,7 +200,17 @@ void MqttServiceImpl::runTask() {
             }
         }
 
-        // Upload triggered by KEY2 short press (not auto on boot)
+        // --- KEY2 upload check (WiFi up, no MQTT needed) ---
+        {
+            auto& storage = static_cast<atsstorage::AtsStorageServiceImpl&>(
+                atsstorage::AtsStorageServiceImpl::getInstance());
+            if (storage.isUploadRequested()) {
+                storage.clearUploadRequest();
+                LOG_I(ats::ErrorSource::System, 0x0075);
+                HttpUploadServiceImpl::uploadPendingFiles(esp);
+                // After upload, fall through to MQTT connect
+            }
+        }
 
         // --- Phase 3: MQTT config + connect ---
         LOG_I(ats::ErrorSource::Mqtt, 0x0001);  // MQTT connecting
@@ -271,15 +281,12 @@ void MqttServiceImpl::runTask() {
                     atsstorage::AtsStorageServiceImpl::getInstance());
                 if (storage.isUploadRequested()) {
                     storage.clearUploadRequest();
-                    LOG_I(ats::ErrorSource::System, 0x0075);  // upload requested by KEY2
+                    LOG_I(ats::ErrorSource::System, 0x0075);
                     mqttDisconnect();
                     mMqttConnected = false;
-                    // Wait for ESP8266 to exit MQTT mode before TCP upload
-                    vTaskDelay(pdMS_TO_TICKS(2000));
-                    esp.sendCmd("AT+CIPCLOSE", "OK", 1000);
-                    vTaskDelay(pdMS_TO_TICKS(500));
+                    vTaskDelay(pdMS_TO_TICKS(1000));
                     HttpUploadServiceImpl::uploadPendingFiles(esp);
-                    break;  // → outer loop → reconnect WiFi/MQTT
+                    break;  // → outer loop → reconnect
                 }
             }
 

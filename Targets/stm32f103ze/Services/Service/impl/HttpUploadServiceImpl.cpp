@@ -48,21 +48,22 @@ uint8_t HttpUploadServiceImpl::uploadPendingFiles(Esp8266& esp) {
     for (int i = 0; i < 30 && !storage.isReady(); i++) {
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
-    if (!storage.isReady()) return 0;
+    if (!storage.isReady()) { printf("[UPL] not ready\r\n"); return 0; }
 
+    printf("[UPL] pausing ATS...\r\n");
     // Pause ATS recording cooperatively — FatFS not thread-safe
     storage.pauseRecording();
-    vTaskDelay(pdMS_TO_TICKS(500));  // let ATS task finish current write + enter yield loop
-
-    // Full SDIO + FatFS reinit before file access
-    sd_card_full_reinit();
     vTaskDelay(pdMS_TO_TICKS(500));
+
+    // Light SDIO reinit (not full — keep FatFS mount intact)
+    sdio_force_reinit();
+    vTaskDelay(pdMS_TO_TICKS(200));
 
     // List pending files (safe now — ATS task suspended)
     atsstorage::AtsStorageServiceImpl::PendingFile pending[atsstorage::AtsStorageServiceImpl::MAX_PENDING];
     uint8_t count = storage.listPendingUploads(pending, atsstorage::AtsStorageServiceImpl::MAX_PENDING);
 
-    LOG_I(ats::ErrorSource::System, 0x0070, (uint32_t)count);  // pending file count
+    printf("[UPL] pending=%u\r\n", count);
 
     if (count == 0) {
         storage.resumeRecording();
@@ -141,9 +142,9 @@ bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
     g_uploadProgress.bytesSent = 0;
 
     // --- Retry loop: resume from server offset on each attempt ---
-    // Safety valve: give up if 3 consecutive retries make no progress
     static const int MAX_ATTEMPTS = 200;
     static const int MAX_STALL = 3;
+    static const uint16_t CANCELLED = 0xFFFF;  // sentinel
     bool ok = false;
     uint32_t lastOffset = 0;
     int stallCount = 0;
@@ -252,6 +253,9 @@ bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
         sslClose(esp);
 
         if (ok) break;  // success!
+
+        // KEY2 cancel — stop all retries
+        if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_RESET) break;
 
         printf("[UPL] attempt %d failed\r\n", attempt + 1);
         f_close(&fp);
@@ -424,7 +428,7 @@ bool HttpUploadServiceImpl::streamFileBody(Esp8266& esp, FIL* fp, uint32_t fileS
         sent += br;
         g_uploadProgress.bytesSent = sent;
 
-        // Progress log + LCD update every ~20KB
+        // Progress log + LCD update + cancel check every ~20KB
         if (sent % (TX_CHUNK * 10) == 0 || sent == fileSize) {
             printf("[UPL] %lu/%lu\r\n", (unsigned long)sent, (unsigned long)fileSize);
             // LCD toast: "Upload 1/7 23%"
@@ -435,6 +439,16 @@ bool HttpUploadServiceImpl::streamFileBody(Esp8266& esp, FIL* fp, uint32_t fileS
                      g_uploadProgress.totalFiles, pct);
             display::toast(msg, 30000, (uint32_t)xTaskGetTickCount(),
                            display::colors::WHITE, 0x001F);  // blue bg
+
+            // KEY2 cancel: check GPIO directly (ATS task is paused)
+            if (sent > TX_CHUNK * 20  // skip first ~40KB (debounce initial press)
+                && HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_RESET) {
+                printf("[UPL] cancelled by KEY2\r\n");
+                display::toast("Cancelled", 2000,
+                               (uint32_t)xTaskGetTickCount(),
+                               display::colors::WHITE, 0xF800);  // red bg
+                return false;
+            }
         }
     }
     return true;
