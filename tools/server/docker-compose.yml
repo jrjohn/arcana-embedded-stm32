@@ -14,7 +14,7 @@ services:
       - MYSQL_PASSWORD=5YzYziFT3g
       - MYSQL_DB=mqtt
       - MQTT_BROKER=arcana.boo
-      - MQTT_PORT=1883
+      - MQTT_PORT=8883
       - SERVER_SECRET=${SERVER_SECRET:-arcana-dev-secret-change-in-prod}
       - UPLOAD_DIR=/uploads
     volumes:

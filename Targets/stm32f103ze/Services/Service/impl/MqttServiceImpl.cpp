@@ -113,12 +113,13 @@ bool MqttServiceImpl::mqttConfig() {
         pass = regSvc.credentials().mqttPass;
     }
 
-    // scheme=1: plain MQTT (scheme=2 TLS not supported on this ESP8266 AT FW)
-    // TODO: test scheme=2 on ESP8266 AT v2.2+ with TLS support
+    // scheme=2: MQTT over TLS (no cert verify)
     snprintf(cmd, sizeof(cmd),
-             "AT+MQTTUSERCFG=0,1,\"%s\",\"%s\",\"%s\",0,0,\"\"",
+             "AT+MQTTUSERCFG=0,2,\"%s\",\"%s\",\"%s\",0,0,\"\"",
              MQTT_CLIENT_ID, user, pass);
-    return esp.sendCmd(cmd, "OK", 3000);
+    bool cfgOk = esp.sendCmd(cmd, "OK", 3000);
+    printf("[MQTT] USERCFG scheme=2: %s\r\n", cfgOk ? "OK" : esp.getResponse());
+    return cfgOk;
 }
 
 bool MqttServiceImpl::mqttConnect() {
@@ -134,10 +135,19 @@ bool MqttServiceImpl::mqttConnect() {
         port = regSvc.credentials().mqttPort;
     }
 
+    // Use IP to bypass DNS (ESP8266 TLS + DNS may have issues)
+    printf("[MQTT] connecting %s:%u (MQTTS)\r\n", broker, port);
+    // Resolve hostname to IP for MQTTS reliability
+    const char* mqttHost = broker;
+    if (strcmp(broker, "arcana.boo") == 0) {
+        mqttHost = "161.118.206.170";  // arcana.boo IP
+    }
     snprintf(cmd, sizeof(cmd),
              "AT+MQTTCONN=0,\"%s\",%u,1",
-             broker, port);
-    return esp.sendCmd(cmd, "OK", 10000);
+             mqttHost, port);
+    bool ok = esp.sendCmd(cmd, "OK", 20000);
+    printf("[MQTT] CONN: %s\r\n", ok ? "OK" : esp.getResponse());
+    return ok;
 }
 
 bool MqttServiceImpl::mqttSubscribe(const char* topic, uint8_t qos) {

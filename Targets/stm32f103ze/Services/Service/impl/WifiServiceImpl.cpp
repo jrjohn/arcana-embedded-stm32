@@ -92,6 +92,11 @@ bool WifiServiceImpl::resetAndConnect() {
     }
     LOG_I(ats::ErrorSource::Wifi, evt::WIFI_AT_OK);
 
+    // Print ESP8266 AT firmware version
+    if (mEsp.sendCmd("AT+GMR", "OK", 2000)) {
+        printf("[WiFi] %s\r\n", mEsp.getResponse());
+    }
+
     return connectWifi();
 }
 

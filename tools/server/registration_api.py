@@ -217,7 +217,7 @@ def verify_upload_token(token, device_id):
 app = Flask(__name__)
 UPLOAD_DIR = os.environ.get("UPLOAD_DIR", "./uploads")
 MQTT_BROKER = os.environ.get("MQTT_BROKER", "arcana.boo")
-MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))  # ESP8266 AT v2.2 MQTTS not stable
+MQTT_PORT = int(os.environ.get("MQTT_PORT", "8883"))  # MQTTS TLS port
 
 @app.route("/health", methods=["GET"])
 def health():
