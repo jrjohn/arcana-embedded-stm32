@@ -172,27 +172,21 @@ bool RegistrationServiceImpl::httpRegister(Esp8266& esp) {
         return false;
     }
 
-    // --- Wait for response (headers + body may come in separate +IPD chunks) ---
+    // --- Wait for response (headers + body in separate +IPD chunks) ---
     esp.clearRx();
     esp.setIpdPassthrough(true);
 
-    // Wait for first +IPD (HTTP headers)
-    esp.waitFor("+IPD", 8000);
-    // Wait for second +IPD (HTTP body with FrameCodec frame)
-    vTaskDelay(pdMS_TO_TICKS(2000));
-    esp.waitFor("+IPD", 3000);
-    vTaskDelay(pdMS_TO_TICKS(500));
+    // Wait for server to process + respond (3s) then collect all data
+    vTaskDelay(pdMS_TO_TICKS(4000));
 
-    // Use mRxPos (actual bytes received) not mRxLen (last idle snapshot)
+    // Multiple waitFor to drain semaphore for each +IPD chunk
+    for (int i = 0; i < 5; i++) {
+        if (!esp.waitFor("+IPD", 1000)) break;
+    }
+    vTaskDelay(pdMS_TO_TICKS(500));  // let final IDLE event fire
+
     const uint8_t* raw = reinterpret_cast<const uint8_t*>(esp.getResponse());
     uint16_t respLen = esp.getResponseLen();
-    // Check if more bytes in buffer than reported by idle
-    // (mRxPos may be ahead of mRxLen)
-    if (respLen < 200) {
-        // Probably missing body — wait more
-        vTaskDelay(pdMS_TO_TICKS(2000));
-        respLen = esp.getResponseLen();
-    }
     printf("[REG] resp %u bytes\r\n", respLen);
 
     // Search for FrameCodec magic 0xAC 0xDA 0x01 in response (after HTTP headers)

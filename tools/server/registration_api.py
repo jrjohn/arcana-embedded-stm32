@@ -251,7 +251,7 @@ def register():
     try:
         with conn.cursor() as cur:
             # Check if already registered
-            cur.execute("SELECT id FROM user WHERE username=%s", (f"dev-{device_id}",))
+            cur.execute("SELECT id FROM user WHERE username=%s", (device_id,))
             existing = cur.fetchone()
             if existing:
                 # Already registered — return existing credentials info
@@ -265,11 +265,11 @@ def register():
             # Generate MQTT password
             import bcrypt
             mqtt_pass = secrets.token_hex(16)  # 32 char random
-            pass_hash = bcrypt.hashpw(mqtt_pass.encode(), bcrypt.gensalt()).decode()
+            pass_hash = bcrypt.hashpw(mqtt_pass.encode(), bcrypt.gensalt(rounds=10)).decode()
 
             # Insert MQTT user
             cur.execute("INSERT INTO user (username, password_hash, is_admin) VALUES (%s, %s, 0)",
-                        (f"dev-{device_id}", pass_hash))
+                        (device_id, pass_hash))
             user_id = cur.lastrowid
 
             # Insert ACL: /arcana/{deviceId}/# for sub(1), pub(2), subPattern(4)
@@ -294,7 +294,7 @@ def register():
         # Encode RegisterResponse protobuf → FrameCodec
         resp_pb = encode_register_response(
             success=True,
-            mqtt_user=f"dev-{device_id}",
+            mqtt_user=device_id,
             mqtt_pass=mqtt_pass,
             mqtt_broker=MQTT_BROKER,
             mqtt_port=MQTT_PORT,
