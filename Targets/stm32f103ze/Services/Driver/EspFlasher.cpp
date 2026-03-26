@@ -343,8 +343,35 @@ bool EspFlasher::run() {
     FILINFO fno;
     bool hasMain = (f_stat("esp_fw/esp-at.bin", &fno) == FR_OK);
     bool hasParam = (f_stat("esp_fw/factory_param.bin", &fno) == FR_OK);
+    printf("[ESPFW] check: esp-at.bin=%d factory_param.bin=%d\r\n", hasMain, hasParam);
+
+    // Debug: list root directory
+    DIR dir;
+    if (f_opendir(&dir, "/") == FR_OK) {
+        FILINFO fno2;
+        printf("[ESPFW] SD root: ");
+        while (f_readdir(&dir, &fno2) == FR_OK && fno2.fname[0]) {
+            printf("%s%s ", fno2.fname, (fno2.fattrib & AM_DIR) ? "/" : "");
+        }
+        printf("\r\n");
+        f_closedir(&dir);
+    }
+    // Also try listing esp_fw/
+    if (f_opendir(&dir, "esp_fw") == FR_OK) {
+        FILINFO fno2;
+        printf("[ESPFW] esp_fw/: ");
+        while (f_readdir(&dir, &fno2) == FR_OK && fno2.fname[0]) {
+            printf("%s ", fno2.fname);
+        }
+        printf("\r\n");
+        f_closedir(&dir);
+    } else {
+        printf("[ESPFW] esp_fw/ dir not found\r\n");
+    }
+
     if (!hasMain && !hasParam) {
-        return false;  /* No ESP firmware on SD — skip silently */
+        printf("[ESPFW] No esp_fw/esp-at.bin — skip\r\n");
+        return false;
     }
 
     printf("\r\n[ESPFW] === ESP8266 Firmware Update ===\r\n");
@@ -358,6 +385,13 @@ bool EspFlasher::run() {
 bool EspFlasher::doFlash() {
     /* Disable USART3 ISR — Esp8266 driver's IRQ steals RX bytes */
     HAL_NVIC_DisableIRQ(USART3_IRQn);
+
+    /* Reset UART to 115200 for bootloader (may have been changed to 460800) */
+    /* APB1 = 36MHz, BRR = 36000000/115200 = 312.5 → 0x139 */
+    ESP_UART->CR1 &= ~USART_CR1_UE;   /* disable USART */
+    ESP_UART->BRR = 0x139;              /* 115200 baud */
+    ESP_UART->CR1 |= USART_CR1_UE;    /* re-enable */
+
     uartFlushRx();
 
     printf("[ESPFW] Resetting ESP8266...\r\n");
