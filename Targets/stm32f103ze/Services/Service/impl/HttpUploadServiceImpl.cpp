@@ -104,15 +104,9 @@ uint8_t HttpUploadServiceImpl::uploadPendingFiles(Esp8266& esp) {
         uploadFile(esp, "device.ats", deviceId);
     }
 
-    // Clear upload progress + dismiss toast + clear pixels
+    // Clear upload progress + dismiss toast
     g_uploadProgress.currentFile = 0;
-    {
-        display::ToastState& ts = display::toastState();
-        if (ts.active && display::g_display) {
-            display::g_display->fillRect(ts.x, ts.y, ts.w, ts.h, display::colors::BLACK);
-        }
-        ts.active = false;
-    }
+    display::dismissToast();
 
     // Restore DMA write direction before resuming ATS recording
     sd_disable_dma_reads();

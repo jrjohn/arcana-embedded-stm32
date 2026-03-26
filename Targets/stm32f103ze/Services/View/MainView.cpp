@@ -86,25 +86,18 @@ void MainView::processRender() {
         vm.clearDirty();
     }
 
-    // 3. Toast overlay — repaint on top after all field updates (no flicker)
+    // 3. Toast overlay — single-writer: only render task touches LCD for toast
     {
-        display::ToastState& ts = display::toastState();
-        if (ts.active) {
-            uint32_t now = (uint32_t)xTaskGetTickCount();
-            if (now >= ts.dismissTick) {
-                ts.active = false;
-                // Redraw full static layout
-                onEnter(lcd);
-                // Force immediate full redraw of all dynamic fields
-                mRendered = LcdOutput();
-                LcdOutput fullRedraw = vm.output();
-                fullRedraw.dirty = 0xFF;  // all dirty
-                render(lcd, fullRedraw, mRendered);
-                mRendered = vm.output();
-                mRendered.dirty = 0;
-            } else {
-                display::toastRedraw(ts);
-            }
+        bool expired = display::toastUpdate((uint32_t)xTaskGetTickCount());
+        if (expired) {
+            // Toast dismissed — redraw full layout
+            onEnter(lcd);
+            mRendered = LcdOutput();
+            LcdOutput fullRedraw = vm.output();
+            fullRedraw.dirty = 0xFF;
+            render(lcd, fullRedraw, mRendered);
+            mRendered = vm.output();
+            mRendered.dirty = 0;
         }
     }
 
