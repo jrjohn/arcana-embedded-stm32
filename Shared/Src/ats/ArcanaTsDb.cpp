@@ -1191,6 +1191,22 @@ bool ArcanaTsDb::recoverFromExisting() {
                 mCfg.file->truncate();
             }
 
+            // Build sparse index so queryLatest can find records on disk.
+            // Scan all blocks — O(n) reads but only headers, no payload.
+            // For typical device.ats (<100 blocks) this takes <1ms.
+            {
+                uint64_t off = DATA_START_OFFSET;
+                while (off < estimatedEnd && mIndexCount < MAX_INDEX_ENTRIES) {
+                    AtsBlockHeader bhdr;
+                    if (validateBlock(off / BLOCK_SIZE, bhdr)) {
+                        addIndexEntry(off / BLOCK_SIZE, bhdr.channelId,
+                                      bhdr.recordCount, bhdr.firstTimestamp,
+                                      bhdr.lastTimestamp);
+                    }
+                    off += BLOCK_SIZE;
+                }
+            }
+
             goto buffers_init;
         }
         // else: tail verification failed, fall through to full scan

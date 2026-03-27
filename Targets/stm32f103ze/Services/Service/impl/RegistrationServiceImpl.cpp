@@ -189,45 +189,51 @@ static bool saveToFile(uint8_t* deviceKey, const RegistrationService::Credential
 // --- Public API ---
 
 bool RegistrationServiceImpl::loadCredentials() {
-    for (int i = 0; i < 20 && !g_exfat_ready; i++)
+    auto& storage = static_cast<atsstorage::AtsStorageServiceImpl&>(
+        atsstorage::AtsStorageServiceImpl::getInstance());
+
+    // Wait for SD card + device.ats to be ready (ATS task races with MQTT task)
+    for (int i = 0; i < 30; i++) {
+        if (g_exfat_ready && storage.isReady()) break;
         vTaskDelay(pdMS_TO_TICKS(500));
+    }
     if (!g_exfat_ready) return false;
 
     // Try device.ats ch2 first (black box)
-    if (loadFromDeviceAts(mDeviceKey, mCreds)) {
-        mCreds.valid = true;
-        printf("[REG] loaded from device.ats ch2: user=%s\r\n", mCreds.mqttUser);
-        return true;
+    if (storage.isReady() && loadFromDeviceAts(mDeviceKey, mCreds)) {
+        // Validate: username must match this device's ID
+        if (strcmp(mCreds.mqttUser, mDeviceId) == 0) {
+            mCreds.valid = true;
+            printf("[REG] loaded from device.ats ch2: user=%s\r\n", mCreds.mqttUser);
+            return true;
+        }
+        printf("[REG] ch2 data corrupt (user=%s)\r\n", mCreds.mqttUser);
     }
     // Fallback: creds.enc (old boards without ch2)
     if (loadFromFile(mDeviceKey, mCreds)) {
-        mCreds.valid = true;
-        printf("[REG] loaded from creds.enc: user=%s\r\n", mCreds.mqttUser);
-        return true;
+        if (strcmp(mCreds.mqttUser, mDeviceId) == 0) {
+            mCreds.valid = true;
+            printf("[REG] loaded from creds.enc: user=%s\r\n", mCreds.mqttUser);
+            return true;
+        }
+        printf("[REG] creds.enc data corrupt (user=%s)\r\n", mCreds.mqttUser);
     }
     mCreds.valid = false;
     return false;
 }
 
 bool RegistrationServiceImpl::saveCredentials() {
-    printf("[REG] saveCredentials start\r\n");
     bool ok = false;
-    // Save to device.ats ch2 if available
-    printf("[REG] trying device.ats ch2...\r\n");
+    // Primary: device.ats ch2 (black box)
     if (saveToDeviceAts(mDeviceKey, mCreds)) {
         printf("[REG] saved to device.ats ch2\r\n");
         ok = true;
     } else {
-        printf("[REG] device.ats ch2 failed\r\n");
-    }
-    // Always also save creds.enc as fallback
-    printf("[REG] trying creds.enc...\r\n");
-    if (saveToFile(mDeviceKey, mCreds)) {
-        if (!ok) printf("[REG] saved to creds.enc (ch2 unavailable)\r\n");
-        ok = true;
-        printf("[REG] creds.enc ok\r\n");
-    } else {
-        printf("[REG] creds.enc failed\r\n");
+        // Fallback: creds.enc (old boards without ch2)
+        if (saveToFile(mDeviceKey, mCreds)) {
+            printf("[REG] saved to creds.enc (ch2 unavailable)\r\n");
+            ok = true;
+        }
     }
     if (!ok) printf("[REG] credential save FAILED\r\n");
     return ok;

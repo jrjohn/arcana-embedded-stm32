@@ -619,6 +619,14 @@ bool AtsStorageServiceImpl::openDeviceDb() {
         return true;  // never block boot
     }
 
+    // New device.ats (just created, no channels yet) → init all channels
+    if (mDeviceDb.getChannelCount() == 0) {
+        if (!initDeviceDbChannels()) {
+            printf("[ATS] device.ats channel init failed\r\n");
+            return true;  // degraded
+        }
+    }
+
     LOG_I(ats::ErrorSource::Tsdb, evt::ATS_DEVICE_DB_INFO,
           mDeviceDb.getStats().totalRecords);
 

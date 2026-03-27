@@ -89,22 +89,30 @@ void IoServiceImpl::taskLoop() {
 
         mKey2Prev = key2Now;
 
-        // --- KEY1 (PA0, active-HIGH) — long press 2s = format ---
+        // --- KEY1 (PA0, active-HIGH) — hold 2s = format ---
         if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET) {
             mKey1Hold++;
-            if (mKey1Hold == 3) {  // show toast after 300ms (debounce)
-                display::toast("Format?", 2000,
+            if (mKey1Hold == 3) {
+                display::toast("Hold 2s...", 3000,
                                (uint32_t)xTaskGetTickCount(),
                                display::colors::WHITE, 0xFD20);
+            } else if (mKey1Hold == 10) {  // 1s
+                display::toast("Format 1s..", 2000,
+                               (uint32_t)xTaskGetTickCount(),
+                               display::colors::WHITE, 0xFD20);
+            } else if (mKey1Hold == 15) {  // 1.5s
+                display::toast("Format!", 2000,
+                               (uint32_t)xTaskGetTickCount(),
+                               display::colors::WHITE, 0xF800);
             }
-            if (mKey1Hold >= 20) {  // 20 × 100ms = 2s
+            if (mKey1Hold >= 20) {  // 2s held → trigger format
                 mFormatRequested = true;
                 mKey1Hold = 0;
                 printf("[KEY1] format\r\n");
             }
         } else {
-            if (mKey1Hold > 0) display::toastState().dismissTick = 0;
             mKey1Hold = 0;
+            // No force-dismiss — toast auto-expires
         }
     }
 }
