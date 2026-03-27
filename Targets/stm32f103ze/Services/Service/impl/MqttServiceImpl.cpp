@@ -215,10 +215,40 @@ bool MqttServiceImpl::mqttPublishRaw(const char* topic, const char* payload) {
 }
 
 bool MqttServiceImpl::mqttPublishBin(const char* topic, const uint8_t* data, uint16_t dataLen) {
+    Esp8266& esp = input.Wifi->getEsp();
+    uint16_t pid = mNextPacketId++;
     uint8_t pkt[192];
-    uint16_t len = MqttPacket::buildPublish(pkt, sizeof(pkt), topic, data, dataLen);
+    uint16_t len = MqttPacket::buildPublish(pkt, sizeof(pkt), topic, data, dataLen,
+                                             1, pid);  // QoS 1
     if (len > sizeof(pkt)) return false;
-    return sendMqttPacket(pkt, len);
+    if (!sendMqttPacket(pkt, len)) return false;
+
+    // Wait for PUBACK (QoS 1 delivery confirmation)
+    uint32_t start = xTaskGetTickCount();
+    while ((xTaskGetTickCount() - start) < pdMS_TO_TICKS(5000)) {
+        if (esp.hasMqttMsg()) {
+            const uint8_t* mqttData;
+            uint16_t mqttDataLen;
+            if (MqttPacket::parseIpd(esp.getMqttMsg(), esp.getMqttMsgLen(),
+                                      mqttData, mqttDataLen)) {
+                uint8_t pktType = MqttPacket::packetType(mqttData[0]);
+                if (pktType == MqttPacket::PUBACK) {
+                    uint16_t ackId = MqttPacket::parsePuback(mqttData, mqttDataLen);
+                    esp.clearMqttMsg();
+                    return ackId == pid;
+                }
+                if (pktType == MqttPacket::PINGRESP) {
+                    esp.clearMqttMsg();
+                    continue;  // ignore, keep waiting for PUBACK
+                }
+                // Other packet (server PUBLISH) — leave for main loop
+                break;
+            }
+            esp.clearMqttMsg();
+        }
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+    return false;  // PUBACK timeout
 }
 
 bool MqttServiceImpl::mqttDisconnectRaw() {
@@ -320,6 +350,12 @@ void MqttServiceImpl::runTask() {
         }
         if (!connected) {
             LOG_W(ats::ErrorSource::Mqtt, 0x0005);
+            // Credentials might be corrupt — invalidate to force re-register
+            auto& regSvc2 = reg::RegistrationServiceImpl::getInstance();
+            if (regSvc2.isRegistered()) {
+                printf("[MQTT] CONNACK fail — clearing credentials\r\n");
+                regSvc2.invalidate();
+            }
             vTaskDelay(pdMS_TO_TICKS(5000));
             esp.releaseAccess();
             continue;

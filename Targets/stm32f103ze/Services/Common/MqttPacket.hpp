@@ -95,15 +95,21 @@ public:
     static uint16_t buildPublish(uint8_t* buf, uint16_t bufSz,
                                   const char* topic,
                                   const uint8_t* payload, uint16_t payloadLen,
+                                  uint8_t qos = 0, uint16_t packetId = 0,
                                   bool retain = false) {
         uint16_t tLen = (uint16_t)strlen(topic);
-        uint32_t remLen = 2 + tLen + payloadLen;  // QoS 0: no packet ID
+        uint32_t remLen = 2 + tLen + payloadLen;
+        if (qos > 0) remLen += 2;  // packet ID
         uint16_t pos = 0;
-        buf[pos++] = 0x30 | (retain ? 1 : 0);
+        buf[pos++] = 0x30 | ((qos & 0x03) << 1) | (retain ? 1 : 0);
         pos += encodeRemLen(buf + pos, remLen);
         buf[pos++] = (uint8_t)(tLen >> 8);
         buf[pos++] = (uint8_t)(tLen);
         memcpy(buf + pos, topic, tLen); pos += tLen;
+        if (qos > 0) {
+            buf[pos++] = (uint8_t)(packetId >> 8);
+            buf[pos++] = (uint8_t)(packetId);
+        }
         memcpy(buf + pos, payload, payloadLen); pos += payloadLen;
         return pos;
     }
@@ -156,6 +162,12 @@ public:
 
     static bool isPingresp(const uint8_t* buf, uint16_t len) {
         return len >= 2 && packetType(buf[0]) == PINGRESP;
+    }
+
+    /** Parse PUBACK — returns packet ID, or 0 on error. */
+    static uint16_t parsePuback(const uint8_t* buf, uint16_t len) {
+        if (len < 4 || packetType(buf[0]) != PUBACK) return 0;
+        return (buf[2] << 8) | buf[3];
     }
 
     /**

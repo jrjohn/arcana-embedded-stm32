@@ -27,6 +27,9 @@ public:
     /** Save credentials to device.ats CONFIG. */
     bool saveCredentials();
 
+    /** Invalidate cached credentials (force re-register on next attempt) */
+    void invalidate() { mCreds.valid = false; mForceRegister = true; }
+
     /** Get 8-char device ID (hex of hardware UID) */
     const char* deviceId() const { return mDeviceId; }
 
@@ -39,6 +42,7 @@ private:
     Credentials mCreds;
     char mDeviceId[9];    // "32FFD605\0"
     uint8_t mDeviceKey[32]; // derived from UID (used as public_key for TOFU)
+    bool mForceRegister = false;
 };
 
 } // namespace reg

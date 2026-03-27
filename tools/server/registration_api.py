@@ -19,6 +19,7 @@ import struct
 import hashlib
 import secrets
 import json
+import re
 from pathlib import Path
 from flask import Flask, request, jsonify, abort
 
@@ -69,6 +70,48 @@ def frame_decode(data):
     if expected_crc != received_crc:
         return None
     return data[7:7 + payload_len], flags, stream_id
+
+# ---------------------------------------------------------------------------
+# ChaCha20 RFC 7539 — pure Python (matches STM32 ChaCha20.hpp, no deps)
+# ---------------------------------------------------------------------------
+
+def _chacha20_quarter_round(state, a, b, c, d):
+    state[a] = (state[a] + state[b]) & 0xFFFFFFFF; state[d] ^= state[a]; state[d] = ((state[d] << 16) | (state[d] >> 16)) & 0xFFFFFFFF
+    state[c] = (state[c] + state[d]) & 0xFFFFFFFF; state[b] ^= state[c]; state[b] = ((state[b] << 12) | (state[b] >> 20)) & 0xFFFFFFFF
+    state[a] = (state[a] + state[b]) & 0xFFFFFFFF; state[d] ^= state[a]; state[d] = ((state[d] <<  8) | (state[d] >> 24)) & 0xFFFFFFFF
+    state[c] = (state[c] + state[d]) & 0xFFFFFFFF; state[b] ^= state[c]; state[b] = ((state[b] <<  7) | (state[b] >> 25)) & 0xFFFFFFFF
+
+def _chacha20_block(key_32: bytes, counter: int, nonce_12: bytes) -> bytes:
+    """Generate one 64-byte ChaCha20 keystream block."""
+    state = list(struct.unpack('<16I',
+        b'expand 32-byte k' + key_32 + struct.pack('<I', counter) + nonce_12))
+    working = state[:]
+    for _ in range(10):  # 20 rounds = 10 double-rounds
+        _chacha20_quarter_round(working, 0,4,8,12)
+        _chacha20_quarter_round(working, 1,5,9,13)
+        _chacha20_quarter_round(working, 2,6,10,14)
+        _chacha20_quarter_round(working, 3,7,11,15)
+        _chacha20_quarter_round(working, 0,5,10,15)
+        _chacha20_quarter_round(working, 1,6,11,12)
+        _chacha20_quarter_round(working, 2,7,8,13)
+        _chacha20_quarter_round(working, 3,4,9,14)
+    return struct.pack('<16I', *[(working[i] + state[i]) & 0xFFFFFFFF for i in range(16)])
+
+def chacha20_encrypt(key_32: bytes, nonce_12: bytes, plaintext: bytes) -> bytes:
+    """ChaCha20 encrypt/decrypt (symmetric, RFC 7539). Counter starts at 0."""
+    result = bytearray()
+    for i in range(0, len(plaintext), 64):
+        block = _chacha20_block(key_32, i // 64, nonce_12)
+        chunk = plaintext[i:i+64]
+        result.extend(a ^ b for a, b in zip(chunk, block))
+    return bytes(result)
+
+def frame_encode_encrypted(payload: bytes, key_32: bytes,
+                            flags=FLAG_FIN, stream_id=0) -> bytes:
+    """FrameCodec frame with ChaCha20 encrypted payload: [nonce:12][ciphertext:N]"""
+    nonce = os.urandom(12)
+    ciphertext = chacha20_encrypt(key_32, nonce, payload)
+    return frame_encode(nonce + ciphertext, flags, stream_id)
 
 # ---------------------------------------------------------------------------
 # Protobuf manual encode/decode (no .proto compile dependency on server)
@@ -147,6 +190,83 @@ def encode_register_response(success, mqtt_user="", mqtt_pass="", mqtt_broker=""
     if error:
         payload += pb_encode_field(8, 2, error.encode())
     return payload
+
+# ---------------------------------------------------------------------------
+# @arcana_protocol decorator — FrameCodec + protobuf + ChaCha20 auto
+# ---------------------------------------------------------------------------
+# Usage:
+#   @arcana_protocol(
+#       req_fields={1: ('device_id', 'str'), 2: ('public_key', 'bytes'), 3: ('firmware_ver', 'int')},
+#       resp_fields={1: ('success', 'bool'), 2: ('mqtt_user', 'str'), ...},
+#       encrypt_response=True
+#   )
+#   def handler(req):
+#       return {"success": True, "mqtt_user": "..."}, 200
+
+from functools import wraps
+
+def arcana_protocol(req_fields, resp_fields, encrypt_response=False, sid=SID_REGISTER):
+    """Decorator: auto decode/encode FrameCodec + protobuf, optional ChaCha20."""
+    def decorator(f):
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            # --- Decode request ---
+            raw = request.get_data()
+            result = frame_decode(raw)
+            if not result:
+                return _proto_error("Invalid frame", sid), 400, \
+                    {"Content-Type": "application/octet-stream"}
+            payload, flags, stream_id = result
+            pb = pb_decode_message(payload)
+
+            req = {}
+            for field_num, (name, typ) in req_fields.items():
+                val = pb.get(field_num)
+                if val is None:
+                    req[name] = None
+                elif typ == 'str' and isinstance(val, bytes):
+                    req[name] = val.decode()
+                elif typ == 'int' and not isinstance(val, int):
+                    req[name] = int(val)
+                else:
+                    req[name] = val
+            # Keep raw public_key bytes for encryption key
+            if 2 in pb and isinstance(pb[2], bytes):
+                req['_public_key_raw'] = pb[2]
+
+            # --- Call handler ---
+            resp_dict, status_code = f(req, *args, **kwargs)
+
+            # --- Encode response ---
+            resp_pb = b""
+            for field_num, (name, typ) in resp_fields.items():
+                val = resp_dict.get(name)
+                if val is None or val == "" or val == 0 and typ != 'bool':
+                    continue
+                if typ == 'bool':
+                    resp_pb += pb_encode_field(field_num, 0, 1 if val else 0)
+                elif typ == 'int':
+                    resp_pb += pb_encode_field(field_num, 0, int(val))
+                elif typ == 'str':
+                    resp_pb += pb_encode_field(field_num, 2,
+                        val.encode() if isinstance(val, str) else val)
+                elif typ == 'bytes':
+                    resp_pb += pb_encode_field(field_num, 2, val)
+
+            # --- Encrypt + frame ---
+            if encrypt_response and req.get('_public_key_raw'):
+                device_key = req['_public_key_raw'][:32]
+                body = frame_encode_encrypted(resp_pb, device_key, stream_id=sid)
+            else:
+                body = frame_encode(resp_pb, stream_id=sid)
+
+            return body, status_code, {"Content-Type": "application/octet-stream"}
+        return wrapper
+    return decorator
+
+def _proto_error(msg, sid):
+    resp_pb = encode_register_response(success=False, error=msg)
+    return frame_encode(resp_pb, stream_id=sid)
 
 # ---------------------------------------------------------------------------
 # MySQL
@@ -228,116 +348,78 @@ def health():
     return jsonify({"status": "ok", "time": int(time.time())})
 
 @app.route("/api/register", methods=["POST"])
-def register():
-    """TOFU device registration. Accepts FrameCodec frame with RegisterRequest protobuf."""
-    data = request.get_data()
+@arcana_protocol(
+    req_fields={1: ('device_id', 'str'), 2: ('public_key', 'bytes'), 3: ('firmware_ver', 'int')},
+    resp_fields={
+        1: ('success', 'bool'), 2: ('mqtt_user', 'str'), 3: ('mqtt_pass', 'str'),
+        4: ('mqtt_broker', 'str'), 5: ('mqtt_port', 'int'), 6: ('upload_token', 'str'),
+        7: ('topic_prefix', 'str'), 8: ('error', 'str'),
+    },
+    encrypt_response=False,  # TODO: enable after ChaCha20 Python/C compatibility verified
+)
+def register(req):
+    """TOFU device registration — handler receives/returns plain dicts."""
+    device_id = req.get('device_id', '')
+    public_key = req.get('public_key', b'')
+    firmware_ver = req.get('firmware_ver', 0) or 0
 
-    # Decode FrameCodec frame
-    result = frame_decode(data)
-    if not result:
-        return make_error_response("Invalid frame"), 400
-    payload, flags, stream_id = result
-
-    # Decode RegisterRequest protobuf
-    fields = pb_decode_message(payload)
-    device_id = fields.get(1, b"").decode() if isinstance(fields.get(1), bytes) else ""
-    public_key = fields.get(2, b"")
-    firmware_ver = fields.get(3, 0)
-
-    if not device_id or len(public_key) != 64:
-        return make_error_response("Missing device_id or invalid public_key"), 400
+    if not device_id or not isinstance(public_key, bytes) or len(public_key) != 64:
+        return {"success": False, "error": "bad request"}, 400
 
     public_key_hex = public_key.hex()
-
     print(f"[REG] device={device_id} pubkey={public_key_hex[:16]}... fw={firmware_ver:#06x}")
 
+    import bcrypt
     conn = get_db()
     try:
         with conn.cursor() as cur:
-            # Check if already registered
             cur.execute("SELECT id FROM user WHERE username=%s", (device_id,))
             existing = cur.fetchone()
+
             if existing:
-                # Verify public key matches (TOFU security)
+                # Verify public key matches (TOFU)
                 cur.execute("SELECT public_key FROM device WHERE device_id=%s", (device_id,))
                 dev = cur.fetchone()
                 if dev and dev['public_key'] != public_key_hex:
-                    resp_pb = encode_register_response(success=False, error="pubkey mismatch")
-                    return frame_encode(resp_pb, stream_id=SID_REGISTER), 403, \
-                        {"Content-Type": "application/octet-stream"}
+                    return {"success": False, "error": "pubkey mismatch"}, 403
 
-                # Re-provision: new password, return full credentials
-                import bcrypt
+                # Re-provision
                 mqtt_pass = secrets.token_hex(16)
                 pass_hash = bcrypt.hashpw(mqtt_pass.encode(), bcrypt.gensalt(rounds=10)).decode()
                 cur.execute("UPDATE user SET password_hash=%s WHERE username=%s",
                             (pass_hash, device_id))
                 conn.commit()
+                print(f"[REG] RE-PROVISION: {device_id}")
+            else:
+                # First registration
+                mqtt_pass = secrets.token_hex(16)
+                pass_hash = bcrypt.hashpw(mqtt_pass.encode(), bcrypt.gensalt(rounds=10)).decode()
+                cur.execute("INSERT INTO user (username, password_hash, is_admin) VALUES (%s, %s, 0)",
+                            (device_id, pass_hash))
+                user_id = cur.lastrowid
+                topic = f"/arcana/{device_id}/#"
+                for rw in [1, 2, 4]:
+                    cur.execute("INSERT INTO acl (user_id, topic, rw) VALUES (%s, %s, %s)",
+                                (user_id, topic, rw))
+                cur.execute("INSERT INTO device (device_id, public_key, firmware_ver) VALUES (%s, %s, %s)",
+                            (device_id, public_key_hex, firmware_ver))
+                conn.commit()
+                print(f"[REG] NEW: {device_id}")
 
-                upload_token = generate_upload_token(device_id)
-                topic_prefix = f"/arcana/{device_id}"
-                print(f"[REG] RE-PROVISION: user={device_id} topic={topic_prefix}/#")
-
-                resp_pb = encode_register_response(
-                    success=True,
-                    mqtt_user=device_id,
-                    mqtt_pass=mqtt_pass,
-                    mqtt_broker=MQTT_BROKER,
-                    mqtt_port=MQTT_PORT,
-                    upload_token=upload_token,
-                    topic_prefix=topic_prefix,
-                )
-                return frame_encode(resp_pb, stream_id=SID_REGISTER), 200, \
-                    {"Content-Type": "application/octet-stream"}
-
-            # Generate MQTT password
-            import bcrypt
-            mqtt_pass = secrets.token_hex(16)  # 32 char random
-            pass_hash = bcrypt.hashpw(mqtt_pass.encode(), bcrypt.gensalt(rounds=10)).decode()
-
-            # Insert MQTT user
-            cur.execute("INSERT INTO user (username, password_hash, is_admin) VALUES (%s, %s, 0)",
-                        (device_id, pass_hash))
-            user_id = cur.lastrowid
-
-            # Insert ACL: /arcana/{deviceId}/# for sub(1), pub(2), subPattern(4)
-            topic = f"/arcana/{device_id}/#"
-            for rw in [1, 2, 4]:
-                cur.execute("INSERT INTO acl (user_id, topic, rw) VALUES (%s, %s, %s)",
-                            (user_id, topic, rw))
-
-            # Store device public key
-            cur.execute(
-                "INSERT INTO device (device_id, public_key, firmware_ver) VALUES (%s, %s, %s)",
-                (device_id, public_key_hex, firmware_ver))
-
-            conn.commit()
-
-        # Generate upload token
-        upload_token = generate_upload_token(device_id)
-        topic_prefix = f"/arcana/{device_id}"
-
-        print(f"[REG] OK: user=dev-{device_id} topic={topic_prefix}/#")
-
-        # Encode RegisterResponse protobuf → FrameCodec
-        resp_pb = encode_register_response(
-            success=True,
-            mqtt_user=device_id,
-            mqtt_pass=mqtt_pass,
-            mqtt_broker=MQTT_BROKER,
-            mqtt_port=MQTT_PORT,
-            upload_token=upload_token,
-            topic_prefix=topic_prefix,
-        )
-        return frame_encode(resp_pb, stream_id=SID_REGISTER), 200, \
-            {"Content-Type": "application/octet-stream"}
+        return {
+            "success": True,
+            "mqtt_user": device_id,
+            "mqtt_pass": mqtt_pass,
+            "mqtt_broker": MQTT_BROKER,
+            "mqtt_port": MQTT_PORT,
+            "upload_token": generate_upload_token(device_id),
+            "topic_prefix": f"/arcana/{device_id}",
+        }, 200
 
     except Exception as e:
         conn.rollback()
         print(f"[REG] ERROR: {e}")
-        resp_pb = encode_register_response(success=False, error=str(e)[:30])
-        return frame_encode(resp_pb, stream_id=SID_REGISTER), 500, \
-            {"Content-Type": "application/octet-stream"}
+        return {"success": False, "error": str(e)[:30]}, 500
     finally:
         conn.close()
 

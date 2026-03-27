@@ -240,8 +240,9 @@ bool RegistrationServiceImpl::saveCredentials() {
 bool RegistrationServiceImpl::doRegistration() {
     if (mCreds.valid) return true;  // already registered
 
-    // Try loading from storage first
-    if (loadCredentials() && mCreds.valid) return true;
+    // Try loading from storage (skip if invalidated — stale data)
+    if (!mForceRegister && loadCredentials() && mCreds.valid) return true;
+    mForceRegister = false;
 
     // Need to register — get ESP8266
     Esp8266& esp = Esp8266::getInstance();
@@ -362,7 +363,16 @@ bool RegistrationServiceImpl::httpRegister(Esp8266& esp) {
                 printf("[REG] frame @%u len=%u crc=%s\r\n",
                        i, pLen, expectedCrc == receivedCrc ? "OK" : "FAIL");
                 if (expectedCrc == receivedCrc) {
-                    found = parseResponse(raw + i + 7, pLen);
+                    const uint8_t* framePayload = raw + i + 7;
+                    // Try cleartext first
+                    found = parseResponse(framePayload, pLen);
+                    // If cleartext failed and payload long enough, try encrypted
+                    if (!found && pLen > 12) {
+                        uint8_t* enc = const_cast<uint8_t*>(framePayload + 12);
+                        uint16_t encLen = pLen - 12;
+                        crypto::ChaCha20::crypt(mDeviceKey, framePayload, 0, enc, encLen);
+                        found = parseResponse(enc, encLen);
+                    }
                 }
             } else {
                 printf("[REG] frame @%u truncated (need %u, have %u)\r\n",
