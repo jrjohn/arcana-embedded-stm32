@@ -53,4 +53,6 @@ Services/Service/impl \
 Services/View \
 Shared/Src \
 Shared/Src/ats \
+Shared/Src/mbedtls \
+Shared/Src/nanopb \
 

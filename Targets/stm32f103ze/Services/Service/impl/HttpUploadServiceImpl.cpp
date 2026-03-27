@@ -149,6 +149,7 @@ bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
     static const int MAX_ATTEMPTS = 200;
     static const int MAX_STALL = 3;
     static const uint16_t CANCELLED = 0xFFFF;  // sentinel
+    (void)CANCELLED;
     bool ok = false;
     uint32_t lastOffset = 0;
     int stallCount = 0;

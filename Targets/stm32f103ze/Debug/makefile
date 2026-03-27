@@ -9,6 +9,8 @@ RM := rm -rf
 
 # All of the sources participating in the build are defined here
 -include sources.mk
+-include Shared/Src/nanopb/subdir.mk
+-include Shared/Src/mbedtls/subdir.mk
 -include Shared/Src/ats/subdir.mk
 -include Shared/Src/subdir.mk
 -include Services/View/subdir.mk

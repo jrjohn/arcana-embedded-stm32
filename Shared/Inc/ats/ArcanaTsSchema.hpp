@@ -61,7 +61,7 @@ public:
         if (fieldCount >= MAX_FIELDS) return false;
         FieldDesc& f = fields[fieldCount];
         memset(&f, 0, sizeof(FieldDesc));
-        strncpy(f.name, fieldName, 7);
+        for (int i = 0; i < 7 && fieldName[i]; ++i) f.name[i] = fieldName[i];
         f.name[7] = '\0';
         f.type = type;
         f.offset = static_cast<uint8_t>(recordSize);

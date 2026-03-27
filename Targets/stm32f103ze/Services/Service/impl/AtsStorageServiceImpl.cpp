@@ -854,8 +854,6 @@ bool AtsStorageServiceImpl::loadCredentials(uint8_t* outBuf, uint16_t bufSize,
     if (!mDeviceDbReady || mDeviceDb.getChannelCount() < 3) return false;
 
     // CREDS record = 236 bytes (4 ts + 232 data)
-    // Debug: test all channels
-    uint8_t testBuf[236];
     LOG_D(ats::ErrorSource::Tsdb, evt::ATS_CRED_QUERY);
 
     uint8_t rec[236];
@@ -917,6 +915,7 @@ void AtsStorageServiceImpl::taskLoop() {
     uint8_t key2Hold = 0;   // KEY2 state (0=released, 1=pressed)
     bool key2Seen = false;  // KEY2 must be seen released (HIGH) before first detect
     uint32_t key2PressStart = 0;  // tick when KEY2 was first pressed
+    (void)key1Hold; (void)key2Hold; (void)key2Seen; (void)key2PressStart;
 
     bool provisionToastShown = false;
 
@@ -996,6 +995,7 @@ void AtsStorageServiceImpl::taskLoop() {
             mStatsObs.publish(&mStatsModel);
 
             uint32_t sessionFail = mDb.getStats().blocksFailed - mBaselineBlocksFailed;
+            (void)sessionFail;
             LOG_D(ats::ErrorSource::Tsdb, evt::ATS_STATS, (uint32_t)mTotalRecords);
 
             // Send stats to syslog (picked up by MQTT task)

@@ -177,7 +177,12 @@ static bool saveToFile(uint8_t* deviceKey, const RegistrationService::Credential
     packCreds(plain, creds);
     uint32_t tick = xTaskGetTickCount();
     memcpy(nonce, &tick, 4);
-    crypto::DeviceKey::getUID(nonce + 4);
+    // getUID copies 12 bytes but only 8 remain at nonce+4; copy just 8 bytes
+    {
+        uint8_t uid[crypto::DeviceKey::UID_SIZE];
+        crypto::DeviceKey::getUID(uid);
+        memcpy(nonce + 4, uid, 8);
+    }
     crypto::ChaCha20::crypt(deviceKey, nonce, 0, plain, CRED_PLAIN_SIZE);
 
     memcpy(sCredFileBuf, CRED_MAGIC, 4);
@@ -513,13 +518,18 @@ bool RegistrationServiceImpl::parseResponse(const uint8_t* payload, uint16_t len
         return false;
     }
 
-    // Store credentials
-    strncpy(mCreds.mqttUser, resp.mqtt_user, sizeof(mCreds.mqttUser) - 1);
-    strncpy(mCreds.mqttPass, resp.mqtt_pass, sizeof(mCreds.mqttPass) - 1);
-    strncpy(mCreds.mqttBroker, resp.mqtt_broker, sizeof(mCreds.mqttBroker) - 1);
+    // Store credentials (memcpy + explicit null-terminate to avoid -Wstringop-truncation)
+    memcpy(mCreds.mqttUser, resp.mqtt_user, sizeof(mCreds.mqttUser) - 1);
+    mCreds.mqttUser[sizeof(mCreds.mqttUser) - 1] = '\0';
+    memcpy(mCreds.mqttPass, resp.mqtt_pass, sizeof(mCreds.mqttPass) - 1);
+    mCreds.mqttPass[sizeof(mCreds.mqttPass) - 1] = '\0';
+    memcpy(mCreds.mqttBroker, resp.mqtt_broker, sizeof(mCreds.mqttBroker) - 1);
+    mCreds.mqttBroker[sizeof(mCreds.mqttBroker) - 1] = '\0';
     mCreds.mqttPort = (uint16_t)resp.mqtt_port;
-    strncpy(mCreds.uploadToken, resp.upload_token, sizeof(mCreds.uploadToken) - 1);
-    strncpy(mCreds.topicPrefix, resp.topic_prefix, sizeof(mCreds.topicPrefix) - 1);
+    memcpy(mCreds.uploadToken, resp.upload_token, sizeof(mCreds.uploadToken) - 1);
+    mCreds.uploadToken[sizeof(mCreds.uploadToken) - 1] = '\0';
+    memcpy(mCreds.topicPrefix, resp.topic_prefix, sizeof(mCreds.topicPrefix) - 1);
+    mCreds.topicPrefix[sizeof(mCreds.topicPrefix) - 1] = '\0';
 
     // Extract server_pub and ecdsa_sig (new fields)
     mServerPubLen = 0;

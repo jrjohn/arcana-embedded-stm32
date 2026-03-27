@@ -34,9 +34,9 @@ namespace mqtt {
 const char* MqttServiceImpl::MQTT_BROKER    = MQTT_BROKER_VALUE;
 const char* MqttServiceImpl::MQTT_CLIENT_ID = "arcana_f103";
 // Per-device topics (populated after registration)
-static char sTopicSensor[40] = "/arcana/sensor";  // fallback
-static char sTopicCmd[40]    = "/arcana/cmd";
-static char sTopicRsp[40]    = "/arcana/rsp";
+static char sTopicSensor[48] = "/arcana/sensor";  // fallback (prefix up to 35 + "/sensor")
+static char sTopicCmd[48]    = "/arcana/cmd";
+static char sTopicRsp[48]    = "/arcana/rsp";
 const char* MqttServiceImpl::TOPIC_SENSOR   = sTopicSensor;
 const char* MqttServiceImpl::TOPIC_CMD      = sTopicCmd;
 const char* MqttServiceImpl::TOPIC_RSP      = sTopicRsp;
