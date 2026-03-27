@@ -230,9 +230,11 @@ def arcana_protocol(req_fields, resp_fields, encrypt_response=False, sid=SID_REG
                     req[name] = int(val)
                 else:
                     req[name] = val
-            # Keep raw public_key bytes for encryption key
+            # Keep raw bytes for encryption key and ECDH
             if 2 in pb and isinstance(pb[2], bytes):
                 req['_public_key_raw'] = pb[2]
+            if 4 in pb and isinstance(pb[4], bytes):
+                req['_ecdh_pub_raw'] = pb[4]
 
             # --- Call handler ---
             resp_dict, status_code = f(req, *args, **kwargs)
@@ -287,7 +289,7 @@ def get_db():
     return pymysql.connect(**DB_CONFIG, cursorclass=pymysql.cursors.DictCursor)
 
 def init_db():
-    """Create device table if not exists"""
+    """Create device + device_token tables if not exist"""
     conn = get_db()
     with conn.cursor() as cur:
         cur.execute("""
@@ -299,8 +301,103 @@ def init_db():
                 registered_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS device_token (
+                id            INT(11) AUTO_INCREMENT PRIMARY KEY,
+                client_id     VARCHAR(48)   NOT NULL,
+                token_type    VARCHAR(40)   DEFAULT 'ecdh_p256',
+                device_pub    VARCHAR(130)  NOT NULL,
+                scope         TEXT          DEFAULT NULL,
+                revoked       TINYINT(1)   DEFAULT 0,
+                issued_at     INT(11)      NOT NULL,
+                expires_in    INT(11)      NOT NULL,
+                user_id       INT(11)      DEFAULT NULL,
+                firmware_ver  VARCHAR(40)   DEFAULT NULL,
+                count         INT(11)      NOT NULL DEFAULT 1,
+                remote_ip     VARCHAR(45)   DEFAULT NULL,
+                updatedate    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )
+        """)
     conn.commit()
     conn.close()
+
+# ---------------------------------------------------------------------------
+# ECDH + ECDSA for registration key exchange
+# ---------------------------------------------------------------------------
+
+from cryptography.hazmat.primitives.asymmetric import ec, utils as ec_utils
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+# Company private key — sole root secret (from env var)
+_company_priv_hex = os.environ.get("COMPANY_PRIV_HEX", "")
+if not _company_priv_hex:
+    _env_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env")
+    if os.path.exists(_env_file):
+        for line in open(_env_file):
+            if line.startswith("COMPANY_PRIV_HEX="):
+                _company_priv_hex = line.strip().split("=", 1)[1].strip()
+
+if _company_priv_hex:
+    COMPANY_PRIV = ec.derive_private_key(
+        int.from_bytes(bytes.fromhex(_company_priv_hex), 'big'), ec.SECP256R1())
+    COMPANY_PUB = COMPANY_PRIV.public_key()
+    print(f"  Company key: loaded ({_company_priv_hex[:8]}...)")
+else:
+    COMPANY_PRIV = None
+    COMPANY_PUB = None
+    print("  Company key: NOT SET (ECDH/ECDSA disabled)")
+
+
+def derive_server_keypair(device_id: str, count: int):
+    """Derive deterministic EC P-256 keypair from COMPANY_PRIV + device_id + count."""
+    if not COMPANY_PRIV:
+        return None, None
+    company_priv_bytes = COMPANY_PRIV.private_numbers().private_value.to_bytes(32, 'big')
+    salt = f"{device_id}:{count}".encode()
+    seed = HKDF(
+        algorithm=hashes.SHA256(), length=32,
+        salt=salt, info=b"ARCANA-SERVER-KEY"
+    ).derive(company_priv_bytes)
+    # Clamp seed to valid P-256 range
+    seed_int = int.from_bytes(seed, 'big')
+    # P-256 order
+    n = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
+    seed_int = (seed_int % (n - 1)) + 1
+    priv = ec.derive_private_key(seed_int, ec.SECP256R1())
+    return priv, priv.public_key()
+
+
+def ecdh_derive_comm_key(server_priv, device_pub_bytes: bytes, device_id: str) -> bytes:
+    """ECDH shared secret → HKDF → 32-byte comm_key."""
+    pub_nums = ec.EllipticCurvePublicNumbers(
+        x=int.from_bytes(device_pub_bytes[:32], 'big'),
+        y=int.from_bytes(device_pub_bytes[32:64], 'big'),
+        curve=ec.SECP256R1()
+    )
+    device_pub = pub_nums.public_key()
+    shared = server_priv.exchange(ec.ECDH(), device_pub)
+    # HKDF: same as device side — PRK=HMAC(salt=device_id, ikm=shared), expand with "ARCANA-COMM"
+    prk = hmac.new(device_id.encode()[:8], shared, hashlib.sha256).digest()
+    info_block = b"ARCANA-COMM\x01"
+    comm_key = hmac.new(prk, info_block, hashlib.sha256).digest()
+    return comm_key
+
+
+def ecdsa_sign_server_pub(server_pub_bytes: bytes, device_id: str) -> bytes:
+    """Sign SHA256(server_pub + device_id) with company private key. Returns DER."""
+    if not COMPANY_PRIV:
+        return b""
+    data = server_pub_bytes + device_id.encode()[:8]
+    sig = COMPANY_PRIV.sign(data, ec.ECDSA(hashes.SHA256()))
+    return sig  # DER format
+
+
+def ec_pub_to_raw(pub_key) -> bytes:
+    """Export EC public key as raw x||y (64 bytes)."""
+    nums = pub_key.public_numbers()
+    return nums.x.to_bytes(32, 'big') + nums.y.to_bytes(32, 'big')
+
 
 # ---------------------------------------------------------------------------
 # Server secret for upload token signing
@@ -349,13 +446,15 @@ def health():
 
 @app.route("/api/register", methods=["POST"])
 @arcana_protocol(
-    req_fields={1: ('device_id', 'str'), 2: ('public_key', 'bytes'), 3: ('firmware_ver', 'int')},
+    req_fields={1: ('device_id', 'str'), 2: ('public_key', 'bytes'), 3: ('firmware_ver', 'int'),
+                4: ('ecdh_pub', 'bytes')},
     resp_fields={
         1: ('success', 'bool'), 2: ('mqtt_user', 'str'), 3: ('mqtt_pass', 'str'),
         4: ('mqtt_broker', 'str'), 5: ('mqtt_port', 'int'), 6: ('upload_token', 'str'),
         7: ('topic_prefix', 'str'), 8: ('error', 'str'),
+        9: ('server_pub', 'bytes'), 10: ('ecdsa_sig', 'bytes'),
     },
-    encrypt_response=True,  # Response encrypted with device's public_key (ChaCha20)
+    encrypt_response=True,
 )
 def register(req):
     """TOFU device registration — handler receives/returns plain dicts."""
@@ -406,7 +505,53 @@ def register(req):
                 conn.commit()
                 print(f"[REG] NEW: {device_id}")
 
-        return {
+        # --- ECDH key exchange (if device sent ecdh_pub) ---
+        ecdh_pub_raw = req.get('_ecdh_pub_raw', b'')
+        server_pub_bytes = b""
+        ecdsa_sig = b""
+
+        if COMPANY_PRIV and len(ecdh_pub_raw) == 64:
+            # Get registration count
+            with conn.cursor() as cur2:
+                cur2.execute("SELECT COALESCE(MAX(count),0)+1 AS next_count FROM device_token WHERE client_id=%s",
+                             (device_id,))
+                reg_count = cur2.fetchone()['next_count']
+
+            # Derive server keypair from COMPANY_PRIV + device_id + count
+            srv_priv, srv_pub = derive_server_keypair(device_id, reg_count)
+
+            if srv_priv:
+                server_pub_bytes = ec_pub_to_raw(srv_pub)
+
+                # Derive comm_key (for verification, not stored)
+                comm_key = ecdh_derive_comm_key(srv_priv, ecdh_pub_raw, device_id)
+                print(f"[REG] ECDH comm_key={comm_key[:8].hex()}... count={reg_count}")
+
+                # ECDSA sign server_pub
+                ecdsa_sig = ecdsa_sign_server_pub(server_pub_bytes, device_id)
+
+                # Get user_id for FK
+                with conn.cursor() as cur2:
+                    cur2.execute("SELECT id FROM user WHERE username=%s", (device_id,))
+                    uid_row = cur2.fetchone()
+                    uid = uid_row['id'] if uid_row else None
+
+                # Revoke old tokens + insert new
+                with conn.cursor() as cur2:
+                    cur2.execute("UPDATE device_token SET revoked=1 WHERE client_id=%s AND revoked=0",
+                                 (device_id,))
+                    cur2.execute("""INSERT INTO device_token
+                        (client_id, token_type, device_pub, scope,
+                         issued_at, expires_in, user_id, firmware_ver, count, remote_ip)
+                        VALUES (%s, 'ecdh_p256', %s, 'mqtt:sensor mqtt:command',
+                                %s, 31536000, %s, %s, %s, %s)""",
+                        (device_id, ecdh_pub_raw.hex(),
+                         int(time.time()), uid, str(firmware_ver),
+                         reg_count, request.remote_addr))
+                conn.commit()
+                print(f"[REG] device_token: {device_id} count={reg_count} ip={request.remote_addr}")
+
+        resp = {
             "success": True,
             "mqtt_user": device_id,
             "mqtt_pass": mqtt_pass,
@@ -414,7 +559,13 @@ def register(req):
             "mqtt_port": MQTT_PORT,
             "upload_token": generate_upload_token(device_id),
             "topic_prefix": f"/arcana/{device_id}",
-        }, 200
+        }
+        if server_pub_bytes:
+            resp["server_pub"] = server_pub_bytes
+        if ecdsa_sig:
+            resp["ecdsa_sig"] = ecdsa_sig
+
+        return resp, 200
 
     except Exception as e:
         conn.rollback()
@@ -438,6 +589,55 @@ def device_status(device_id):
         "device_id": dev["device_id"],
         "firmware_ver": dev["firmware_ver"],
         "registered_at": str(dev["registered_at"]),
+    })
+
+# ---------------------------------------------------------------------------
+# Device Key Query API (for MQTT/HTTP clients)
+# ---------------------------------------------------------------------------
+
+@app.route("/api/device/<device_id>/key", methods=["GET"])
+def get_device_key(device_id):
+    """Query comm_key for a device. Derived on-the-fly, never stored."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        abort(401, "Missing Authorization: Bearer <token>")
+    # Accept any valid upload token for now (TODO: dedicated admin token)
+    if not verify_upload_token(auth[7:], device_id):
+        # Also accept server secret as admin token
+        if auth[7:] != _secret_str:
+            abort(401, "Invalid token")
+
+    if not COMPANY_PRIV:
+        abort(503, "ECDH not configured (COMPANY_PRIV_HEX not set)")
+
+    conn = get_db()
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT device_pub, count, issued_at, expires_in
+            FROM device_token
+            WHERE client_id=%s AND revoked=0
+            ORDER BY issued_at DESC LIMIT 1
+        """, (device_id,))
+        row = cur.fetchone()
+    conn.close()
+
+    if not row:
+        abort(404, "No active token for device")
+
+    # Derive comm_key on-the-fly
+    device_pub_bytes = bytes.fromhex(row["device_pub"])
+    srv_priv, _ = derive_server_keypair(device_id, row["count"])
+    if not srv_priv:
+        abort(500, "Key derivation failed")
+
+    comm_key = ecdh_derive_comm_key(srv_priv, device_pub_bytes, device_id)
+
+    return jsonify({
+        "device_id": device_id,
+        "comm_key": comm_key.hex(),
+        "issued_at": row["issued_at"],
+        "expires_in": row["expires_in"],
+        "count": row["count"],
     })
 
 # ---------------------------------------------------------------------------
