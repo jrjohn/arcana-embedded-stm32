@@ -287,8 +287,7 @@ bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
 
 bool HttpUploadServiceImpl::sslConnect(Esp8266& esp) {
     char cmd[80];
-    // Try TCP first (SSL may not be supported on all ESP8266 AT versions)
-    snprintf(cmd, sizeof(cmd), "AT+CIPSTART=\"TCP\",\"%s\",%u", SERVER, PORT);
+    snprintf(cmd, sizeof(cmd), "AT+CIPSTART=\"SSL\",\"%s\",%u", SERVER, PORT);
     if (!esp.sendCmd(cmd, "OK", 10000)) {
         if (!esp.responseContains("ALREADY CONNECTED")) {
             return false;
