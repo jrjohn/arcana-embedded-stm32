@@ -3,8 +3,8 @@
  * @brief OTA firmware download via ESP8266 HTTP GET → SD card → CRC → flag → reset
  *
  * Flow:
- * 1. TCP connect to server
- * 2. HTTP GET firmware binary
+ * 1. SSL/TLS connect to server
+ * 2. HTTPS GET firmware binary
  * 3. Stream +IPD data → f_write to firmware.bin on SD
  * 4. CRC-32 verify entire file
  * 5. Write ota_meta.bin
@@ -100,9 +100,9 @@ bool OtaServiceImpl::httpGet(const char* host, uint16_t port, const char* path)
     esp.sendCmd("AT+CIPCLOSE", "OK", 1000);
     vTaskDelay(pdMS_TO_TICKS(200));
 
-    /* TCP connect */
+    /* SSL/TLS connect (prevents MITM on firmware download) */
     char cmd[128];
-    snprintf(cmd, sizeof(cmd), "AT+CIPSTART=\"TCP\",\"%s\",%u", host, port);
+    snprintf(cmd, sizeof(cmd), "AT+CIPSTART=\"SSL\",\"%s\",%u", host, port);
     if (!esp.sendCmd(cmd, "OK", 10000)) {
         LOG_E(ats::ErrorSource::Ota, evt::OTA_TCP_FAIL);
         return false;
