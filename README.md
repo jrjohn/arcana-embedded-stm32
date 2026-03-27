@@ -298,16 +298,51 @@ Shared/
 | **CommandBridge** | RX/TX queue architecture — BLE + MQTT share one command registry, 8 commands |
 | **NTP Clock** | ESP8266 UDP NTP, RTC restore from device.ats on boot |
 
+### Security Architecture
+
+```
+Device                                    Server
+  │                                         │
+  │ fleet_master (flash)                    │ COMPANY_PRIV (env var)
+  │   → device_key (TOFU + BLE PSK)        │
+  │                                         │
+  │ ═══ Registration (HTTPS, one round-trip) ═══
+  │                                         │
+  │ uECC P-256 keypair (ephemeral)          │ Derive server_priv from COMPANY_PRIV
+  │ POST: device_id + device_key + dev_pub  │ ECDH: shared = srv_priv × dev_pub
+  │   ←── srv_pub + ECDSA sig + mqtt creds  │ comm_key = HKDF(shared)
+  │ ECDH: shared = dev_priv × srv_pub       │ Store device_pub + count in DB
+  │ comm_key = HKDF(shared)                 │
+  │ Discard dev_priv (PFS)                  │
+  │                                         │
+  │ ═══ Communication (no daemon needed) ═══
+  │                                         │
+  │ MQTT sensor: ChaCha20(comm_key)         │ Client: query DB → derive comm_key
+  │ MQTT command: AES-256-CCM(comm_key)     │
+  │ BLE: ECDH session key (device_key PSK)  │
+```
+
+| Layer | Protection |
+|-------|-----------|
+| Transport | TLS/SSL (MQTT 8883, HTTPS registration, OTA, upload) |
+| Sensor data | ChaCha20 + comm_key (rotates on re-register) |
+| Commands | AES-256-CCM + PSK/session key |
+| BLE | Session gate — ECDH required before any communication |
+| Key exchange | ECDH P-256 via micro-ecc (lightweight, ~600B stack) |
+| Server auth | ECDSA signature on server_pub (company private key) |
+| Key storage | Device: flash KeyStore (RDP protected). Server: DB has zero secrets |
+| Logging | Structured LOG_* macros → Serial + ATS file + Syslog (no operational detail in UDP) |
+
 ### F103 Build Output
 
 ```
    text    data     bss     dec     hex  filename
- 111592     192   65320  177104   2b3d0  arcana-embedded-f103.elf
+ 177268     360   65128  242756   3b444  arcana-embedded-f103.elf
 ```
 
 | Resource | Used | Total | % |
 |----------|------|-------|---|
-| Flash | 109KB | 512KB | 21% |
+| Flash | 173KB | 512KB | 34% |
 | RAM (bss+data) | 64KB | 64KB | 99% |
 
 ---
@@ -368,6 +403,13 @@ python3 read_serial.py    # /dev/tty.usbserial-1120 @ 115200
 | **BLE frame reassembly** | Ring buffer (ISR) → FrameAssembler (task) → submitFrame — lock-free pipeline |
 | **BLE sensor streaming** | 1Hz JSON push via HC-08 FFE1, phone receives automatically |
 | **Static allocation** | No malloc, predictable memory, no fragmentation |
+| **Registration-embedded ECDH** | Key exchange in one HTTP round-trip, no runtime daemon needed |
+| **PFS (Perfect Forward Secrecy)** | Ephemeral device keypair discarded after registration |
+| **DB has zero secrets** | Only device_pub + count stored; comm_key derived on-the-fly from COMPANY_PRIV |
+| **BLE session gate** | ECDH required before any BLE communication (same entry point as MQTT) |
+| **Structured logging** | All 111 printf migrated to LOG_* event codes — flows to Serial/ATS/Syslog |
+| **TLS everywhere** | MQTT, registration, OTA, upload all use SSL/TLS |
+| **micro-ecc (uECC)** | Lightweight P-256 ECDH (~600B stack vs mbedtls ~1.5KB) — fits in MQTT task |
 
 ### Known Limitations
 
@@ -384,7 +426,10 @@ python3 read_serial.py    # /dev/tty.usbserial-1120 @ 115200
 | **MutexDisplay disabled** | g_display not thread-safe (88B RAM cost) | Enable when RAM budget allows |
 | **Toast repaint overhead** | Redraws every render cycle while active | Acceptable for small rect (~200x30px) |
 | **Hardcoded 240px** | Toast/StatusLine assume 240 width | Parameterize from IDisplay::width() |
-| **printf not migrated** | AtsStorage/SdBench/Wifi/OTA use raw printf | Migrate to ArcanaLog event codes |
+| **COMPANY_PRIV is single root secret** | If leaked + DB breached = all devices compromised | HSM / multi-key per customer / monitoring |
+| **comm_key lifetime** | Valid until re-register (no auto-expiry) | Add expires_in enforcement + periodic re-register |
+| **Non-standard protocol** | Custom ECDH+ECDSA, not OAuth/mTLS/X.509 | Document thoroughly, security audit |
+| **Syslog UDP unencrypted** | Event codes only (no params), but still visible | Migrate to MQTT publish or TLS syslog |
 
 ### Risk Mitigation
 
@@ -437,8 +482,15 @@ python3 read_serial.py    # /dev/tty.usbserial-1120 @ 115200
 - [x] Display Abstraction Layer (IDisplay, Adapter, Widgets, Toast, ViewManager)
 - [x] MQTT status via ViewModel dirty (eliminates LCD race condition)
 - [x] ArcanaTS partial block encryption fix
+- [x] Migrate all printf → ArcanaLog structured event codes (111 → 0)
+- [x] BLE session gate (ECDH required before communication)
+- [x] TLS everywhere (OTA, upload, registration)
+- [x] Registration-embedded ECDH key exchange (micro-ecc uECC P-256)
+- [x] ECDSA server authentication (company private key signing)
+- [x] Server device_token table (key rotation on re-register)
+- [x] Syslog info leak mitigation (event codes only, no params)
 - [ ] Enable MutexDisplay (needs RAM optimization elsewhere)
-- [ ] Migrate all printf → ArcanaLog event codes
+- [ ] Device-side ECDSA verification (currently server-side only, needs more stack)
 - [ ] arcana-android BLE integration (sensor dashboard)
 - [ ] Real ADS1298 SPI ECG (replace synthetic LUT)
 - [ ] ECG Observable (decouple AtsStorage → View)
@@ -446,6 +498,8 @@ python3 read_serial.py    # /dev/tty.usbserial-1120 @ 115200
 - [ ] XPT2046 touch driver + GestureDetector
 - [ ] Host-side unit tests with mock PAL
 - [ ] BLE baud upgrade (9600 → 115200 for ECG streaming)
+- [ ] Multi-key COMPANY_PRIV (per-customer isolation)
+- [ ] comm_key auto-expiry + periodic re-register
 
 ---
 
