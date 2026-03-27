@@ -48,6 +48,7 @@ $(SHARED)/Src/mbedtls/entropy.c \
 $(SHARED)/Src/mbedtls/entropy_poll.c \
 $(SHARED)/Src/mbedtls/entropy_hardware_alt.c \
 $(SHARED)/Src/mbedtls/ctr_drbg.c \
+$(SHARED)/Src/uECC.c \
 $(SHARED)/Src/mbedtls/md.c
 
 OBJS += \
@@ -80,6 +81,7 @@ OBJS += \
 ./Shared/Src/mbedtls/entropy_poll.o \
 ./Shared/Src/mbedtls/entropy_hardware_alt.o \
 ./Shared/Src/mbedtls/ctr_drbg.o \
+./Shared/Src/uECC.o \
 ./Shared/Src/mbedtls/md.o
 
 CPP_DEPS += \

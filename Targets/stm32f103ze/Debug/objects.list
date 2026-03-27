@@ -100,5 +100,6 @@
 "./Shared/Src/mbedtls/entropy_hardware_alt.o"
 "./Shared/Src/mbedtls/ctr_drbg.o"
 "./Shared/Src/mbedtls/md.o"
+"./Shared/Src/uECC.o"
 "./Shared/Src/registration.pb.o"
 "./Shared/Src/ats/ArcanaTsDb.o"

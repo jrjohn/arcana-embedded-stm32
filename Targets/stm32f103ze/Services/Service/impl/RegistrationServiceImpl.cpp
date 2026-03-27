@@ -2,8 +2,7 @@
 #include "AtsStorageServiceImpl.hpp"
 #include "DeviceKey.hpp"
 #include "ChaCha20.hpp"
-// CompanyKey.hpp — needed when device-side ECDSA verification is enabled
-// #include "CompanyKey.hpp"
+#include "CompanyKey.hpp"
 #include "Crc32.hpp"
 #include "Credentials.hpp"
 #include "ff.h"
@@ -17,8 +16,10 @@
 #include <pb_decode.h>
 #include <cstdio>
 #include <cstring>
-// mbedtls ECDH/ECDSA — future: device-side key exchange
-// Currently comm_key is received from server (encrypted in response)
+extern "C" {
+#include "uECC.h"
+}
+#include "mbedtls/md.h"
 
 namespace arcana {
 namespace reg {
@@ -267,20 +268,62 @@ bool RegistrationServiceImpl::doRegistration() {
     return true;
 }
 
+// uECC RNG callback — ChaCha20 CSPRNG seeded from hardware entropy
+// Uses the same entropy sources as mbedtls_hardware_poll but with
+// ChaCha20 keystream expansion (already linked, zero extra RAM)
+static int ueccRng(uint8_t* dest, unsigned size) {
+    // Seed: mix UID + SysTick + DWT + ADC noise → 32-byte key
+    uint8_t seed[32];
+    const uint32_t* uid = (const uint32_t*)UID_BASE;
+    uint32_t* s = (uint32_t*)seed;
+    for (int i = 0; i < 8; i++) {
+        s[i] = uid[i % 3] ^ SysTick->VAL ^ DWT->CYCCNT ^ (ADC1->DR << (i * 4));
+        // Extra mixing between samples
+        volatile uint32_t dummy = 0;
+        for (int j = 0; j < 10; j++) dummy += SysTick->VAL;
+        (void)dummy;
+    }
+
+    // Nonce from tick + counter
+    static uint32_t sRngCounter = 0;
+    uint8_t nonce[12] = {};
+    uint32_t tick = HAL_GetTick();
+    memcpy(nonce, &tick, 4);
+    memcpy(nonce + 4, &sRngCounter, 4);
+    sRngCounter++;
+
+    // Expand seed via ChaCha20 keystream → fill dest
+    memset(dest, 0, size);
+    crypto::ChaCha20::crypt(seed, nonce, 0, dest, size);
+    return 1;
+}
+
 bool RegistrationServiceImpl::httpRegister(Esp8266& esp) {
     LOG_I(ats::ErrorSource::Reg, evt::REG_START);
 
+    // --- Generate ephemeral EC P-256 keypair (uECC — lightweight) ---
+    const struct uECC_Curve_t* curve = uECC_secp256r1();
+    uECC_set_rng(ueccRng);
+
+    uint8_t devPriv[32];
+    uint8_t devPub[64];
+    if (!uECC_make_key(devPub, devPriv, curve)) {
+        LOG_E(ats::ErrorSource::Reg, 0x0D22);  // keypair gen failed
+        return false;
+    }
+
     // --- Encode RegisterRequest protobuf ---
-    // ECDH is done server-side; comm_key arrives in response (encrypted)
     arcana_RegisterRequest req = arcana_RegisterRequest_init_zero;
     strncpy(req.device_id, mDeviceId, sizeof(req.device_id) - 1);
     memcpy(req.public_key.bytes, mDeviceKey, 32);
     memset(req.public_key.bytes + 32, 0, 32);
     req.public_key.size = 64;
     req.firmware_ver = 0x0100;
-    // ecdh_pub left empty — server generates comm_key
+    // Attach ephemeral ECDH public key
+    memcpy(req.ecdh_pub.bytes, devPub, 64);
+    req.ecdh_pub.size = 64;
 
-    uint8_t pbBuf[128];
+    uint8_t pbBuf[192];  // larger: ecdh_pub adds 66 bytes
     pb_ostream_t stream = pb_ostream_from_buffer(pbBuf, sizeof(pbBuf));
     if (!pb_encode(&stream, arcana_RegisterRequest_fields, &req)) {
         LOG_E(ats::ErrorSource::Reg, evt::REG_PB_FAIL);
@@ -402,17 +445,56 @@ bool RegistrationServiceImpl::httpRegister(Esp8266& esp) {
     esp.sendCmd("AT+CIPCLOSE", "OK", 1000);
 
     if (found && mCreds.valid) {
-        // comm_key received from server (field 9, 32 bytes, in server_pub slot)
-        // Server derives it from COMPANY_PRIV + device_id + count
-        if (mServerPubLen == 32) {
+        // --- ECDH: derive comm_key from shared secret ---
+        if (mServerPubLen == 64) {
+            // uECC shared secret: devPriv × serverPub
+            uint8_t shared[32];
+            if (uECC_shared_secret(mServerPub, devPriv, shared, curve)) {
+                // HKDF: comm_key = HMAC(HMAC(device_id, shared), "ARCANA-COMM" + 0x01)
+                uint8_t prk[32];
+                {
+                    mbedtls_md_context_t hm;
+                    mbedtls_md_init(&hm);
+                    const mbedtls_md_info_t* mi = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+                    mbedtls_md_setup(&hm, mi, 1);
+                    mbedtls_md_hmac_starts(&hm, reinterpret_cast<const uint8_t*>(mDeviceId), 8);
+                    mbedtls_md_hmac_update(&hm, shared, 32);
+                    mbedtls_md_hmac_finish(&hm, prk);
+                    mbedtls_md_free(&hm);
+                }
+                {
+                    const uint8_t info[] = "ARCANA-COMM";
+                    uint8_t infoBlock[sizeof(info)];
+                    memcpy(infoBlock, info, sizeof(info) - 1);
+                    infoBlock[sizeof(info) - 1] = 0x01;
+
+                    mbedtls_md_context_t hm;
+                    mbedtls_md_init(&hm);
+                    const mbedtls_md_info_t* mi = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+                    mbedtls_md_setup(&hm, mi, 1);
+                    mbedtls_md_hmac_starts(&hm, prk, 32);
+                    mbedtls_md_hmac_update(&hm, infoBlock, sizeof(info));
+                    mbedtls_md_hmac_finish(&hm, mCreds.commKey);
+                    mbedtls_md_free(&hm);
+                }
+                mCreds.hasCommKey = true;
+                LOG_I(ats::ErrorSource::Reg, 0x0D21);  // comm_key derived via ECDH
+            }
+        } else if (mServerPubLen == 32) {
+            // Fallback: server sent comm_key directly (no ECDH)
             memcpy(mCreds.commKey, mServerPub, 32);
             mCreds.hasCommKey = true;
-            LOG_I(ats::ErrorSource::Reg, 0x0D21);  // comm_key received
+            LOG_I(ats::ErrorSource::Reg, 0x0D21);
         }
+
+        // Clear ephemeral private key (PFS)
+        memset(devPriv, 0, sizeof(devPriv));
+
         LOG_I(ats::ErrorSource::Reg, evt::REG_OK);
         return true;
     }
 
+    memset(devPriv, 0, sizeof(devPriv));
     LOG_E(ats::ErrorSource::Reg, evt::REG_PARSE_FAIL);
     return false;
 }

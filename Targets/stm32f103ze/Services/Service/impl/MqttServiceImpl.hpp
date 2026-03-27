@@ -68,7 +68,7 @@ private:
     static const char* TOPIC_RSP;
     static const uint16_t KEEPALIVE_SEC = 60;
 
-    static const uint16_t TASK_STACK_SIZE = 512;
+    static const uint16_t TASK_STACK_SIZE = 576;  // +64 words for uECC ECDH in registration
 
     Observable<MqttCommandModel>    mCmdObs;
     Observable<MqttConnectionModel> mConnObs;
