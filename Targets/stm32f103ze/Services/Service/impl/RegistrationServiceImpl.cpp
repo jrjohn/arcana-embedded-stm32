@@ -455,6 +455,8 @@ bool RegistrationServiceImpl::httpRegister(Esp8266& esp) {
             // uECC shared secret: devPriv × serverPub
             uint8_t shared[32];
             if (uECC_shared_secret(mServerPub, devPriv, shared, curve)) {
+                { uint32_t sp; memcpy(&sp, shared, 4);
+                  LOG_D(ats::ErrorSource::Reg, 0x0D23, sp); }  // shared secret preview
                 // HKDF: comm_key = HMAC(HMAC(device_id, shared), "ARCANA-COMM" + 0x01)
                 uint8_t prk[32];
                 {
@@ -483,7 +485,8 @@ bool RegistrationServiceImpl::httpRegister(Esp8266& esp) {
                     mbedtls_md_free(&hm);
                 }
                 mCreds.hasCommKey = true;
-                LOG_I(ats::ErrorSource::Reg, 0x0D21);  // comm_key derived via ECDH
+                { uint32_t ck; memcpy(&ck, mCreds.commKey, 4);
+                  LOG_I(ats::ErrorSource::Reg, 0x0D21, ck); }  // comm_key derived
             }
         } else if (mServerPubLen == 32) {
             // Fallback: server sent comm_key directly (no ECDH)
