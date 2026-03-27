@@ -50,18 +50,10 @@ public:
         const char* src = (event.source < SRC_COUNT)
                          ? SRC_TAG[event.source] : "???";
 
-        if (event.param != 0) {
-            snprintf(mRing[mHead], MSG_MAX_LEN,
-                     "<%u>arcana[%lu]: [%c][%s] 0x%04X p=%lu",
-                     (unsigned)pri, (unsigned long)event.timestamp,
-                     lvl, src, (unsigned)event.code,
-                     (unsigned long)event.param);
-        } else {
-            snprintf(mRing[mHead], MSG_MAX_LEN,
-                     "<%u>arcana[%lu]: [%c][%s] 0x%04X",
-                     (unsigned)pri, (unsigned long)event.timestamp,
-                     lvl, src, (unsigned)event.code);
-        }
+        // Syslog: event code only — no param detail (prevents info leak over UDP)
+        snprintf(mRing[mHead], MSG_MAX_LEN,
+                 "<%u>arcana: [%c][%s] 0x%04X",
+                 (unsigned)pri, lvl, src, (unsigned)event.code);
 
         mHead = next;
     }
@@ -121,17 +113,18 @@ public:
     }
 
     /**
-     * Enqueue a periodic stats message (bypasses Logger level filter).
+     * Enqueue a periodic heartbeat (bypasses Logger level filter).
      * Call from ATS taskLoop every 1 second.
+     * No operational detail — just proves device is alive.
      */
     void sendStats(uint32_t records, uint16_t rate, uint32_t kb,
                    uint32_t epoch = 0) {
+        (void)records; (void)rate; (void)kb;
         uint8_t next = (mHead + 1) & RING_MASK;
         if (next == mTail) return;
         snprintf(mRing[mHead], MSG_MAX_LEN,
-                 "<14>arcana[%lu]: rec=%lu r=%u KB=%lu",
-                 (unsigned long)epoch,
-                 (unsigned long)records, (unsigned)rate, (unsigned long)kb);
+                 "<14>arcana[%lu]: hb",
+                 (unsigned long)epoch);
         mHead = next;
     }
 
