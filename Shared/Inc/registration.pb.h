@@ -11,12 +11,16 @@
 
 /* Struct definitions */
 typedef PB_BYTES_ARRAY_T(64) arcana_RegisterRequest_public_key_t;
+typedef PB_BYTES_ARRAY_T(64) arcana_RegisterRequest_ecdh_pub_t;
 typedef struct _arcana_RegisterRequest {
     char device_id[16]; /* "32FFD605" (8-char UID hex) */
-    arcana_RegisterRequest_public_key_t public_key; /* 64 bytes P-256 raw (x||y) */
+    arcana_RegisterRequest_public_key_t public_key; /* 32 bytes device_key (TOFU) */
     uint32_t firmware_ver; /* e.g. 0x0100 = v1.0 */
+    arcana_RegisterRequest_ecdh_pub_t ecdh_pub; /* 64 bytes EC P-256 ephemeral pub */
 } arcana_RegisterRequest;
 
+typedef PB_BYTES_ARRAY_T(64) arcana_RegisterResponse_server_pub_t;
+typedef PB_BYTES_ARRAY_T(72) arcana_RegisterResponse_ecdsa_sig_t;
 typedef struct _arcana_RegisterResponse {
     bool success;
     char mqtt_user[36]; /* "dev-32FFD605" */
@@ -26,6 +30,8 @@ typedef struct _arcana_RegisterResponse {
     char upload_token[72]; /* HMAC signed token */
     char topic_prefix[36]; /* "/arcana/32FFD605" */
     char error[36]; /* error message if !success */
+    arcana_RegisterResponse_server_pub_t server_pub; /* 64 bytes server EC P-256 pub */
+    arcana_RegisterResponse_ecdsa_sig_t ecdsa_sig; /* ECDSA sig (DER, up to 72 bytes) */
 } arcana_RegisterResponse;
 
 typedef PB_BYTES_ARRAY_T(32) arcana_AuthChallenge_nonce_t;
@@ -51,13 +57,13 @@ extern "C" {
 #endif
 
 /* Initializer values for message structs */
-#define arcana_RegisterRequest_init_default      {"", {0, {0}}, 0}
-#define arcana_RegisterResponse_init_default     {0, "", "", "", 0, "", "", ""}
+#define arcana_RegisterRequest_init_default      {"", {0, {0}}, 0, {0, {0}}}
+#define arcana_RegisterResponse_init_default     {0, "", "", "", 0, "", "", "", {0, {0}}, {0, {0}}}
 #define arcana_AuthChallenge_init_default        {{0, {0}}}
 #define arcana_AuthResponse_init_default         {"", {0, {0}}}
 #define arcana_AuthResult_init_default           {0, "", ""}
-#define arcana_RegisterRequest_init_zero         {"", {0, {0}}, 0}
-#define arcana_RegisterResponse_init_zero        {0, "", "", "", 0, "", "", ""}
+#define arcana_RegisterRequest_init_zero         {"", {0, {0}}, 0, {0, {0}}}
+#define arcana_RegisterResponse_init_zero        {0, "", "", "", 0, "", "", "", {0, {0}}, {0, {0}}}
 #define arcana_AuthChallenge_init_zero           {{0, {0}}}
 #define arcana_AuthResponse_init_zero            {"", {0, {0}}}
 #define arcana_AuthResult_init_zero              {0, "", ""}
@@ -66,6 +72,7 @@ extern "C" {
 #define arcana_RegisterRequest_device_id_tag     1
 #define arcana_RegisterRequest_public_key_tag    2
 #define arcana_RegisterRequest_firmware_ver_tag  3
+#define arcana_RegisterRequest_ecdh_pub_tag      4
 #define arcana_RegisterResponse_success_tag      1
 #define arcana_RegisterResponse_mqtt_user_tag    2
 #define arcana_RegisterResponse_mqtt_pass_tag    3
@@ -74,6 +81,8 @@ extern "C" {
 #define arcana_RegisterResponse_upload_token_tag 6
 #define arcana_RegisterResponse_topic_prefix_tag 7
 #define arcana_RegisterResponse_error_tag        8
+#define arcana_RegisterResponse_server_pub_tag   9
+#define arcana_RegisterResponse_ecdsa_sig_tag    10
 #define arcana_AuthChallenge_nonce_tag           1
 #define arcana_AuthResponse_device_id_tag        1
 #define arcana_AuthResponse_signature_tag        2
@@ -85,7 +94,8 @@ extern "C" {
 #define arcana_RegisterRequest_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, STRING,   device_id,         1) \
 X(a, STATIC,   SINGULAR, BYTES,    public_key,        2) \
-X(a, STATIC,   SINGULAR, UINT32,   firmware_ver,      3)
+X(a, STATIC,   SINGULAR, UINT32,   firmware_ver,      3) \
+X(a, STATIC,   SINGULAR, BYTES,    ecdh_pub,          4)
 #define arcana_RegisterRequest_CALLBACK NULL
 #define arcana_RegisterRequest_DEFAULT NULL
 
@@ -97,7 +107,9 @@ X(a, STATIC,   SINGULAR, STRING,   mqtt_broker,       4) \
 X(a, STATIC,   SINGULAR, UINT32,   mqtt_port,         5) \
 X(a, STATIC,   SINGULAR, STRING,   upload_token,      6) \
 X(a, STATIC,   SINGULAR, STRING,   topic_prefix,      7) \
-X(a, STATIC,   SINGULAR, STRING,   error,             8)
+X(a, STATIC,   SINGULAR, STRING,   error,             8) \
+X(a, STATIC,   SINGULAR, BYTES,    server_pub,        9) \
+X(a, STATIC,   SINGULAR, BYTES,    ecdsa_sig,        10)
 #define arcana_RegisterResponse_CALLBACK NULL
 #define arcana_RegisterResponse_DEFAULT NULL
 
@@ -137,8 +149,8 @@ extern const pb_msgdesc_t arcana_AuthResult_msg;
 #define arcana_AuthChallenge_size                34
 #define arcana_AuthResponse_size                 91
 #define arcana_AuthResult_size                   100
-#define arcana_RegisterRequest_size              89
-#define arcana_RegisterResponse_size             266
+#define arcana_RegisterRequest_size              155  /* +66 for ecdh_pub */
+#define arcana_RegisterResponse_size             406  /* +66 server_pub +74 ecdsa_sig */
 
 #ifdef __cplusplus
 } /* extern "C" */

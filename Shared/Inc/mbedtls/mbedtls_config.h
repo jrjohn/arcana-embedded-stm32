@@ -13,9 +13,12 @@
 #define MBEDTLS_CIPHER_MODE_CBC
 #define MBEDTLS_MD_C              /* HMAC-SHA256 for HKDF + auth tag */
 
-/* ECDH P-256 key exchange */
+/* ECDH P-256 key exchange + ECDSA signature verification */
 #define MBEDTLS_ECP_C
 #define MBEDTLS_ECDH_C
+#define MBEDTLS_ECDSA_C
+#define MBEDTLS_ASN1_PARSE_C          /* ECDSA signature parsing */
+#define MBEDTLS_ASN1_WRITE_C
 #define MBEDTLS_BIGNUM_C
 #define MBEDTLS_ECP_DP_SECP256R1_ENABLED
 

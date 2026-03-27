@@ -499,8 +499,9 @@ bool MqttServiceImpl::publishSensorData(SensorDataModel* model) {
     return mqttPublishRaw(TOPIC_SENSOR, payload);
 #else
     // Production: FrameCodec + ChaCha20 encrypted protobuf
-    uint8_t key[32];
-    crypto::DeviceKey::deriveKey(key);
+    // Use comm_key (from registration ECDH) if available, else fall back to device_key
+    auto& regSvc = reg::RegistrationServiceImpl::getInstance();
+    const uint8_t* key = regSvc.getCommKey();
 
     // 1. Encode protobuf (~20-30 bytes)
     uint8_t pb[40];

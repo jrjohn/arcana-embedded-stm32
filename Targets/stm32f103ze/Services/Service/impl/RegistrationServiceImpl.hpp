@@ -33,6 +33,11 @@ public:
     /** Get 8-char device ID (hex of hardware UID) */
     const char* deviceId() const { return mDeviceId; }
 
+    /** Get comm_key (ECDH-derived). Falls back to device_key if not registered. */
+    const uint8_t* getCommKey() const {
+        return mCreds.hasCommKey ? mCreds.commKey : mDeviceKey;
+    }
+
 private:
     RegistrationServiceImpl();
 
@@ -43,6 +48,12 @@ private:
     char mDeviceId[9];    // "32FFD605\0"
     uint8_t mDeviceKey[32]; // derived from UID (used as public_key for TOFU)
     bool mForceRegister = false;
+
+    // Temporary storage for server response (used between parseResponse and ECDH)
+    uint8_t mServerPub[64];
+    uint8_t mServerPubLen = 0;
+    uint8_t mEcdsaSig[72];
+    uint8_t mEcdsaSigLen = 0;
 };
 
 } // namespace reg

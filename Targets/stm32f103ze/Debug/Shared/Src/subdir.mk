@@ -41,6 +41,9 @@ $(SHARED)/Src/mbedtls/bignum_core.c \
 $(SHARED)/Src/mbedtls/bignum_mod.c \
 $(SHARED)/Src/mbedtls/bignum_mod_raw.c \
 $(SHARED)/Src/mbedtls/ecdh.c \
+$(SHARED)/Src/mbedtls/ecdsa.c \
+$(SHARED)/Src/mbedtls/asn1parse.c \
+$(SHARED)/Src/mbedtls/asn1write.c \
 $(SHARED)/Src/mbedtls/entropy.c \
 $(SHARED)/Src/mbedtls/entropy_poll.c \
 $(SHARED)/Src/mbedtls/entropy_hardware_alt.c \
@@ -70,6 +73,9 @@ OBJS += \
 ./Shared/Src/mbedtls/bignum_mod.o \
 ./Shared/Src/mbedtls/bignum_mod_raw.o \
 ./Shared/Src/mbedtls/ecdh.o \
+./Shared/Src/mbedtls/ecdsa.o \
+./Shared/Src/mbedtls/asn1parse.o \
+./Shared/Src/mbedtls/asn1write.o \
 ./Shared/Src/mbedtls/entropy.o \
 ./Shared/Src/mbedtls/entropy_poll.o \
 ./Shared/Src/mbedtls/entropy_hardware_alt.o \
@@ -91,7 +97,10 @@ C_DEPS += \
 ./Shared/Src/mbedtls/cipher.d \
 ./Shared/Src/mbedtls/cipher_wrap.d \
 ./Shared/Src/mbedtls/platform_util.d \
-./Shared/Src/mbedtls/constant_time.d
+./Shared/Src/mbedtls/constant_time.d \
+./Shared/Src/mbedtls/ecdsa.d \
+./Shared/Src/mbedtls/asn1parse.d \
+./Shared/Src/mbedtls/asn1write.d
 
 # Common ARM flags
 ARM_FLAGS = -mcpu=cortex-m3 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F103xE -O2 \

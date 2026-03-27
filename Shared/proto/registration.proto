@@ -5,8 +5,9 @@ package arcana;
 
 message RegisterRequest {
     string device_id = 1;       // "32FFD605" (8-char UID hex)
-    bytes  public_key = 2;      // 64 bytes P-256 raw (x||y)
+    bytes  public_key = 2;      // 32 bytes device_key (TOFU identity)
     uint32 firmware_ver = 3;    // e.g. 0x0100 = v1.0
+    bytes  ecdh_pub = 4;        // 64 bytes EC P-256 ephemeral public key (x||y)
 }
 
 message RegisterResponse {
@@ -18,6 +19,8 @@ message RegisterResponse {
     string upload_token = 6;    // HMAC signed token
     string topic_prefix = 7;    // "/arcana/32FFD605"
     string error = 8;           // error message if !success
+    bytes  server_pub = 9;      // 64 bytes server EC P-256 public key (x||y)
+    bytes  ecdsa_sig = 10;      // ECDSA signature over (server_pub + device_id)
 }
 
 // --- Challenge-Response Auth ---

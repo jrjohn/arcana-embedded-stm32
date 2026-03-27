@@ -38,7 +38,7 @@ ENTRY(Reset_Handler)
 /* Highest address of the user mode stack */
 _estack = ORIGIN(RAM) + LENGTH(RAM); /* end of "RAM" Ram type memory */
 
-_Min_Heap_Size = 0x100; /* required amount of heap (FreeRTOS uses static alloc) */
+_Min_Heap_Size = 0x000; /* FreeRTOS uses static alloc — no heap needed */
 _Min_Stack_Size = 0x400; /* required amount of stack */
 
 /* Memories definition */
