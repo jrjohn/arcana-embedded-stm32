@@ -1421,9 +1421,8 @@ uint16_t ArcanaTsDb::queryLatest(uint8_t channelId, uint8_t* outBuf,
         }
     }
 
-    mCfg.mutex->unlock();
-
     // If we need more records, read from disk (latest blocks first)
+    // Keep mutex locked — prevents concurrent file seek/read/write corruption
     if (found < maxRecords && mIndexCount > 0) {
         uint8_t* cache = getReadCache();
         if (cache) {
@@ -1490,6 +1489,8 @@ uint16_t ArcanaTsDb::queryLatest(uint8_t channelId, uint8_t* outBuf,
             }
         }
     }
+
+    mCfg.mutex->unlock();
 
     return found;
 }

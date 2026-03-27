@@ -104,15 +104,13 @@ static bool loadFromDeviceAts(uint8_t* deviceKey, RegistrationService::Credentia
         atsstorage::AtsStorageServiceImpl::getInstance());
     if (!storage.isReady()) return false;
 
-    uint8_t data[232];
+    uint8_t data[CRED_PLAIN_SIZE];
     uint16_t dataLen = 0;
-    if (!storage.loadCredentials(data, sizeof(data), dataLen) || dataLen < 232)
+    if (!storage.loadCredentials(data, sizeof(data), dataLen) || dataLen < CRED_PLAIN_SIZE)
         return false;
 
-    uint8_t plain[CRED_PLAIN_SIZE];
-    memcpy(plain, data + 12, CRED_PLAIN_SIZE);
-    crypto::ChaCha20::crypt(deviceKey, data, 0, plain, CRED_PLAIN_SIZE);
-    return unpackCreds(plain, creds);
+    // Block encryption protects the data — no app-level decrypt needed
+    return unpackCreds(data, creds);
 }
 
 static bool saveToDeviceAts(uint8_t* deviceKey, const RegistrationService::Credentials& creds) {
@@ -120,18 +118,9 @@ static bool saveToDeviceAts(uint8_t* deviceKey, const RegistrationService::Crede
         atsstorage::AtsStorageServiceImpl::getInstance());
     if (!storage.isReady()) return false;
 
-    uint8_t plain[CRED_PLAIN_SIZE];
-    uint8_t data[232];
-    uint8_t nonce[12];
-
-    packCreds(plain, creds);
-    uint32_t tick = xTaskGetTickCount();
-    memcpy(nonce, &tick, 4);
-    crypto::DeviceKey::getUID(nonce + 4);
-    crypto::ChaCha20::crypt(deviceKey, nonce, 0, plain, CRED_PLAIN_SIZE);
-
-    memcpy(data, nonce, 12);
-    memcpy(data + 12, plain, CRED_PLAIN_SIZE);
+    // Block encryption protects the data — store plaintext credentials
+    uint8_t data[CRED_PLAIN_SIZE];
+    packCreds(data, creds);
     return storage.saveCredentials(data, sizeof(data));
 }
 

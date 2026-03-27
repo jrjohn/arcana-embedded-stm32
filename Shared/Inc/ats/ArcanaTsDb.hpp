@@ -97,6 +97,7 @@ public:
 
     const StorageStats& getStats() const { return mStats; }
     uint8_t getChannelCount() const { return mChannelCount; }
+    uint16_t getIndexCount() const { return mIndexCount; }
     const ArcanaTsSchema* getSchema(uint8_t channelId) const;
 
 private:

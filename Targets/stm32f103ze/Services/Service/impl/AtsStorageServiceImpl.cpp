@@ -850,11 +850,21 @@ bool AtsStorageServiceImpl::saveTzConfig(int16_t offsetMin, uint8_t autoCheck) {
 bool AtsStorageServiceImpl::loadCredentials(uint8_t* outBuf, uint16_t bufSize,
                                              uint16_t& outLen) {
     outLen = 0;
+    printf("[ATS] loadCreds: ready=%d ch=%d idx=%u blk=%lu\r\n",
+           mDeviceDbReady, mDeviceDb.getChannelCount(),
+           mDeviceDb.getIndexCount(), (unsigned long)mDeviceDb.getStats().blocksWritten);
     if (!mDeviceDbReady || mDeviceDb.getChannelCount() < 3) return false;
 
     // CREDS record = 236 bytes (4 ts + 232 data)
+    // Debug: test all channels
+    uint8_t testBuf[236];
+    printf("[ATS] qL(0)=%u qL(1)=%u\r\n",
+           mDeviceDb.queryLatest(0, testBuf, 1),
+           mDeviceDb.queryLatest(1, testBuf, 1));
+
     uint8_t rec[236];
     uint16_t n = mDeviceDb.queryLatest(2, rec, 1);
+    printf("[ATS] queryLatest(2): n=%u\r\n", n);
     if (n == 0) return false;
 
     // data starts at offset 4 (after ts)
