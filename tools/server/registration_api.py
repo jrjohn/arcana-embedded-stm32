@@ -355,7 +355,7 @@ def health():
         4: ('mqtt_broker', 'str'), 5: ('mqtt_port', 'int'), 6: ('upload_token', 'str'),
         7: ('topic_prefix', 'str'), 8: ('error', 'str'),
     },
-    encrypt_response=False,  # TODO: enable after ChaCha20 Python/C compatibility verified
+    encrypt_response=True,  # Response encrypted with device's public_key (ChaCha20)
 )
 def register(req):
     """TOFU device registration — handler receives/returns plain dicts."""
