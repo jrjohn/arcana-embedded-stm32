@@ -1,6 +1,7 @@
 #include "stm32f1xx_hal.h"
 #include "HttpUploadServiceImpl.hpp"
 #include "AtsStorageServiceImpl.hpp"
+#include "RegistrationServiceImpl.hpp"
 #include "DeviceKey.hpp"
 #include "Credentials.hpp"
 #include "Log.hpp"
@@ -222,17 +223,22 @@ bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
 
         // Send HTTP header (raw bytes, transparent mode)
         {
-            char header[320];
+            auto& regSvc = reg::RegistrationServiceImpl::getInstance();
+            const char* token = regSvc.isRegistered()
+                                ? regSvc.credentials().uploadToken : "";
+            char header[448];
             uint32_t rangeEnd = resumeOffset + remainSize - 1;
             int hLen = snprintf(header, sizeof(header),
                 "POST /upload/%s/%s HTTP/1.1\r\n"
                 "Host: %s\r\n"
+                "Authorization: Bearer %s\r\n"
                 "Content-Length: %lu\r\n"
                 "Content-Range: bytes %lu-%lu/%lu\r\n"
                 "Content-Type: application/octet-stream\r\n"
                 "Connection: close\r\n"
                 "\r\n",
                 deviceId, filename, SERVER,
+                token,
                 (unsigned long)remainSize,
                 (unsigned long)resumeOffset, (unsigned long)rangeEnd,
                 (unsigned long)fileSize);
@@ -365,7 +371,10 @@ uint32_t HttpUploadServiceImpl::queryServerOffset(Esp8266& esp, const char* file
 bool HttpUploadServiceImpl::sendHttpHeader(Esp8266& esp, const char* filename,
                                         const char* deviceId, uint32_t bodySize,
                                         uint32_t rangeStart, uint32_t totalSize) {
-    char header[320];
+    auto& regSvc = reg::RegistrationServiceImpl::getInstance();
+    const char* token = regSvc.isRegistered()
+                        ? regSvc.credentials().uploadToken : "";
+    char header[448];
     int hLen;
 
     // Always send Content-Range to prevent server from truncating partial uploads
@@ -373,12 +382,14 @@ bool HttpUploadServiceImpl::sendHttpHeader(Esp8266& esp, const char* filename,
     hLen = snprintf(header, sizeof(header),
         "POST /upload/%s/%s HTTP/1.1\r\n"
         "Host: %s\r\n"
+        "Authorization: Bearer %s\r\n"
         "Content-Length: %lu\r\n"
         "Content-Range: bytes %lu-%lu/%lu\r\n"
         "Content-Type: application/octet-stream\r\n"
         "Connection: close\r\n"
         "\r\n",
         deviceId, filename, SERVER,
+        token,
         (unsigned long)bodySize,
         (unsigned long)rangeStart, (unsigned long)rangeEnd,
         (unsigned long)totalSize);

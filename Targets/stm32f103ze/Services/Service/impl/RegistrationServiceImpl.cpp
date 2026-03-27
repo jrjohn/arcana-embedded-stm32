@@ -1,7 +1,10 @@
 #include "RegistrationServiceImpl.hpp"
 #include "AtsStorageServiceImpl.hpp"
 #include "DeviceKey.hpp"
+#include "ChaCha20.hpp"
+#include "Crc32.hpp"
 #include "Credentials.hpp"
+#include "ff.h"
 #include "Log.hpp"
 #include "registration.pb.h"
 #include "Crc16.hpp"
@@ -48,32 +51,176 @@ RegistrationServiceImpl& RegistrationServiceImpl::getInstance() {
 }
 
 // ---------------------------------------------------------------------------
-// Load/Save credentials from device.ats CONFIG channel
+// Credential persistence — device.ats ch2 (primary) or creds.enc (fallback)
 // ---------------------------------------------------------------------------
+// Encrypted format: [nonce:12][encrypted_payload:220]
+// Payload: [user:36][pass:36][broker:36][port:2][token:72][prefix:36] = 218 + 2 pad
+// creds.enc: [magic "CRD1":4][nonce:12][encrypted:220][crc32:4] = 240 bytes
 
-bool RegistrationServiceImpl::loadCredentials() {
+static const uint16_t CRED_PLAIN_SIZE = 220;
+static const uint8_t  CRED_MAGIC[4] = {'C','R','D','1'};
+static const uint16_t CRED_FILE_SIZE = 4 + 12 + CRED_PLAIN_SIZE + 4;  // 240
+
+extern "C" volatile uint8_t g_exfat_ready;
+
+// --- Common: encrypt/decrypt + pack/unpack ---
+
+static void packCreds(uint8_t* plain, const RegistrationService::Credentials& c) {
+    memset(plain, 0, CRED_PLAIN_SIZE);
+    uint16_t off = 0;
+    memcpy(plain + off, c.mqttUser,    36); off += 36;
+    memcpy(plain + off, c.mqttPass,    36); off += 36;
+    memcpy(plain + off, c.mqttBroker,  36); off += 36;
+    memcpy(plain + off, &c.mqttPort,    2); off += 2;
+    memcpy(plain + off, c.uploadToken, 72); off += 72;
+    memcpy(plain + off, c.topicPrefix, 36);
+}
+
+static bool unpackCreds(const uint8_t* plain, RegistrationService::Credentials& c) {
+    uint16_t off = 0;
+    memcpy(c.mqttUser,    plain + off, 36); off += 36;
+    memcpy(c.mqttPass,    plain + off, 36); off += 36;
+    memcpy(c.mqttBroker,  plain + off, 36); off += 36;
+    memcpy(&c.mqttPort,   plain + off,  2); off += 2;
+    memcpy(c.uploadToken, plain + off, 72); off += 72;
+    memcpy(c.topicPrefix, plain + off, 36);
+    return c.mqttUser[0] != '\0' && c.mqttBroker[0] != '\0';
+}
+
+// --- Try device.ats ch2 ---
+
+static bool loadFromDeviceAts(uint8_t* deviceKey, RegistrationService::Credentials& creds) {
     auto& storage = static_cast<atsstorage::AtsStorageServiceImpl&>(
         atsstorage::AtsStorageServiceImpl::getInstance());
+    if (!storage.isReady()) return false;
 
-    // Wait for device DB to be ready
-    for (int i = 0; i < 10; i++) {
-        if (storage.isReady()) break;
+    uint8_t data[232];
+    uint16_t dataLen = 0;
+    if (!storage.loadCredentials(data, sizeof(data), dataLen) || dataLen < 232)
+        return false;
+
+    uint8_t plain[CRED_PLAIN_SIZE];
+    memcpy(plain, data + 12, CRED_PLAIN_SIZE);
+    crypto::ChaCha20::crypt(deviceKey, data, 0, plain, CRED_PLAIN_SIZE);
+    return unpackCreds(plain, creds);
+}
+
+static bool saveToDeviceAts(uint8_t* deviceKey, const RegistrationService::Credentials& creds) {
+    auto& storage = static_cast<atsstorage::AtsStorageServiceImpl&>(
+        atsstorage::AtsStorageServiceImpl::getInstance());
+    if (!storage.isReady()) return false;
+
+    uint8_t plain[CRED_PLAIN_SIZE];
+    uint8_t data[232];
+    uint8_t nonce[12];
+
+    packCreds(plain, creds);
+    uint32_t tick = xTaskGetTickCount();
+    memcpy(nonce, &tick, 4);
+    crypto::DeviceKey::getUID(nonce + 4);
+    crypto::ChaCha20::crypt(deviceKey, nonce, 0, plain, CRED_PLAIN_SIZE);
+
+    memcpy(data, nonce, 12);
+    memcpy(data + 12, plain, CRED_PLAIN_SIZE);
+    return storage.saveCredentials(data, sizeof(data));
+}
+
+// --- Fallback: creds.enc file ---
+
+// Shared static FIL + buffer for creds.enc (saves ~800 bytes stack)
+static FIL sCredFil;
+static uint8_t sCredFileBuf[CRED_FILE_SIZE];
+
+static bool loadFromFile(uint8_t* deviceKey, RegistrationService::Credentials& creds) {
+    if (f_open(&sCredFil, "creds.enc", FA_READ) != FR_OK) return false;
+    UINT br;
+    FRESULT fr = f_read(&sCredFil, sCredFileBuf, CRED_FILE_SIZE, &br);
+    f_close(&sCredFil);
+    if (fr != FR_OK || br != CRED_FILE_SIZE) return false;
+    if (memcmp(sCredFileBuf, CRED_MAGIC, 4) != 0) return false;
+
+    uint32_t stored, calc;
+    memcpy(&stored, sCredFileBuf + CRED_FILE_SIZE - 4, 4);
+    calc = ~crc32(0xFFFFFFFF, sCredFileBuf, CRED_FILE_SIZE - 4);
+    if (stored != calc) return false;
+
+    uint8_t plain[CRED_PLAIN_SIZE];
+    memcpy(plain, sCredFileBuf + 16, CRED_PLAIN_SIZE);
+    crypto::ChaCha20::crypt(deviceKey, sCredFileBuf + 4, 0, plain, CRED_PLAIN_SIZE);
+    return unpackCreds(plain, creds);
+}
+
+static bool saveToFile(uint8_t* deviceKey, const RegistrationService::Credentials& creds) {
+    uint8_t plain[CRED_PLAIN_SIZE];
+    uint8_t nonce[12];
+
+    packCreds(plain, creds);
+    uint32_t tick = xTaskGetTickCount();
+    memcpy(nonce, &tick, 4);
+    crypto::DeviceKey::getUID(nonce + 4);
+    crypto::ChaCha20::crypt(deviceKey, nonce, 0, plain, CRED_PLAIN_SIZE);
+
+    memcpy(sCredFileBuf, CRED_MAGIC, 4);
+    memcpy(sCredFileBuf + 4, nonce, 12);
+    memcpy(sCredFileBuf + 16, plain, CRED_PLAIN_SIZE);
+    uint32_t crc = ~crc32(0xFFFFFFFF, sCredFileBuf, CRED_FILE_SIZE - 4);
+    memcpy(sCredFileBuf + CRED_FILE_SIZE - 4, &crc, 4);
+
+    if (f_open(&sCredFil, "creds.tmp", FA_WRITE | FA_CREATE_ALWAYS) != FR_OK) return false;
+    UINT bw;
+    FRESULT fr = f_write(&sCredFil, sCredFileBuf, CRED_FILE_SIZE, &bw);
+    f_close(&sCredFil);
+    if (fr != FR_OK || bw != CRED_FILE_SIZE) return false;
+    f_unlink("creds.enc");
+    f_rename("creds.tmp", "creds.enc");
+    return true;
+}
+
+// --- Public API ---
+
+bool RegistrationServiceImpl::loadCredentials() {
+    for (int i = 0; i < 20 && !g_exfat_ready; i++)
         vTaskDelay(pdMS_TO_TICKS(500));
-    }
+    if (!g_exfat_ready) return false;
 
-    // Query device.ats CONFIG ch3 for stored credentials
-    // Record format: [mqttUser:32][mqttPass:32][uploadToken:64][topicPrefix:32] = 160 bytes
-    uint8_t buf[160];
-    // TODO: implement device.ats ch3 query when AtsStorageServiceImpl supports it
-    // For now, check a simple flag in the credential struct
+    // Try device.ats ch2 first (black box)
+    if (loadFromDeviceAts(mDeviceKey, mCreds)) {
+        mCreds.valid = true;
+        printf("[REG] loaded from device.ats ch2: user=%s\r\n", mCreds.mqttUser);
+        return true;
+    }
+    // Fallback: creds.enc (old boards without ch2)
+    if (loadFromFile(mDeviceKey, mCreds)) {
+        mCreds.valid = true;
+        printf("[REG] loaded from creds.enc: user=%s\r\n", mCreds.mqttUser);
+        return true;
+    }
     mCreds.valid = false;
-    return false;  // Not implemented yet — will always register
+    return false;
 }
 
 bool RegistrationServiceImpl::saveCredentials() {
-    // TODO: save to device.ats CONFIG ch3
-    printf("[REG] credentials saved (in-memory only for now)\r\n");
-    return true;
+    printf("[REG] saveCredentials start\r\n");
+    bool ok = false;
+    // Save to device.ats ch2 if available
+    printf("[REG] trying device.ats ch2...\r\n");
+    if (saveToDeviceAts(mDeviceKey, mCreds)) {
+        printf("[REG] saved to device.ats ch2\r\n");
+        ok = true;
+    } else {
+        printf("[REG] device.ats ch2 failed\r\n");
+    }
+    // Always also save creds.enc as fallback
+    printf("[REG] trying creds.enc...\r\n");
+    if (saveToFile(mDeviceKey, mCreds)) {
+        if (!ok) printf("[REG] saved to creds.enc (ch2 unavailable)\r\n");
+        ok = true;
+        printf("[REG] creds.enc ok\r\n");
+    } else {
+        printf("[REG] creds.enc failed\r\n");
+    }
+    if (!ok) printf("[REG] credential save FAILED\r\n");
+    return ok;
 }
 
 // ---------------------------------------------------------------------------
@@ -88,7 +235,11 @@ bool RegistrationServiceImpl::doRegistration() {
 
     // Need to register — get ESP8266
     Esp8266& esp = Esp8266::getInstance();
-    return httpRegister(esp);
+    if (!httpRegister(esp)) return false;
+
+    // Save AFTER httpRegister returns (frees 512B response buffer from stack)
+    saveCredentials();
+    return true;
 }
 
 bool RegistrationServiceImpl::httpRegister(Esp8266& esp) {
@@ -219,7 +370,7 @@ bool RegistrationServiceImpl::httpRegister(Esp8266& esp) {
 
     if (found && mCreds.valid) {
         printf("[REG] OK: user=%s topic=%s\r\n", mCreds.mqttUser, mCreds.topicPrefix);
-        saveCredentials();
+        // saveCredentials called by doRegistration after httpRegister returns
         return true;
     }
 

@@ -194,6 +194,34 @@ bool ArcanaTsDb::addChannel(uint8_t channelId, const ArcanaTsSchema& schema,
 }
 
 // ---------------------------------------------------------------------------
+// Lifecycle: addChannelLive (schema upgrade for OTA)
+// ---------------------------------------------------------------------------
+
+bool ArcanaTsDb::addChannelLive(uint8_t channelId, const ArcanaTsSchema& schema,
+                                 uint16_t sampleRateHz) {
+    // Must be open AND started (existing DB), not read-only
+    if (!mOpen || !mStarted || mReadOnly) return false;
+    if (channelId >= MAX_CHANNELS) return false;
+    if (mChannels[channelId].active) return true;  // already exists — OK
+    if (schema.recordSize == 0 || schema.fieldCount == 0) return false;
+
+    mChannels[channelId].schema = schema;
+    mChannels[channelId].sampleRateHz = sampleRateHz;
+    mChannels[channelId].active = true;
+    mChannelCount++;
+
+    // Rewrite header to persist the new channel descriptor + field table
+    bool ok;
+    if (mCfg.headerKey) {
+        ok = writeEntireHeaderBlock();
+    } else {
+        ok = writeFileHeader() && writeChannelDescriptors() && writeShadowHeader();
+    }
+    if (ok) mCfg.file->sync();
+    return ok;
+}
+
+// ---------------------------------------------------------------------------
 // Lifecycle: start
 // ---------------------------------------------------------------------------
 

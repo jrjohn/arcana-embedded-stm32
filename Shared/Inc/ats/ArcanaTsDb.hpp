@@ -44,6 +44,10 @@ public:
     bool addChannel(uint8_t channelId, const ArcanaTsSchema& schema,
                     uint16_t sampleRateHz = 0);
 
+    /** @brief Add channel to already-started DB (schema upgrade after OTA) */
+    bool addChannelLive(uint8_t channelId, const ArcanaTsSchema& schema,
+                        uint16_t sampleRateHz = 0);
+
     /** @brief Write file header and begin accepting appends */
     bool start();
 

@@ -104,15 +104,22 @@ private:
     ats::ArcanaTsDb mDeviceDb;
     ats::FatFsFilePort mDeviceFilePort;
     bool openDeviceDb();
+    bool openDeviceDbSafe(const ats::AtsConfig& cfg);
+    bool initDeviceDbChannels();
     void restoreTimeFromDeviceDb();
     void writeLifecycleEvent(uint8_t eventType, uint32_t param);
     void writeRecoveryEvents(uint32_t recoveredRec, uint16_t truncations,
                              uint16_t skippedBlocks);
+    void upgradeSensorChannels();
 
 public:
-    // Timezone config — stored in device.ats CONFIG channel (ch1) or tz.cfg fallback
+    // Timezone config — stored in device.ats CONFIG channel (ch1)
     bool loadTzConfig(int16_t& offsetMin, uint8_t& autoCheck);
     bool saveTzConfig(int16_t offsetMin, uint8_t autoCheck);
+
+    // Credentials — stored in device.ats CREDS channel (ch2), encrypted
+    bool loadCredentials(uint8_t* outBuf, uint16_t bufSize, uint16_t& outLen);
+    bool saveCredentials(const uint8_t* data, uint16_t len);
 
 private:
 

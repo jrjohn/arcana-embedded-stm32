@@ -267,6 +267,15 @@ public:
         return s;
     }
 
+    /** @brief Encrypted credentials (236 bytes/record, 17 rec/block) */
+    static inline ArcanaTsSchema credentials() {
+        ArcanaTsSchema s;
+        s.setName("CREDS");
+        s.addField("ts",   FieldType::U32);          // 4 bytes
+        s.addField("data", FieldType::BYTES, 232);    // [nonce:12][encrypted:220]
+        return s;
+    }
+
     /** @brief Sensor calibration (18 bytes/record, 225 rec/block) */
     static inline ArcanaTsSchema calibration() {
         ArcanaTsSchema s;

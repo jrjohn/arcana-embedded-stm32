@@ -525,6 +525,9 @@ bool AtsStorageServiceImpl::openDailyDb() {
         }
     }
 
+    // OTA upgrade: add missing channels to existing sensor.ats
+    upgradeSensorChannels();
+
     mDbReady = true;
     mTotalRecords = mDb.getStats().totalRecords;
     mBaselineBlocksFailed = mDb.getStats().blocksFailed;
@@ -555,6 +558,42 @@ void AtsStorageServiceImpl::rotateDailyDb(uint32_t lastDay) {
 // device.ats — permanent lifecycle DB
 // ---------------------------------------------------------------------------
 
+bool AtsStorageServiceImpl::initDeviceDbChannels() {
+    ats::ArcanaTsSchema lc = ats::ArcanaTsSchema::lifecycleEvent();
+    if (!mDeviceDb.addChannel(0, lc)) return false;
+    ats::ArcanaTsSchema cfgSchema = ats::ArcanaTsSchema::config();
+    mDeviceDb.addChannel(1, cfgSchema);
+    ats::ArcanaTsSchema creds = ats::ArcanaTsSchema::credentials();
+    mDeviceDb.addChannel(2, creds);
+    return mDeviceDb.start();
+}
+
+bool AtsStorageServiceImpl::openDeviceDbSafe(const ats::AtsConfig& cfg) {
+    // Attempt 1: open existing
+    if (mDeviceDb.open("device.ats", cfg)) {
+        // Live upgrade: add missing channels (OTA)
+        if (mDeviceDb.getChannelCount() > 0 && mDeviceDb.getChannelCount() < 3) {
+            ats::ArcanaTsSchema creds = ats::ArcanaTsSchema::credentials();
+            if (mDeviceDb.addChannelLive(2, creds)) {
+                printf("[ATS] device.ats upgraded: added CREDS ch2\r\n");
+            }
+        }
+        return true;
+    }
+
+    // Attempt 2: existing file corrupt → preserve + recreate
+    printf("[ATS] device.ats corrupt — preserving as device_old.ats\r\n");
+    f_unlink("device_old.ats");
+    f_rename("device.ats", "device_old.ats");
+    if (mDeviceDb.open("device.ats", cfg)) {
+        if (initDeviceDbChannels()) return true;
+        mDeviceDb.close();
+    }
+
+    // Attempt 3: give up
+    return false;
+}
+
 bool AtsStorageServiceImpl::openDeviceDb() {
     ats::AtsConfig cfg;
     memset(&cfg, 0, sizeof(cfg));
@@ -570,51 +609,29 @@ bool AtsStorageServiceImpl::openDeviceDb() {
     cfg.overflow = ats::OverflowPolicy::Drop;
     cfg.primaryChannel = 0xFF;
     cfg.slowBuf = sDevSlowBuf;
-    cfg.readCache = sReadCache;  // Share with sensor (same task, sequential access)
+    cfg.readCache = sReadCache;
 
-    f_unlink("device_bad.ats");  // clean up from previous crash
+    f_unlink("device.ats.bak");  // clean up old migration artifact
 
-    if (!mDeviceDb.open("device.ats", cfg)) {
-        LOG_W(ats::ErrorSource::Tsdb, evt::ATS_DB_OPEN_FAIL);
-        f_rename("device.ats", "device_bad.ats");
-        if (!mDeviceDb.open("device.ats", cfg)) {
-            LOG_E(ats::ErrorSource::Tsdb, evt::ATS_DB_OPEN_FAIL);
-            return false;
-        }
+    if (!openDeviceDbSafe(cfg)) {
+        LOG_E(ats::ErrorSource::Tsdb, evt::ATS_DB_OPEN_FAIL);
+        printf("[ATS] device.ats unavailable — running degraded\r\n");
+        return true;  // never block boot
     }
 
     LOG_I(ats::ErrorSource::Tsdb, evt::ATS_DEVICE_DB_INFO,
           mDeviceDb.getStats().totalRecords);
 
-    if (mDeviceDb.getChannelCount() == 0) {
-        // New device.ats — register ch0 (LIFECYCLE) + ch1 (CONFIG)
-        ats::ArcanaTsSchema lc = ats::ArcanaTsSchema::lifecycleEvent();
-        if (!mDeviceDb.addChannel(0, lc)) {
-            LOG_E(ats::ErrorSource::Tsdb, evt::ATS_CHANNEL_FAIL);
-            mDeviceDb.close();
-            return false;
-        }
-        ats::ArcanaTsSchema cfg = ats::ArcanaTsSchema::config();
-        mDeviceDb.addChannel(1, cfg);  // optional — old boards skip this
-
-        if (!mDeviceDb.start()) {
-            LOG_E(ats::ErrorSource::Tsdb, evt::ATS_START_FAIL);
-            mDeviceDb.close();
-            return false;
-        }
-    }
-
-    // Write test — verify device.ats is writable
+    // Write test
     {
         uint8_t testRec[12] = {};
         uint32_t ts = atsGetTime();
         memcpy(testRec, &ts, 4);
-        testRec[4] = 0xFF;  // test event type
+        testRec[4] = 0xFF;
         mDeviceDb.append(0, testRec);
         uint32_t blkBefore = mDeviceDb.getStats().blocksWritten;
         mDeviceDb.flush();
-        uint32_t blkAfter = mDeviceDb.getStats().blocksWritten;
-        if (blkAfter <= blkBefore) {
+        if (mDeviceDb.getStats().blocksWritten <= blkBefore) {
             LOG_W(ats::ErrorSource::Sdio, evt::SDIO_REINIT);
             sdio_force_reinit();
             mDeviceDb.append(0, testRec);
@@ -623,8 +640,6 @@ bool AtsStorageServiceImpl::openDeviceDb() {
     }
 
     mDeviceDbReady = true;
-    LOG_I(ats::ErrorSource::Tsdb, evt::ATS_DB_OPEN_OK,
-          mDeviceDb.getStats().totalRecords);
     return true;
 }
 
@@ -817,6 +832,61 @@ bool AtsStorageServiceImpl::saveTzConfig(int16_t offsetMin, uint8_t autoCheck) {
 
     // No ch1 CONFIG on old device.ats — timezone will be re-detected next boot
     return false;
+}
+
+// ---------------------------------------------------------------------------
+// Credentials persistence — device.ats ch2 (CREDS)
+// Record: [ts:4][data:232] where data = [nonce:12][encrypted_creds:220]
+// ---------------------------------------------------------------------------
+
+bool AtsStorageServiceImpl::loadCredentials(uint8_t* outBuf, uint16_t bufSize,
+                                             uint16_t& outLen) {
+    outLen = 0;
+    if (!mDeviceDbReady || mDeviceDb.getChannelCount() < 3) return false;
+
+    // CREDS record = 236 bytes (4 ts + 232 data)
+    uint8_t rec[236];
+    uint16_t n = mDeviceDb.queryLatest(2, rec, 1);
+    if (n == 0) return false;
+
+    // data starts at offset 4 (after ts)
+    uint16_t dataLen = 232;
+    if (dataLen > bufSize) dataLen = bufSize;
+    memcpy(outBuf, rec + 4, dataLen);
+    outLen = dataLen;
+    return true;
+}
+
+bool AtsStorageServiceImpl::saveCredentials(const uint8_t* data, uint16_t len) {
+    printf("[ATS] saveCreds: ready=%d ch=%d len=%u\r\n",
+           mDeviceDbReady, mDeviceDb.getChannelCount(), len);
+    if (!mDeviceDbReady || mDeviceDb.getChannelCount() < 3) return false;
+    if (len > 232) return false;
+
+    uint8_t rec[236];
+    memset(rec, 0, sizeof(rec));
+    uint32_t ts = atsGetTime();
+    memcpy(rec, &ts, 4);
+    memcpy(rec + 4, data, len);
+
+    printf("[ATS] saveCreds: append...\r\n");
+    bool appOk = mDeviceDb.append(2, rec);
+    printf("[ATS] saveCreds: append=%d, flush...\r\n", appOk);
+    mDeviceDb.flush();
+    printf("[ATS] saveCreds: done\r\n");
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// Schema upgrade after OTA — add missing channels to existing .ats
+// ---------------------------------------------------------------------------
+
+void AtsStorageServiceImpl::upgradeSensorChannels() {
+    if (mDb.isReadOnly()) return;
+    // Future channels defined here. addChannelLive() is a no-op if already active.
+    // Example: if OTA adds USER_ACTION channel to sensor DB:
+    // ats::ArcanaTsSchema ua = ats::ArcanaTsSchema::userAction();
+    // mDb.addChannelLive(2, ua);
 }
 
 // ---------------------------------------------------------------------------

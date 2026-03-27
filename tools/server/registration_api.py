@@ -186,7 +186,11 @@ def init_db():
 # Server secret for upload token signing
 # ---------------------------------------------------------------------------
 
-SERVER_SECRET = os.environ.get("SERVER_SECRET", "arcana-dev-secret-change-in-prod").encode()
+_DEFAULT_SECRET = "arcana-dev-secret-change-in-prod"
+_secret_str = os.environ.get("SERVER_SECRET", _DEFAULT_SECRET)
+if _secret_str == _DEFAULT_SECRET and os.environ.get("FLASK_ENV") == "production":
+    raise RuntimeError("SERVER_SECRET must be set in production — refusing to start with default")
+SERVER_SECRET = _secret_str.encode()
 
 def generate_upload_token(device_id, expiry_hours=24):
     expiry = int(time.time()) + expiry_hours * 3600
@@ -360,16 +364,20 @@ def device_status(device_id):
 
 @app.route("/upload/<device_id>/<filename>", methods=["POST"])
 def upload_file(device_id, filename):
-    # Verify Bearer token
-    auth = request.headers.get("Authorization", "")
-    if auth.startswith("Bearer "):
-        token = auth[7:]
-        if not verify_upload_token(token, device_id):
-            abort(401, "Invalid or expired upload token")
-    # Allow without token for backward compatibility (TODO: enforce in production)
+    # Validate path parameters (prevent traversal)
+    import re
+    if not re.fullmatch(r'[0-9A-Fa-f]{4,16}', device_id):
+        abort(400, "Invalid device_id")
+    if not re.fullmatch(r'[\w\-]+\.ats', filename):
+        abort(400, "Invalid filename")
 
-    if not filename.endswith(".ats"):
-        abort(400, "Only .ats files accepted")
+    # Verify Bearer token (mandatory)
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        abort(401, "Missing Authorization: Bearer <token>")
+    token = auth[7:]
+    if not verify_upload_token(token, device_id):
+        abort(401, "Invalid or expired upload token")
 
     device_dir = Path(UPLOAD_DIR) / device_id
     device_dir.mkdir(parents=True, exist_ok=True)
@@ -466,4 +474,5 @@ if __name__ == "__main__":
     else:
         print(f"  TLS: disabled (no certs)")
 
-    app.run(host=args.host, port=args.port, debug=True, threaded=True, ssl_context=ssl_ctx)
+    is_prod = os.environ.get("FLASK_ENV") == "production"
+    app.run(host=args.host, port=args.port, debug=not is_prod, threaded=True, ssl_context=ssl_ctx)
