@@ -2,6 +2,9 @@
 
 #include "BleService.hpp"
 #include "Hc08Ble.hpp"
+#ifdef ARCANA_CMD_CRYPTO
+#include "FrameCodec.hpp"
+#endif
 #include "FreeRTOS.h"
 #include "task.h"
 
@@ -38,8 +41,11 @@ private:
     static void onSensorData(SensorDataModel* model, void* ctx);
     static void onLightData(LightDataModel* model, void* ctx);
     void pushSensorJson();
+#ifdef ARCANA_CMD_CRYPTO
+    void pushSensorEncrypted();
+#endif
 
-    // Task
+    // Task (256 words = 1KB — enough for AES-CCM on small payloads)
     static const uint16_t TASK_STACK_SIZE = 256;
     StaticTask_t mTaskBuf;
     StackType_t mTaskStack[TASK_STACK_SIZE];

@@ -240,13 +240,22 @@ void CommandBridge::bridgeTask(void* param) {
             rsp.key = req.key;
 
 #ifdef ARCANA_CMD_CRYPTO
-            // KeyExchange: handle directly (payload too large for ICommand)
             // KeyExchange response buffer (96B = serverPub:64 + authTag:32)
             static uint8_t kePayload[96];
             uint8_t kePayloadLen = 0;
+            bool isKeRequest = (req.key.cluster == Cluster::Security &&
+                                req.key.commandId == SecurityCommand::KeyExchange);
 
-            if (req.key.cluster == Cluster::Security &&
-                req.key.commandId == SecurityCommand::KeyExchange) {
+            // BLE session gate: only KeyExchange allowed without active session
+            if (frame.source == CmdFrameItem::BLE &&
+                self->mEncryptionEnabled &&
+                !isKeRequest &&
+                !self->mKeyExchange.hasSession(cmdSource, 0)) {
+                LOG_W(ats::ErrorSource::Ble, evt::BLE_SESSION_GATE,
+                      ((uint32_t)req.key.cluster << 8) | req.key.commandId);
+                rsp.status = CommandStatus::AuthRequired;
+            }
+            else if (isKeRequest) {
                 if (msg.payload.size == KeyExchangeManager::kPubKeyLen) {
                     uint8_t* serverPub = kePayload;
                     uint8_t* authTag = kePayload + 64;
@@ -324,6 +333,8 @@ void CommandBridge::bridgeTask(void* param) {
                     // Install session AFTER encrypting KE response with PSK
                     if (isKeyExchangeOk) {
                         self->mKeyExchange.installPendingSession(cmdSource, 0);
+                        LOG_I(ats::ErrorSource::Cmd, evt::BLE_SESSION_UP,
+                              (uint32_t)cmdSource);
                     }
                 } else {
                     memcpy(innerBuf, pbBuf, pbLen);

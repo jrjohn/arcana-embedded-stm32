@@ -184,6 +184,9 @@ static const uint16_t BLE_HC08_DATA_MODE    = 0x0913;
 // BleServiceImpl (0x0920 - 0x092F)
 static const uint16_t BLE_TRANSPORT_READY   = 0x0920;
 static const uint16_t BLE_CMD_COUNT         = 0x0921;
+static const uint16_t BLE_SESSION_GATE      = 0x0922;  // Rejected: no session
+static const uint16_t BLE_SESSION_UP        = 0x0923;  // Session established
+static const uint16_t BLE_SESSION_DOWN      = 0x0924;  // Session cleared
 
 // ---------------------------------------------------------------------------
 // OTA  (0x0A00 - 0x0AFF)

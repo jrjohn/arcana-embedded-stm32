@@ -282,6 +282,19 @@ bool KeyExchangeManager::encryptWithSession(uint8_t source, uint16_t connId,
     return false;
 }
 
+bool KeyExchangeManager::hasSession(uint8_t source, uint16_t connId) {
+    xSemaphoreTake(mMutex, portMAX_DELAY);
+    for (int i = 0; i < kMaxSessions; ++i) {
+        if (mSessions[i].active && mSessions[i].source == source &&
+            mSessions[i].connId == connId) {
+            xSemaphoreGive(mMutex);
+            return true;
+        }
+    }
+    xSemaphoreGive(mMutex);
+    return false;
+}
+
 void KeyExchangeManager::removeSession(uint8_t source, uint16_t connId) {
     xSemaphoreTake(mMutex, portMAX_DELAY);
     for (int i = 0; i < kMaxSessions; ++i) {

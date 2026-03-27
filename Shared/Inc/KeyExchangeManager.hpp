@@ -58,6 +58,9 @@ public:
                             const uint8_t* plain, size_t plainLen,
                             uint8_t* out, size_t outBufSize, size_t& outLen);
 
+    /** Check if session is established for source */
+    bool hasSession(uint8_t source, uint16_t connId);
+
     /** Remove session on disconnect */
     void removeSession(uint8_t source, uint16_t connId);
 

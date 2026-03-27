@@ -32,6 +32,7 @@ enum class CommandStatus : uint8_t {
     InvalidParam,
     Busy,
     Error,
+    AuthRequired,
 };
 
 /**
