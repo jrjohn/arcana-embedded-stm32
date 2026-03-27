@@ -505,51 +505,46 @@ def register(req):
                 conn.commit()
                 print(f"[REG] NEW: {device_id}")
 
-        # --- ECDH key exchange (if device sent ecdh_pub) ---
-        ecdh_pub_raw = req.get('_ecdh_pub_raw', b'')
-        server_pub_bytes = b""
-        ecdsa_sig = b""
+        # --- Derive comm_key (server-side, no ECDH with device) ---
+        comm_key_bytes = b""
 
-        if COMPANY_PRIV and len(ecdh_pub_raw) == 64:
+        if COMPANY_PRIV:
             # Get registration count
             with conn.cursor() as cur2:
                 cur2.execute("SELECT COALESCE(MAX(count),0)+1 AS next_count FROM device_token WHERE client_id=%s",
                              (device_id,))
                 reg_count = cur2.fetchone()['next_count']
 
-            # Derive server keypair from COMPANY_PRIV + device_id + count
-            srv_priv, srv_pub = derive_server_keypair(device_id, reg_count)
+            # Derive comm_key from COMPANY_PRIV + device_id + count
+            company_priv_bytes = COMPANY_PRIV.private_numbers().private_value.to_bytes(32, 'big')
+            salt = f"{device_id}:{reg_count}".encode()
+            comm_key_bytes = HKDF(
+                algorithm=hashes.SHA256(), length=32,
+                salt=salt, info=b"ARCANA-COMM"
+            ).derive(company_priv_bytes)
 
-            if srv_priv:
-                server_pub_bytes = ec_pub_to_raw(srv_pub)
+            print(f"[REG] comm_key={comm_key_bytes[:8].hex()}... count={reg_count}")
 
-                # Derive comm_key (for verification, not stored)
-                comm_key = ecdh_derive_comm_key(srv_priv, ecdh_pub_raw, device_id)
-                print(f"[REG] ECDH comm_key={comm_key[:8].hex()}... count={reg_count}")
+            # Get user_id for FK
+            with conn.cursor() as cur2:
+                cur2.execute("SELECT id FROM user WHERE username=%s", (device_id,))
+                uid_row = cur2.fetchone()
+                uid = uid_row['id'] if uid_row else None
 
-                # ECDSA sign server_pub
-                ecdsa_sig = ecdsa_sign_server_pub(server_pub_bytes, device_id)
-
-                # Get user_id for FK
-                with conn.cursor() as cur2:
-                    cur2.execute("SELECT id FROM user WHERE username=%s", (device_id,))
-                    uid_row = cur2.fetchone()
-                    uid = uid_row['id'] if uid_row else None
-
-                # Revoke old tokens + insert new
-                with conn.cursor() as cur2:
-                    cur2.execute("UPDATE device_token SET revoked=1 WHERE client_id=%s AND revoked=0",
-                                 (device_id,))
-                    cur2.execute("""INSERT INTO device_token
-                        (client_id, token_type, device_pub, scope,
-                         issued_at, expires_in, user_id, firmware_ver, count, remote_ip)
-                        VALUES (%s, 'ecdh_p256', %s, 'mqtt:sensor mqtt:command',
-                                %s, 31536000, %s, %s, %s, %s)""",
-                        (device_id, ecdh_pub_raw.hex(),
-                         int(time.time()), uid, str(firmware_ver),
-                         reg_count, request.remote_addr))
-                conn.commit()
-                print(f"[REG] device_token: {device_id} count={reg_count} ip={request.remote_addr}")
+            # Revoke old tokens + insert new
+            with conn.cursor() as cur2:
+                cur2.execute("UPDATE device_token SET revoked=1 WHERE client_id=%s AND revoked=0",
+                             (device_id,))
+                cur2.execute("""INSERT INTO device_token
+                    (client_id, token_type, device_pub, scope,
+                     issued_at, expires_in, user_id, firmware_ver, count, remote_ip)
+                    VALUES (%s, 'hkdf_sha256', %s, 'mqtt:sensor mqtt:command',
+                            %s, 31536000, %s, %s, %s, %s)""",
+                    (device_id, '',  # no device_pub in server-side mode
+                     int(time.time()), uid, str(firmware_ver),
+                     reg_count, request.remote_addr))
+            conn.commit()
+            print(f"[REG] device_token: {device_id} count={reg_count} ip={request.remote_addr}")
 
         resp = {
             "success": True,
@@ -560,10 +555,8 @@ def register(req):
             "upload_token": generate_upload_token(device_id),
             "topic_prefix": f"/arcana/{device_id}",
         }
-        if server_pub_bytes:
-            resp["server_pub"] = server_pub_bytes
-        if ecdsa_sig:
-            resp["ecdsa_sig"] = ecdsa_sig
+        if comm_key_bytes:
+            resp["server_pub"] = comm_key_bytes  # field 9: 32-byte comm_key
 
         return resp, 200
 
@@ -624,13 +617,13 @@ def get_device_key(device_id):
     if not row:
         abort(404, "No active token for device")
 
-    # Derive comm_key on-the-fly
-    device_pub_bytes = bytes.fromhex(row["device_pub"])
-    srv_priv, _ = derive_server_keypair(device_id, row["count"])
-    if not srv_priv:
-        abort(500, "Key derivation failed")
-
-    comm_key = ecdh_derive_comm_key(srv_priv, device_pub_bytes, device_id)
+    # Derive comm_key on-the-fly from COMPANY_PRIV + device_id + count
+    company_priv_bytes = COMPANY_PRIV.private_numbers().private_value.to_bytes(32, 'big')
+    salt = f"{device_id}:{row['count']}".encode()
+    comm_key = HKDF(
+        algorithm=hashes.SHA256(), length=32,
+        salt=salt, info=b"ARCANA-COMM"
+    ).derive(company_priv_bytes)
 
     return jsonify({
         "device_id": device_id,

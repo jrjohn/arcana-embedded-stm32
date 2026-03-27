@@ -2,6 +2,9 @@
 
 #include "RegistrationService.hpp"
 #include "Esp8266.hpp"
+#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
 
 namespace arcana {
 namespace reg {

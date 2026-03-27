@@ -2,7 +2,8 @@
 #include "AtsStorageServiceImpl.hpp"
 #include "DeviceKey.hpp"
 #include "ChaCha20.hpp"
-#include "CompanyKey.hpp"
+// CompanyKey.hpp — needed when device-side ECDSA verification is enabled
+// #include "CompanyKey.hpp"
 #include "Crc32.hpp"
 #include "Credentials.hpp"
 #include "ff.h"
@@ -16,12 +17,8 @@
 #include <pb_decode.h>
 #include <cstdio>
 #include <cstring>
-#include "mbedtls/ecp.h"
-#include "mbedtls/ecdh.h"
-#include "mbedtls/ecdsa.h"
-#include "mbedtls/entropy.h"
-#include "mbedtls/ctr_drbg.h"
-#include "mbedtls/md.h"
+// mbedtls ECDH/ECDSA — future: device-side key exchange
+// Currently comm_key is received from server (encrypted in response)
 
 namespace arcana {
 namespace reg {
@@ -262,11 +259,10 @@ bool RegistrationServiceImpl::doRegistration() {
     if (!mForceRegister && loadCredentials() && mCreds.valid) return true;
     mForceRegister = false;
 
-    // Need to register — get ESP8266
+    // ECDH runs in caller's task — MQTT task stack must be >= 640 words
     Esp8266& esp = Esp8266::getInstance();
     if (!httpRegister(esp)) return false;
 
-    // Save AFTER httpRegister returns (frees 512B response buffer from stack)
     saveCredentials();
     return true;
 }
@@ -274,56 +270,17 @@ bool RegistrationServiceImpl::doRegistration() {
 bool RegistrationServiceImpl::httpRegister(Esp8266& esp) {
     LOG_I(ats::ErrorSource::Reg, evt::REG_START);
 
-    // --- Generate ephemeral EC P-256 keypair for ECDH ---
-    mbedtls_entropy_context entropy;
-    mbedtls_ctr_drbg_context ctrDrbg;
-    mbedtls_ecp_group grp;
-    mbedtls_mpi devPriv;
-    mbedtls_ecp_point devPub;
-
-    mbedtls_entropy_init(&entropy);
-    mbedtls_ctr_drbg_init(&ctrDrbg);
-    mbedtls_ecp_group_init(&grp);
-    mbedtls_mpi_init(&devPriv);
-    mbedtls_ecp_point_init(&devPub);
-
-    const char* pers = "arcana_reg_ecdh";
-    if (mbedtls_ctr_drbg_seed(&ctrDrbg, mbedtls_entropy_func, &entropy,
-                               reinterpret_cast<const unsigned char*>(pers),
-                               strlen(pers)) != 0) {
-        mbedtls_ctr_drbg_free(&ctrDrbg);
-        mbedtls_entropy_free(&entropy);
-        return false;
-    }
-
-    if (mbedtls_ecp_group_load(&grp, MBEDTLS_ECP_DP_SECP256R1) != 0 ||
-        mbedtls_ecp_gen_keypair(&grp, &devPriv, &devPub,
-                                 mbedtls_ctr_drbg_random, &ctrDrbg) != 0) {
-        mbedtls_ecp_point_free(&devPub);
-        mbedtls_mpi_free(&devPriv);
-        mbedtls_ecp_group_free(&grp);
-        mbedtls_ctr_drbg_free(&ctrDrbg);
-        mbedtls_entropy_free(&entropy);
-        return false;
-    }
-
-    // Export dev_pub as raw x||y (64 bytes)
-    uint8_t devPubBytes[64];
-    mbedtls_mpi_write_binary(&devPub.MBEDTLS_PRIVATE(X), devPubBytes, 32);
-    mbedtls_mpi_write_binary(&devPub.MBEDTLS_PRIVATE(Y), devPubBytes + 32, 32);
-
     // --- Encode RegisterRequest protobuf ---
+    // ECDH is done server-side; comm_key arrives in response (encrypted)
     arcana_RegisterRequest req = arcana_RegisterRequest_init_zero;
     strncpy(req.device_id, mDeviceId, sizeof(req.device_id) - 1);
     memcpy(req.public_key.bytes, mDeviceKey, 32);
     memset(req.public_key.bytes + 32, 0, 32);
     req.public_key.size = 64;
     req.firmware_ver = 0x0100;
-    // NEW: attach ephemeral ECDH public key
-    memcpy(req.ecdh_pub.bytes, devPubBytes, 64);
-    req.ecdh_pub.size = 64;
+    // ecdh_pub left empty — server generates comm_key
 
-    uint8_t pbBuf[192];  // larger for ecdh_pub
+    uint8_t pbBuf[128];
     pb_ostream_t stream = pb_ostream_from_buffer(pbBuf, sizeof(pbBuf));
     if (!pb_encode(&stream, arcana_RegisterRequest_fields, &req)) {
         LOG_E(ats::ErrorSource::Reg, evt::REG_PB_FAIL);
@@ -444,131 +401,20 @@ bool RegistrationServiceImpl::httpRegister(Esp8266& esp) {
     esp.setIpdPassthrough(false);
     esp.sendCmd("AT+CIPCLOSE", "OK", 1000);
 
-    bool result = false;
-
     if (found && mCreds.valid) {
-        // --- ECDSA verify server_pub signature ---
-        bool ecdsaOk = false;
-        if (mServerPubLen == 64 && mEcdsaSigLen > 0) {
-            // Hash: SHA256(server_pub + device_id)
-            uint8_t hash[32];
-            mbedtls_md_context_t md;
-            mbedtls_md_init(&md);
-            const mbedtls_md_info_t* mdInfo = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
-            if (mdInfo && mbedtls_md_setup(&md, mdInfo, 0) == 0) {
-                mbedtls_md_starts(&md);
-                mbedtls_md_update(&md, mServerPub, 64);
-                mbedtls_md_update(&md, reinterpret_cast<const uint8_t*>(mDeviceId), 8);
-                mbedtls_md_finish(&md, hash);
-                mbedtls_md_free(&md);
-
-                // Load company public key
-                mbedtls_ecp_point companyPub;
-                mbedtls_ecp_point_init(&companyPub);
-                mbedtls_mpi r, s;
-                mbedtls_mpi_init(&r);
-                mbedtls_mpi_init(&s);
-
-                if (mbedtls_mpi_read_binary(&companyPub.MBEDTLS_PRIVATE(X),
-                                             crypto::kCompanyPub, 32) == 0 &&
-                    mbedtls_mpi_read_binary(&companyPub.MBEDTLS_PRIVATE(Y),
-                                             crypto::kCompanyPub + 32, 32) == 0 &&
-                    mbedtls_mpi_lset(&companyPub.MBEDTLS_PRIVATE(Z), 1) == 0) {
-                    // Parse DER signature to extract (r, s)
-                    // DER: 0x30 <len> 0x02 <rlen> <r> 0x02 <slen> <s>
-                    const uint8_t* p = mEcdsaSig;
-                    if (mEcdsaSigLen > 6 && p[0] == 0x30) {
-                        p += 2;  // skip SEQUENCE tag + len
-                        if (p[0] == 0x02) {
-                            uint8_t rLen = p[1]; p += 2;
-                            mbedtls_mpi_read_binary(&r, p, rLen); p += rLen;
-                            if (p[0] == 0x02) {
-                                uint8_t sLen = p[1]; p += 2;
-                                mbedtls_mpi_read_binary(&s, p, sLen);
-                                ecdsaOk = (mbedtls_ecdsa_verify(&grp, hash, sizeof(hash),
-                                                                 &companyPub, &r, &s) == 0);
-                            }
-                        }
-                    }
-                }
-                mbedtls_mpi_free(&s);
-                mbedtls_mpi_free(&r);
-                mbedtls_ecp_point_free(&companyPub);
-            }
+        // comm_key received from server (field 9, 32 bytes, in server_pub slot)
+        // Server derives it from COMPANY_PRIV + device_id + count
+        if (mServerPubLen == 32) {
+            memcpy(mCreds.commKey, mServerPub, 32);
+            mCreds.hasCommKey = true;
+            LOG_I(ats::ErrorSource::Reg, 0x0D21);  // comm_key received
         }
-
-        // Skip ECDSA check if server didn't send signature (backward compat with old server)
-        if (mEcdsaSigLen > 0 && !ecdsaOk) {
-            LOG_W(ats::ErrorSource::Reg, 0x0D20);  // ECDSA verify failed
-            mCreds.valid = false;
-        } else {
-            // --- ECDH: derive comm_key ---
-            if (mServerPubLen == 64) {
-                mbedtls_ecp_point srvPub;
-                mbedtls_ecp_point_init(&srvPub);
-                mbedtls_mpi shared;
-                mbedtls_mpi_init(&shared);
-
-                if (mbedtls_mpi_read_binary(&srvPub.MBEDTLS_PRIVATE(X), mServerPub, 32) == 0 &&
-                    mbedtls_mpi_read_binary(&srvPub.MBEDTLS_PRIVATE(Y), mServerPub + 32, 32) == 0 &&
-                    mbedtls_mpi_lset(&srvPub.MBEDTLS_PRIVATE(Z), 1) == 0 &&
-                    mbedtls_ecdh_compute_shared(&grp, &shared, &srvPub, &devPriv,
-                                                 mbedtls_ctr_drbg_random, &ctrDrbg) == 0) {
-                    uint8_t sharedBytes[32];
-                    mbedtls_mpi_write_binary(&shared, sharedBytes, 32);
-
-                    // HKDF: comm_key = HKDF-SHA256(shared, device_id, "ARCANA-COMM")
-                    // Simple HKDF: PRK = HMAC(salt=device_id, ikm=shared), OKM = HMAC(PRK, info+0x01)
-                    uint8_t prk[32];
-                    {
-                        mbedtls_md_context_t hm;
-                        mbedtls_md_init(&hm);
-                        const mbedtls_md_info_t* mi = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
-                        mbedtls_md_setup(&hm, mi, 1);
-                        mbedtls_md_hmac_starts(&hm, reinterpret_cast<const uint8_t*>(mDeviceId), 8);
-                        mbedtls_md_hmac_update(&hm, sharedBytes, 32);
-                        mbedtls_md_hmac_finish(&hm, prk);
-                        mbedtls_md_free(&hm);
-                    }
-                    {
-                        const uint8_t info[] = "ARCANA-COMM";
-                        uint8_t infoBlock[sizeof(info)];  // info + 0x01
-                        memcpy(infoBlock, info, sizeof(info) - 1);
-                        infoBlock[sizeof(info) - 1] = 0x01;
-
-                        mbedtls_md_context_t hm;
-                        mbedtls_md_init(&hm);
-                        const mbedtls_md_info_t* mi = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
-                        mbedtls_md_setup(&hm, mi, 1);
-                        mbedtls_md_hmac_starts(&hm, prk, 32);
-                        mbedtls_md_hmac_update(&hm, infoBlock, sizeof(info));
-                        mbedtls_md_hmac_finish(&hm, mCreds.commKey);
-                        mbedtls_md_free(&hm);
-                    }
-                    mCreds.hasCommKey = true;
-                    LOG_I(ats::ErrorSource::Reg, 0x0D21);  // comm_key derived
-                }
-                mbedtls_mpi_free(&shared);
-                mbedtls_ecp_point_free(&srvPub);
-            }
-
-            LOG_I(ats::ErrorSource::Reg, evt::REG_OK);
-            result = true;
-        }
+        LOG_I(ats::ErrorSource::Reg, evt::REG_OK);
+        return true;
     }
 
-    if (!result && !mCreds.valid) {
-        LOG_E(ats::ErrorSource::Reg, evt::REG_PARSE_FAIL);
-    }
-
-    // Cleanup ECDH resources
-    mbedtls_ecp_point_free(&devPub);
-    mbedtls_mpi_free(&devPriv);
-    mbedtls_ecp_group_free(&grp);
-    mbedtls_ctr_drbg_free(&ctrDrbg);
-    mbedtls_entropy_free(&entropy);
-
-    return result;
+    LOG_E(ats::ErrorSource::Reg, evt::REG_PARSE_FAIL);
+    return false;
 }
 
 bool RegistrationServiceImpl::parseResponse(const uint8_t* payload, uint16_t len) {
