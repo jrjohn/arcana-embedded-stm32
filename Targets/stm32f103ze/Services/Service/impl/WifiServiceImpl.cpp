@@ -59,7 +59,7 @@ bool WifiServiceImpl::resetAndConnect() {
 
     if (!atOk) {
         // Fallback: ESP8266 might be at 921600 (previous test) or 115200 (fresh)
-        printf("[WiFi] 460800 fail, trying 921600\r\n");
+        LOG_W(ats::ErrorSource::Wifi, evt::WIFI_BAUD_460K_FAIL);
         mEsp.setBaud(921600);
         vTaskDelay(pdMS_TO_TICKS(200));
         for (int i = 0; i < 3; i++) {
@@ -68,7 +68,7 @@ bool WifiServiceImpl::resetAndConnect() {
         }
         if (!atOk) {
             // Try 115200 (factory default)
-            printf("[WiFi] 921600 fail, trying 115200\r\n");
+            LOG_W(ats::ErrorSource::Wifi, evt::WIFI_BAUD_921K_FAIL);
             mEsp.setBaud(115200);
             vTaskDelay(pdMS_TO_TICKS(200));
             for (int i = 0; i < 3; i++) {
@@ -81,7 +81,7 @@ bool WifiServiceImpl::resetAndConnect() {
             return false;
         }
         // Permanently save 460800 to ESP8266 flash
-        printf("[WiFi] AT+UART_DEF=460800\r\n");
+        LOG_I(ats::ErrorSource::Wifi, evt::WIFI_BAUD_SET);
         mEsp.sendCmd("AT+UART_DEF=460800,8,1,0,0", "OK", 2000);
         // Switch both sides to 460800 now
         if (!mEsp.speedUp(460800)) {
@@ -94,7 +94,7 @@ bool WifiServiceImpl::resetAndConnect() {
 
     // Print ESP8266 AT firmware version
     if (mEsp.sendCmd("AT+GMR", "OK", 2000)) {
-        printf("[WiFi] %s\r\n", mEsp.getResponse());
+        LOG_D(ats::ErrorSource::Wifi, evt::WIFI_VERSION);
     }
 
     return connectWifi();

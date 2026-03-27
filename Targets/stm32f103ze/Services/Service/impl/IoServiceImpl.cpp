@@ -1,7 +1,8 @@
 #include "IoServiceImpl.hpp"
 #include "Esp8266.hpp"
 #include "DisplayStatus.hpp"
-#include <cstdio>
+#include "Log.hpp"
+#include "EventCodes.hpp"
 
 namespace arcana {
 namespace io {
@@ -74,12 +75,12 @@ void IoServiceImpl::taskLoop() {
                 if (mCancelArmed) {
                     // During upload: cancel
                     mCancelRequested = true;
-                    printf("[KEY2] cancel\r\n");
+                    LOG_I(ats::ErrorSource::System, evt::IO_KEY2_CANCEL);
                 } else if (!mUploadRequested) {
                     // Signal ESP8266 lock — MQTT will yield and run upload
                     mUploadRequested = true;
                     Esp8266::getInstance().requestAccessAsync(Esp8266::User::Upload);
-                    printf("[KEY2] upload\r\n");
+                    LOG_I(ats::ErrorSource::System, evt::IO_KEY2_UPLOAD);
                     display::toast("Uploading...", 10000,
                                    (uint32_t)xTaskGetTickCount(),
                                    display::colors::WHITE, 0x07E0);
@@ -108,7 +109,7 @@ void IoServiceImpl::taskLoop() {
             if (mKey1Hold >= 20) {  // 2s held → trigger format
                 mFormatRequested = true;
                 mKey1Hold = 0;
-                printf("[KEY1] format\r\n");
+                LOG_I(ats::ErrorSource::System, evt::IO_KEY1_FORMAT);
             }
         } else {
             mKey1Hold = 0;

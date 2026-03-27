@@ -226,6 +226,128 @@ static const uint16_t CMD_BAD_FRAME         = 0x0B12;
 static const uint16_t CMD_RX               = 0x0B13;
 static const uint16_t CMD_RSP              = 0x0B14;
 
+// ---------------------------------------------------------------------------
+// Upload  (0x0C00 - 0x0CFF)
+// ---------------------------------------------------------------------------
+static const uint16_t UPL_NOT_READY       = 0x0C00;
+static const uint16_t UPL_PAUSE_ATS       = 0x0C01;
+static const uint16_t UPL_PENDING         = 0x0C02;  // p=count
+static const uint16_t UPL_FILE_OPEN       = 0x0C03;
+static const uint16_t UPL_FILE_OPEN_FAIL  = 0x0C04;  // p=FatFS err
+static const uint16_t UPL_FILE_SIZE       = 0x0C05;  // p=KB
+static const uint16_t UPL_RETRY           = 0x0C06;  // p=attempt
+static const uint16_t UPL_REOPEN_FAIL     = 0x0C07;  // p=FatFS err
+static const uint16_t UPL_ALREADY_DONE    = 0x0C08;  // p=KB
+static const uint16_t UPL_STALLED         = 0x0C09;
+static const uint16_t UPL_RESUME          = 0x0C0A;  // p=KB offset
+static const uint16_t UPL_TCP_FAIL        = 0x0C0B;
+static const uint16_t UPL_CIPMODE_FAIL    = 0x0C0C;
+static const uint16_t UPL_TRANSPARENT_FAIL= 0x0C0D;
+static const uint16_t UPL_ATTEMPT_FAIL    = 0x0C0E;  // p=attempt
+static const uint16_t UPL_QUERY_TCP_FAIL  = 0x0C10;
+static const uint16_t UPL_QUERY_SEND_FAIL = 0x0C11;
+static const uint16_t UPL_QUERY_NO_RESP   = 0x0C12;  // p=resp len
+static const uint16_t UPL_QUERY_OFFSET    = 0x0C13;  // p=KB offset
+static const uint16_t UPL_STREAM_START    = 0x0C14;  // p=bytes
+static const uint16_t UPL_READ_FAIL       = 0x0C15;  // p=offset
+static const uint16_t UPL_SEND_FAIL       = 0x0C16;  // p=offset
+static const uint16_t UPL_PROGRESS        = 0x0C17;  // p=bytes sent
+static const uint16_t UPL_CANCELLED       = 0x0C18;
+
+// ---------------------------------------------------------------------------
+// Registration  (0x0D00 - 0x0DFF)
+// ---------------------------------------------------------------------------
+static const uint16_t REG_LOADED_CH2      = 0x0D00;
+static const uint16_t REG_CH2_CORRUPT     = 0x0D01;
+static const uint16_t REG_LOADED_ENC      = 0x0D02;
+static const uint16_t REG_ENC_CORRUPT     = 0x0D03;
+static const uint16_t REG_SAVED_CH2       = 0x0D04;
+static const uint16_t REG_SAVED_ENC       = 0x0D05;
+static const uint16_t REG_SAVE_FAIL       = 0x0D06;
+static const uint16_t REG_START           = 0x0D07;
+static const uint16_t REG_PB_FAIL         = 0x0D08;
+static const uint16_t REG_TCP_FAIL        = 0x0D09;
+static const uint16_t REG_CIPSEND_FAIL    = 0x0D0A;
+static const uint16_t REG_SEND_FAIL       = 0x0D0B;
+static const uint16_t REG_RESP_BYTES      = 0x0D0C;  // p=bytes
+static const uint16_t REG_FRAME_FOUND     = 0x0D0D;  // p=offset
+static const uint16_t REG_FRAME_TRUNC     = 0x0D0E;
+static const uint16_t REG_NO_FRAME        = 0x0D0F;  // p=bytes
+static const uint16_t REG_OK              = 0x0D10;
+static const uint16_t REG_PARSE_FAIL      = 0x0D11;
+static const uint16_t REG_PB_DECODE_FAIL  = 0x0D12;  // p=len
+static const uint16_t REG_SERVER_ERROR    = 0x0D13;
+
+// ---------------------------------------------------------------------------
+// ESP Flasher  (0x0E00 - 0x0EFF)
+// ---------------------------------------------------------------------------
+static const uint16_t ESPFW_FLASH_BEGIN   = 0x0E00;
+static const uint16_t ESPFW_FLASH_BEGIN_OK= 0x0E01;
+static const uint16_t ESPFW_FLASH_BEGIN_FAIL=0x0E02;
+static const uint16_t ESPFW_FILE_OPEN     = 0x0E03;  // p=size
+static const uint16_t ESPFW_FILE_NOT_FOUND= 0x0E04;
+static const uint16_t ESPFW_READ_ERR      = 0x0E05;  // p=block
+static const uint16_t ESPFW_DATA_FAIL     = 0x0E06;  // p=block
+static const uint16_t ESPFW_PROGRESS      = 0x0E07;  // p=block
+static const uint16_t ESPFW_CHECK         = 0x0E08;  // p=(hasMain<<1|hasParam)
+static const uint16_t ESPFW_NO_FILES      = 0x0E09;
+static const uint16_t ESPFW_RESET         = 0x0E0A;
+static const uint16_t ESPFW_SYNC          = 0x0E0B;
+static const uint16_t ESPFW_SYNC_FAIL     = 0x0E0C;
+static const uint16_t ESPFW_CONNECTED     = 0x0E0D;
+static const uint16_t ESPFW_SKIP          = 0x0E0E;
+static const uint16_t ESPFW_PART_FAIL     = 0x0E0F;
+static const uint16_t ESPFW_SUCCESS       = 0x0E10;  // p=partitions
+static const uint16_t ESPFW_FAILED        = 0x0E11;  // p=(ok<<16|fail)
+static const uint16_t ESPFW_START         = 0x0E12;
+
+// ---------------------------------------------------------------------------
+// IO / Keys  (0x0F00 - 0x0FFF)
+// ---------------------------------------------------------------------------
+static const uint16_t IO_KEY2_CANCEL      = 0x0F00;
+static const uint16_t IO_KEY2_UPLOAD      = 0x0F01;
+static const uint16_t IO_KEY1_FORMAT      = 0x0F02;
+
+// ---------------------------------------------------------------------------
+// WiFi extra  (0x0320 - 0x033F)
+// ---------------------------------------------------------------------------
+static const uint16_t WIFI_BAUD_460K_FAIL = 0x0320;
+static const uint16_t WIFI_BAUD_921K_FAIL = 0x0321;
+static const uint16_t WIFI_BAUD_SET       = 0x0322;
+static const uint16_t WIFI_VERSION        = 0x0323;
+
+// ---------------------------------------------------------------------------
+// MQTT extra  (0x0820 - 0x083F)
+// ---------------------------------------------------------------------------
+static const uint16_t MQTT_SSL_START      = 0x0820;
+static const uint16_t MQTT_SSL_RESULT     = 0x0821;  // p=ok
+static const uint16_t MQTT_CONNECT_START  = 0x0822;
+static const uint16_t MQTT_CONNECT_SEND_FAIL=0x0823;
+static const uint16_t MQTT_NO_CONNACK     = 0x0824;
+static const uint16_t MQTT_CONNACK        = 0x0825;  // p=rc
+static const uint16_t MQTT_SUB_RESULT     = 0x0826;  // p=rc
+static const uint16_t MQTT_CREDS_CLEAR    = 0x0827;
+
+// ---------------------------------------------------------------------------
+// ATS extra  (0x0660 - 0x067F)
+// ---------------------------------------------------------------------------
+static const uint16_t ATS_DEVICE_UPGRADE  = 0x0660;
+static const uint16_t ATS_DEVICE_CORRUPT  = 0x0661;
+static const uint16_t ATS_DEVICE_UNAVAIL  = 0x0662;
+static const uint16_t ATS_DEVICE_CH_FAIL  = 0x0663;
+static const uint16_t ATS_CRED_LOAD       = 0x0664;  // p=(ready<<24|ch<<16|idx)
+static const uint16_t ATS_CRED_QUERY      = 0x0665;  // p=(q0<<16|q1)
+static const uint16_t ATS_CRED_QUERY2     = 0x0666;  // p=n
+static const uint16_t ATS_CRED_SAVE_START = 0x0667;  // p=(ready<<24|ch<<16|len)
+static const uint16_t ATS_CRED_APPEND     = 0x0668;
+static const uint16_t ATS_CRED_APPEND_OK  = 0x0669;  // p=appOk
+static const uint16_t ATS_CRED_DONE       = 0x066A;
+static const uint16_t ATS_STATS           = 0x066B;  // p=records
+static const uint16_t ATS_STATS_BRIEF     = 0x066C;  // p=rec/s
+
+// Boot
+static const uint16_t SYS_ESP_FLASH_MODE  = 0x0007;
+
 } // namespace evt
 } // namespace arcana
 

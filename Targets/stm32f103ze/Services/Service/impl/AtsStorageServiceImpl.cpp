@@ -575,14 +575,14 @@ bool AtsStorageServiceImpl::openDeviceDbSafe(const ats::AtsConfig& cfg) {
         if (mDeviceDb.getChannelCount() > 0 && mDeviceDb.getChannelCount() < 3) {
             ats::ArcanaTsSchema creds = ats::ArcanaTsSchema::credentials();
             if (mDeviceDb.addChannelLive(2, creds)) {
-                printf("[ATS] device.ats upgraded: added CREDS ch2\r\n");
+                LOG_I(ats::ErrorSource::Tsdb, evt::ATS_DEVICE_UPGRADE);
             }
         }
         return true;
     }
 
     // Attempt 2: existing file corrupt → preserve + recreate
-    printf("[ATS] device.ats corrupt — preserving as device_old.ats\r\n");
+    LOG_W(ats::ErrorSource::Tsdb, evt::ATS_DEVICE_CORRUPT);
     f_unlink("device_old.ats");
     f_rename("device.ats", "device_old.ats");
     if (mDeviceDb.open("device.ats", cfg)) {
@@ -615,14 +615,14 @@ bool AtsStorageServiceImpl::openDeviceDb() {
 
     if (!openDeviceDbSafe(cfg)) {
         LOG_E(ats::ErrorSource::Tsdb, evt::ATS_DB_OPEN_FAIL);
-        printf("[ATS] device.ats unavailable — running degraded\r\n");
+        LOG_W(ats::ErrorSource::Tsdb, evt::ATS_DEVICE_UNAVAIL);
         return true;  // never block boot
     }
 
     // New device.ats (just created, no channels yet) → init all channels
     if (mDeviceDb.getChannelCount() == 0) {
         if (!initDeviceDbChannels()) {
-            printf("[ATS] device.ats channel init failed\r\n");
+            LOG_E(ats::ErrorSource::Tsdb, evt::ATS_DEVICE_CH_FAIL);
             return true;  // degraded
         }
     }
@@ -850,21 +850,17 @@ bool AtsStorageServiceImpl::saveTzConfig(int16_t offsetMin, uint8_t autoCheck) {
 bool AtsStorageServiceImpl::loadCredentials(uint8_t* outBuf, uint16_t bufSize,
                                              uint16_t& outLen) {
     outLen = 0;
-    printf("[ATS] loadCreds: ready=%d ch=%d idx=%u blk=%lu\r\n",
-           mDeviceDbReady, mDeviceDb.getChannelCount(),
-           mDeviceDb.getIndexCount(), (unsigned long)mDeviceDb.getStats().blocksWritten);
+    LOG_D(ats::ErrorSource::Tsdb, evt::ATS_CRED_LOAD);
     if (!mDeviceDbReady || mDeviceDb.getChannelCount() < 3) return false;
 
     // CREDS record = 236 bytes (4 ts + 232 data)
     // Debug: test all channels
     uint8_t testBuf[236];
-    printf("[ATS] qL(0)=%u qL(1)=%u\r\n",
-           mDeviceDb.queryLatest(0, testBuf, 1),
-           mDeviceDb.queryLatest(1, testBuf, 1));
+    LOG_D(ats::ErrorSource::Tsdb, evt::ATS_CRED_QUERY);
 
     uint8_t rec[236];
     uint16_t n = mDeviceDb.queryLatest(2, rec, 1);
-    printf("[ATS] queryLatest(2): n=%u\r\n", n);
+    LOG_D(ats::ErrorSource::Tsdb, evt::ATS_CRED_QUERY2, (uint32_t)n);
     if (n == 0) return false;
 
     // data starts at offset 4 (after ts)
@@ -876,8 +872,7 @@ bool AtsStorageServiceImpl::loadCredentials(uint8_t* outBuf, uint16_t bufSize,
 }
 
 bool AtsStorageServiceImpl::saveCredentials(const uint8_t* data, uint16_t len) {
-    printf("[ATS] saveCreds: ready=%d ch=%d len=%u\r\n",
-           mDeviceDbReady, mDeviceDb.getChannelCount(), len);
+    LOG_D(ats::ErrorSource::Tsdb, evt::ATS_CRED_SAVE_START);
     if (!mDeviceDbReady || mDeviceDb.getChannelCount() < 3) return false;
     if (len > 232) return false;
 
@@ -887,11 +882,11 @@ bool AtsStorageServiceImpl::saveCredentials(const uint8_t* data, uint16_t len) {
     memcpy(rec, &ts, 4);
     memcpy(rec + 4, data, len);
 
-    printf("[ATS] saveCreds: append...\r\n");
+    LOG_D(ats::ErrorSource::Tsdb, evt::ATS_CRED_APPEND);
     bool appOk = mDeviceDb.append(2, rec);
-    printf("[ATS] saveCreds: append=%d, flush...\r\n", appOk);
+    LOG_D(ats::ErrorSource::Tsdb, evt::ATS_CRED_APPEND_OK, (uint32_t)appOk);
     mDeviceDb.flush();
-    printf("[ATS] saveCreds: done\r\n");
+    LOG_D(ats::ErrorSource::Tsdb, evt::ATS_CRED_DONE);
     return true;
 }
 
@@ -1001,12 +996,7 @@ void AtsStorageServiceImpl::taskLoop() {
             mStatsObs.publish(&mStatsModel);
 
             uint32_t sessionFail = mDb.getStats().blocksFailed - mBaselineBlocksFailed;
-            printf("[ATS] %lu rec, %lu/s, blk=%lu (%luKB) fail=%lu drop=%lu\r\n",
-                   (unsigned long)mTotalRecords, (unsigned long)windowOk,
-                   (unsigned long)mDb.getStats().blocksWritten,
-                   (unsigned long)mStatsModel.totalKB,
-                   (unsigned long)sessionFail,
-                   (unsigned long)mDb.getStats().overflowDrops);
+            LOG_D(ats::ErrorSource::Tsdb, evt::ATS_STATS, (uint32_t)mTotalRecords);
 
             // Send stats to syslog (picked up by MQTT task)
             log::SyslogAppender::getInstance().sendStats(
@@ -1073,10 +1063,7 @@ void AtsStorageServiceImpl::appendRecord(const SensorDataModel* model) {
         uint32_t elapsedMs = elapsed / (SystemCoreClock / 1000);
         if (elapsedMs >= 1000) {
             mLastRate = mWritesInWindow;
-            printf("[ATS] %lu rec, %u rec/s, blk=%lu\r\n",
-                   (unsigned long)mTotalRecords,
-                   (unsigned)mLastRate,
-                   (unsigned long)mDb.getStats().blocksWritten);
+            LOG_D(ats::ErrorSource::Tsdb, evt::ATS_STATS_BRIEF, (uint32_t)mTotalRecords);
             mWritesInWindow = 0;
             mWindowStartTick = now;
         }

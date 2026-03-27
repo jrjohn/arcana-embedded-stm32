@@ -6,6 +6,7 @@
 #include "Credentials.hpp"
 #include "ff.h"
 #include "Log.hpp"
+#include "EventCodes.hpp"
 #include "registration.pb.h"
 #include "Crc16.hpp"
 #include "FreeRTOS.h"
@@ -193,19 +194,19 @@ bool RegistrationServiceImpl::loadCredentials() {
         // Validate: username must match this device's ID
         if (strcmp(mCreds.mqttUser, mDeviceId) == 0) {
             mCreds.valid = true;
-            printf("[REG] loaded from device.ats ch2: user=%s\r\n", mCreds.mqttUser);
+            LOG_I(ats::ErrorSource::Reg, evt::REG_LOADED_CH2);
             return true;
         }
-        printf("[REG] ch2 data corrupt (user=%s)\r\n", mCreds.mqttUser);
+        LOG_W(ats::ErrorSource::Reg, evt::REG_CH2_CORRUPT);
     }
     // Fallback: creds.enc (old boards without ch2)
     if (loadFromFile(mDeviceKey, mCreds)) {
         if (strcmp(mCreds.mqttUser, mDeviceId) == 0) {
             mCreds.valid = true;
-            printf("[REG] loaded from creds.enc: user=%s\r\n", mCreds.mqttUser);
+            LOG_I(ats::ErrorSource::Reg, evt::REG_LOADED_ENC);
             return true;
         }
-        printf("[REG] creds.enc data corrupt (user=%s)\r\n", mCreds.mqttUser);
+        LOG_W(ats::ErrorSource::Reg, evt::REG_ENC_CORRUPT);
     }
     mCreds.valid = false;
     return false;
@@ -215,16 +216,16 @@ bool RegistrationServiceImpl::saveCredentials() {
     bool ok = false;
     // Primary: device.ats ch2 (black box)
     if (saveToDeviceAts(mDeviceKey, mCreds)) {
-        printf("[REG] saved to device.ats ch2\r\n");
+        LOG_I(ats::ErrorSource::Reg, evt::REG_SAVED_CH2);
         ok = true;
     } else {
         // Fallback: creds.enc (old boards without ch2)
         if (saveToFile(mDeviceKey, mCreds)) {
-            printf("[REG] saved to creds.enc (ch2 unavailable)\r\n");
+            LOG_I(ats::ErrorSource::Reg, evt::REG_SAVED_ENC);
             ok = true;
         }
     }
-    if (!ok) printf("[REG] credential save FAILED\r\n");
+    if (!ok) LOG_E(ats::ErrorSource::Reg, evt::REG_SAVE_FAIL);
     return ok;
 }
 
@@ -249,7 +250,7 @@ bool RegistrationServiceImpl::doRegistration() {
 }
 
 bool RegistrationServiceImpl::httpRegister(Esp8266& esp) {
-    printf("[REG] registering %s...\r\n", mDeviceId);
+    LOG_I(ats::ErrorSource::Reg, evt::REG_START);
 
     // --- Encode RegisterRequest protobuf ---
     arcana_RegisterRequest req = arcana_RegisterRequest_init_zero;
@@ -263,7 +264,7 @@ bool RegistrationServiceImpl::httpRegister(Esp8266& esp) {
     uint8_t pbBuf[128];
     pb_ostream_t stream = pb_ostream_from_buffer(pbBuf, sizeof(pbBuf));
     if (!pb_encode(&stream, arcana_RegisterRequest_fields, &req)) {
-        printf("[REG] pb encode fail\r\n");
+        LOG_E(ats::ErrorSource::Reg, evt::REG_PB_FAIL);
         return false;
     }
     uint16_t pbLen = (uint16_t)stream.bytes_written;
@@ -293,7 +294,7 @@ bool RegistrationServiceImpl::httpRegister(Esp8266& esp) {
     snprintf(cmd, sizeof(cmd), "AT+CIPSTART=\"SSL\",\"%s\",%u", REG_SERVER, REG_PORT);
     if (!esp.sendCmd(cmd, "OK", 10000)) {
         if (!esp.responseContains("ALREADY CONNECTED")) {
-            printf("[REG] TCP FAIL\r\n");
+            LOG_E(ats::ErrorSource::Reg, evt::REG_TCP_FAIL);
             return false;
         }
     }
@@ -315,7 +316,7 @@ bool RegistrationServiceImpl::httpRegister(Esp8266& esp) {
     char cipsend[24];
     snprintf(cipsend, sizeof(cipsend), "AT+CIPSEND=%u", totalLen);
     if (!esp.sendCmd(cipsend, ">", 3000)) {
-        printf("[REG] CIPSEND FAIL\r\n");
+        LOG_E(ats::ErrorSource::Reg, evt::REG_CIPSEND_FAIL);
         esp.sendCmd("AT+CIPCLOSE", "OK", 1000);
         return false;
     }
@@ -324,7 +325,7 @@ bool RegistrationServiceImpl::httpRegister(Esp8266& esp) {
     esp.sendData(frame, frameLen, 3000);
 
     if (!esp.waitFor("SEND OK", 5000)) {
-        printf("[REG] SEND FAIL\r\n");
+        LOG_E(ats::ErrorSource::Reg, evt::REG_SEND_FAIL);
         esp.sendCmd("AT+CIPCLOSE", "OK", 1000);
         return false;
     }
@@ -344,7 +345,7 @@ bool RegistrationServiceImpl::httpRegister(Esp8266& esp) {
 
     const uint8_t* raw = reinterpret_cast<const uint8_t*>(esp.getResponse());
     uint16_t respLen = esp.getResponseLen();
-    printf("[REG] resp %u bytes\r\n", respLen);
+    LOG_D(ats::ErrorSource::Reg, evt::REG_RESP_BYTES, (uint32_t)respLen);
 
     // Search for FrameCodec magic 0xAC 0xDA 0x01 in response (after HTTP headers)
     bool found = false;
@@ -355,8 +356,7 @@ bool RegistrationServiceImpl::httpRegister(Esp8266& esp) {
             if (i + totalFrame <= respLen) {
                 uint16_t expectedCrc = crc16(0, raw + i, 7 + pLen);
                 uint16_t receivedCrc = raw[i + 7 + pLen] | (raw[i + 7 + pLen + 1] << 8);
-                printf("[REG] frame @%u len=%u crc=%s\r\n",
-                       i, pLen, expectedCrc == receivedCrc ? "OK" : "FAIL");
+                LOG_D(ats::ErrorSource::Reg, evt::REG_FRAME_FOUND, (uint32_t)i);
                 if (expectedCrc == receivedCrc) {
                     const uint8_t* framePayload = raw + i + 7;
                     // Try cleartext first
@@ -370,26 +370,25 @@ bool RegistrationServiceImpl::httpRegister(Esp8266& esp) {
                     }
                 }
             } else {
-                printf("[REG] frame @%u truncated (need %u, have %u)\r\n",
-                       i, i + totalFrame, respLen);
+                LOG_W(ats::ErrorSource::Reg, evt::REG_FRAME_TRUNC);
             }
             break;
         }
     }
     if (!found) {
-        printf("[REG] no frame found in %u bytes\r\n", respLen);
+        LOG_W(ats::ErrorSource::Reg, evt::REG_NO_FRAME, (uint32_t)respLen);
     }
 
     esp.setIpdPassthrough(false);
     esp.sendCmd("AT+CIPCLOSE", "OK", 1000);
 
     if (found && mCreds.valid) {
-        printf("[REG] OK: user=%s topic=%s\r\n", mCreds.mqttUser, mCreds.topicPrefix);
+        LOG_I(ats::ErrorSource::Reg, evt::REG_OK);
         // saveCredentials called by doRegistration after httpRegister returns
         return true;
     }
 
-    printf("[REG] FAIL: response not parsed\r\n");
+    LOG_E(ats::ErrorSource::Reg, evt::REG_PARSE_FAIL);
     return false;
 }
 
@@ -398,16 +397,12 @@ bool RegistrationServiceImpl::parseResponse(const uint8_t* payload, uint16_t len
     arcana_RegisterResponse resp = arcana_RegisterResponse_init_zero;
     pb_istream_t stream = pb_istream_from_buffer(payload, len);
     if (!pb_decode(&stream, arcana_RegisterResponse_fields, &resp)) {
-        printf("[REG] pb decode fail: %s (len=%u)\r\n", PB_GET_ERROR(&stream), len);
-        // Dump first 16 bytes of payload for debug
-        printf("[REG] payload: ");
-        for (uint16_t j = 0; j < (len < 16 ? len : 16); j++) printf("%02X ", payload[j]);
-        printf("\r\n");
+        LOG_E(ats::ErrorSource::Reg, evt::REG_PB_DECODE_FAIL, (uint32_t)len);
         return false;
     }
 
     if (!resp.success) {
-        printf("[REG] server error: %s\r\n", resp.error);
+        LOG_E(ats::ErrorSource::Reg, evt::REG_SERVER_ERROR);
         return false;
     }
 

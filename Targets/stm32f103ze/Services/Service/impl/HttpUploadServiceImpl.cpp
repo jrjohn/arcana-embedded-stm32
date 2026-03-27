@@ -50,9 +50,9 @@ uint8_t HttpUploadServiceImpl::uploadPendingFiles(Esp8266& esp) {
     for (int i = 0; i < 30 && !storage.isReady(); i++) {
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
-    if (!storage.isReady()) { printf("[UPL] not ready\r\n"); return 0; }
+    if (!storage.isReady()) { LOG_W(ats::ErrorSource::Upload, evt::UPL_NOT_READY); return 0; }
 
-    printf("[UPL] pausing ATS...\r\n");
+    LOG_D(ats::ErrorSource::Upload, evt::UPL_PAUSE_ATS);
     // Pause ATS recording cooperatively — FatFS not thread-safe
     storage.pauseRecording();
     vTaskDelay(pdMS_TO_TICKS(500));
@@ -65,7 +65,7 @@ uint8_t HttpUploadServiceImpl::uploadPendingFiles(Esp8266& esp) {
     atsstorage::AtsStorageServiceImpl::PendingFile pending[atsstorage::AtsStorageServiceImpl::MAX_PENDING];
     uint8_t count = storage.listPendingUploads(pending, atsstorage::AtsStorageServiceImpl::MAX_PENDING);
 
-    printf("[UPL] pending=%u\r\n", count);
+    LOG_I(ats::ErrorSource::Upload, evt::UPL_PENDING, (uint32_t)count);
 
     if (count == 0) {
         storage.resumeRecording();
@@ -127,20 +127,20 @@ uint8_t HttpUploadServiceImpl::uploadPendingFiles(Esp8266& esp) {
 
 bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
                                     const char* deviceId) {
-    printf("[UPL] open %s\r\n", filename);
+    LOG_D(ats::ErrorSource::Upload, evt::UPL_FILE_OPEN);
     // Shared FIL — clear before use
     FIL& fp = atsstorage::AtsStorageServiceImpl::sSharedFil;
     memset(&fp, 0, sizeof(FIL));
     FRESULT fr = f_open(&fp, filename, FA_READ);
     if (fr != FR_OK) {
-        printf("[UPL] open FAIL %d\r\n", (int)fr);
+        LOG_W(ats::ErrorSource::Upload, evt::UPL_FILE_OPEN_FAIL, (uint32_t)fr);
         return false;
     }
 
     uint32_t fileSize = (uint32_t)f_size(&fp);
     if (fileSize == 0) { f_close(&fp); return false; }
 
-    printf("[UPL] size=%luKB\r\n", (unsigned long)(fileSize / 1024));
+    LOG_D(ats::ErrorSource::Upload, evt::UPL_FILE_SIZE, (uint32_t)(fileSize / 1024));
     g_uploadProgress.totalBytes = fileSize;
     g_uploadProgress.bytesSent = 0;
     g_uploadProgress.resumeOffset = 0;
@@ -155,7 +155,7 @@ bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
 
     for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
         if (attempt > 0) {
-            printf("[UPL] retry %d\r\n", attempt + 1);
+            LOG_W(ats::ErrorSource::Upload, evt::UPL_RETRY, (uint32_t)(attempt + 1));
             // Full SDIO reinit between retries
             sd_card_full_reinit();
             vTaskDelay(pdMS_TO_TICKS(3000));  // 3s recovery
@@ -164,7 +164,7 @@ bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
             memset(&fp, 0, sizeof(FIL));
             fr = f_open(&fp, filename, FA_READ);
             if (fr != FR_OK) {
-                printf("[UPL] reopen FAIL %d\r\n", (int)fr);
+                LOG_W(ats::ErrorSource::Upload, evt::UPL_REOPEN_FAIL, (uint32_t)fr);
                 break;
             }
         }
@@ -172,7 +172,7 @@ bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
         // Query server for already uploaded bytes
         uint32_t resumeOffset = queryServerOffset(esp, filename, deviceId);
         if (resumeOffset >= fileSize) {
-            printf("[UPL] already complete (%luKB)\r\n", (unsigned long)(fileSize / 1024));
+            LOG_D(ats::ErrorSource::Upload, evt::UPL_ALREADY_DONE, (uint32_t)(fileSize / 1024));
             f_close(&fp);
             return true;
         }
@@ -182,7 +182,7 @@ bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
             if (resumeOffset <= lastOffset) {
                 stallCount++;
                 if (stallCount >= MAX_STALL) {
-                    printf("[UPL] stalled %d retries, giving up\r\n", MAX_STALL);
+                    LOG_W(ats::ErrorSource::Upload, evt::UPL_STALLED);
                     break;
                 }
             } else {
@@ -194,8 +194,7 @@ bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
         g_uploadProgress.resumeOffset = resumeOffset;
 
         if (resumeOffset > 0) {
-            printf("[UPL] resume at %luKB / %luKB\r\n",
-                   (unsigned long)(resumeOffset / 1024), (unsigned long)(fileSize / 1024));
+            LOG_D(ats::ErrorSource::Upload, evt::UPL_RESUME, (uint32_t)(resumeOffset / 1024));
             fp.err = 0;  // clear sticky FatFS error
             f_lseek(&fp, resumeOffset);
         }
@@ -204,18 +203,18 @@ bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
 
         // TCP connect
         if (!sslConnect(esp)) {
-            printf("[UPL] TCP FAIL\r\n");
+            LOG_W(ats::ErrorSource::Upload, evt::UPL_TCP_FAIL);
             continue;  // retry
         }
 
         // Enter transparent passthrough mode
         if (!esp.sendCmd("AT+CIPMODE=1", "OK", 2000)) {
-            printf("[UPL] CIPMODE FAIL\r\n");
+            LOG_W(ats::ErrorSource::Upload, evt::UPL_CIPMODE_FAIL);
             sslClose(esp);
             continue;
         }
         if (!esp.sendCmd("AT+CIPSEND", ">", 3000)) {
-            printf("[UPL] transparent FAIL\r\n");
+            LOG_W(ats::ErrorSource::Upload, evt::UPL_TRANSPARENT_FAIL);
             esp.sendCmd("AT+CIPMODE=0", "OK", 1000);
             sslClose(esp);
             continue;
@@ -271,7 +270,7 @@ bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
             break;
         }
 
-        printf("[UPL] attempt %d failed\r\n", attempt + 1);
+        LOG_W(ats::ErrorSource::Upload, evt::UPL_ATTEMPT_FAIL, (uint32_t)(attempt + 1));
         f_close(&fp);
         memset(&fp, 0, sizeof(FIL));
     }
@@ -312,7 +311,7 @@ void HttpUploadServiceImpl::sslClose(Esp8266& esp) {
 uint32_t HttpUploadServiceImpl::queryServerOffset(Esp8266& esp, const char* filename,
                                                     const char* deviceId) {
     if (!sslConnect(esp)) {
-        printf("[UPL] resume: TCP FAIL\r\n");
+        LOG_W(ats::ErrorSource::Upload, evt::UPL_QUERY_TCP_FAIL);
         return 0;
     }
 
@@ -327,12 +326,12 @@ uint32_t HttpUploadServiceImpl::queryServerOffset(Esp8266& esp, const char* file
     char cipsend[24];
     snprintf(cipsend, sizeof(cipsend), "AT+CIPSEND=%d", hLen);
     if (!esp.sendCmd(cipsend, ">", 3000)) {
-        printf("[UPL] resume: CIPSEND FAIL\r\n");
+        LOG_W(ats::ErrorSource::Upload, evt::UPL_QUERY_SEND_FAIL);
         sslClose(esp); return 0;
     }
     esp.sendData(reinterpret_cast<const uint8_t*>(header), hLen, 3000);
     if (!esp.waitFor("SEND OK", 5000)) {
-        printf("[UPL] resume: SEND FAIL\r\n");
+        LOG_W(ats::ErrorSource::Upload, evt::UPL_QUERY_SEND_FAIL);
         sslClose(esp); return 0;
     }
 
@@ -341,7 +340,7 @@ uint32_t HttpUploadServiceImpl::queryServerOffset(Esp8266& esp, const char* file
 
     // Wait for JSON body (may arrive in 2nd +IPD after headers)
     if (!esp.waitFor("\"size\"", 8000)) {
-        printf("[UPL] resume: no size in resp (%u bytes)\r\n", esp.getResponseLen());
+        LOG_W(ats::ErrorSource::Upload, evt::UPL_QUERY_NO_RESP, (uint32_t)esp.getResponseLen());
         sslClose(esp); return 0;
     }
 
@@ -357,7 +356,7 @@ uint32_t HttpUploadServiceImpl::queryServerOffset(Esp8266& esp, const char* file
             sizeStr++;
         }
     }
-    printf("[UPL] resume: offset=%luKB\r\n", (unsigned long)(offset / 1024));
+    LOG_D(ats::ErrorSource::Upload, evt::UPL_QUERY_OFFSET, (uint32_t)(offset / 1024));
 
     sslClose(esp);
     return offset;
@@ -413,7 +412,7 @@ bool HttpUploadServiceImpl::streamFileBody(Esp8266& esp, FIL* fp, uint32_t fileS
     uint8_t* chunkBuf = atsstorage::AtsStorageServiceImpl::getReadCache();
     static const uint16_t TX_CHUNK = 2048;  // DMA reads stable at 2KB
 
-    printf("[UPL] stream %luB\r\n", (unsigned long)fileSize);
+    LOG_D(ats::ErrorSource::Upload, evt::UPL_STREAM_START, (uint32_t)fileSize);
     io::IoServiceImpl::getInstance().armCancel();
     uint32_t sent = 0;
     while (sent < fileSize) {
@@ -433,14 +432,13 @@ bool HttpUploadServiceImpl::streamFileBody(Esp8266& esp, FIL* fp, uint32_t fileS
             vTaskDelay(pdMS_TO_TICKS(50));
         }
         if (fr != FR_OK || br == 0) {
-            printf("[UPL] read FAIL fr=%d br=%u at %lu\r\n",
-                   (int)fr, (unsigned)br, (unsigned long)sent);
+            LOG_W(ats::ErrorSource::Upload, evt::UPL_READ_FAIL, (uint32_t)sent);
             return false;
         }
 
         // Transparent mode: send directly to TCP (no AT overhead)
         if (!esp.sendData(chunkBuf, br, 5000)) {
-            printf("[UPL] SEND FAIL at %lu\r\n", (unsigned long)sent);
+            LOG_W(ats::ErrorSource::Upload, evt::UPL_SEND_FAIL, (uint32_t)sent);
             return false;
         }
 
@@ -449,7 +447,7 @@ bool HttpUploadServiceImpl::streamFileBody(Esp8266& esp, FIL* fp, uint32_t fileS
 
         // Progress log + LCD update + cancel check every ~20KB
         if (sent % (TX_CHUNK * 10) == 0 || sent == fileSize) {
-            printf("[UPL] %lu/%lu\r\n", (unsigned long)sent, (unsigned long)fileSize);
+            LOG_D(ats::ErrorSource::Upload, evt::UPL_PROGRESS, (uint32_t)sent);
             // LCD toast: "Upload 1/7 23%" — static buffer (toast stores pointer)
             uint32_t totalSent = g_uploadProgress.resumeOffset + sent;
             uint32_t totalSize = g_uploadProgress.totalBytes;
@@ -463,7 +461,7 @@ bool HttpUploadServiceImpl::streamFileBody(Esp8266& esp, FIL* fp, uint32_t fileS
 
             // Cancel check — don't clear flag here, let retry loop see it
             if (io::IoServiceImpl::getInstance().isCancelRequested()) {
-                printf("[UPL] cancelled by KEY2\r\n");
+                LOG_I(ats::ErrorSource::Upload, evt::UPL_CANCELLED);
                 return false;
             }
         }

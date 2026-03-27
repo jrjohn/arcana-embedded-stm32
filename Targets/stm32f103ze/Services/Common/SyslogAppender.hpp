@@ -29,7 +29,8 @@ public:
         static const char* const SRC_TAG[] = {
             "SYS",  "SDIO", "SENS", "WiFi", "Pump",
             "Cryp", "ATS",  "NTP",  "MQTT", "BLE",
-            "OTA",  "CMD",  "LCD",
+            "OTA",  "CMD",  "LCD",  "UPL",  "REG",
+            "ESPFW",
         };
         static const uint8_t SRC_COUNT =
             sizeof(SRC_TAG) / sizeof(SRC_TAG[0]);

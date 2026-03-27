@@ -15,6 +15,7 @@
 #include "SyslogAppender.hpp"
 #include "SystemClock.hpp"
 #include "Log.hpp"
+#include "EventCodes.hpp"
 #ifdef ARCANA_CMD_CRYPTO
 #include "arcana_cmd.pb.h"
 #include <pb_encode.h>
@@ -120,9 +121,9 @@ bool MqttServiceImpl::sslConnect() {
     char cmd[80];
     snprintf(cmd, sizeof(cmd),
              "AT+CIPSTART=\"SSL\",\"%s\",%u", broker, port);
-    printf("[MQTT] SSL %s:%u...\r\n", broker, port);
+    LOG_I(ats::ErrorSource::Mqtt, evt::MQTT_SSL_START);
     bool ok = esp.sendCmd(cmd, "CONNECT", 20000);
-    printf("[MQTT] SSL: %s\r\n", ok ? "ok" : "fail");
+    LOG_I(ats::ErrorSource::Mqtt, evt::MQTT_SSL_RESULT, (uint32_t)ok);
     return ok;
 }
 
@@ -176,9 +177,9 @@ bool MqttServiceImpl::mqttHandshake() {
     uint16_t len = MqttPacket::buildConnect(pkt, sizeof(pkt),
                                              MQTT_CLIENT_ID, user, pass,
                                              KEEPALIVE_SEC);
-    printf("[MQTT] CONNECT user=%s keepAlive=%u\r\n", user, KEEPALIVE_SEC);
+    LOG_I(ats::ErrorSource::Mqtt, evt::MQTT_CONNECT_START);
     if (!sendMqttPacket(pkt, len)) {
-        printf("[MQTT] CONNECT send fail\r\n");
+        LOG_E(ats::ErrorSource::Mqtt, evt::MQTT_CONNECT_SEND_FAIL);
         return false;
     }
 
@@ -186,12 +187,12 @@ bool MqttServiceImpl::mqttHandshake() {
     uint8_t resp[16];
     uint16_t respLen = sizeof(resp);
     if (!waitMqttPacket(resp, respLen, 10000)) {
-        printf("[MQTT] no CONNACK\r\n");
+        LOG_E(ats::ErrorSource::Mqtt, evt::MQTT_NO_CONNACK);
         return false;
     }
 
     int rc = MqttPacket::parseConnack(resp, respLen);
-    printf("[MQTT] CONNACK rc=%d\r\n", rc);
+    LOG_I(ats::ErrorSource::Mqtt, evt::MQTT_CONNACK, (uint32_t)rc);
     return rc == 0;
 }
 
@@ -206,7 +207,7 @@ bool MqttServiceImpl::mqttSubscribeRaw(const char* topic, uint8_t qos) {
     uint16_t respLen = sizeof(resp);
     if (!waitMqttPacket(resp, respLen, 5000)) return false;
     int rc = MqttPacket::parseSuback(resp, respLen);
-    printf("[MQTT] SUB %s rc=%d\r\n", topic, rc);
+    LOG_I(ats::ErrorSource::Mqtt, evt::MQTT_SUB_RESULT, (uint32_t)rc);
     return rc != -1 && rc != 0x80;
 }
 
@@ -353,7 +354,7 @@ void MqttServiceImpl::runTask() {
             // Credentials might be corrupt — invalidate to force re-register
             auto& regSvc2 = reg::RegistrationServiceImpl::getInstance();
             if (regSvc2.isRegistered()) {
-                printf("[MQTT] CONNACK fail — clearing credentials\r\n");
+                LOG_W(ats::ErrorSource::Mqtt, evt::MQTT_CREDS_CLEAR);
                 regSvc2.invalidate();
             }
             vTaskDelay(pdMS_TO_TICKS(5000));

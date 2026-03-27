@@ -18,7 +18,8 @@
 #include "IDisplay.hpp"
 #include "Hc08Ble.hpp"
 #include "EspFlasher.hpp"
-#include <cstdio>
+#include "Log.hpp"
+#include "EventCodes.hpp"
 
 namespace arcana {
 
@@ -165,7 +166,7 @@ void Controller::initServices() {
 
 void Controller::startServices() {
 #ifdef ESP_FLASH_MODE
-    printf("[BOOT] ESP_FLASH_MODE — STM32 idle\r\n");
+    LOG_I(ats::ErrorSource::System, evt::SYS_ESP_FLASH_MODE);
     for (;;) vTaskDelay(pdMS_TO_TICKS(1000));
 #endif
     mTimer->start();

@@ -222,6 +222,9 @@ enum class ErrorSource : uint8_t {
     Ota    = 0x0A,
     Cmd    = 0x0B,
     Lcd    = 0x0C,
+    Upload = 0x0D,
+    Reg    = 0x0E,
+    EspFw  = 0x0F,
 };
 
 enum class LifecycleEventType : uint8_t {
