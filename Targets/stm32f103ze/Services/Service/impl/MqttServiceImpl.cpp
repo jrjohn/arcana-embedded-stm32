@@ -1,5 +1,9 @@
+#include "stm32f1xx_hal.h"
 #include "MqttServiceImpl.hpp"
 #include "MqttPacket.hpp"
+#include "FrameCodec.hpp"
+#include "ChaCha20.hpp"
+#include "DeviceKey.hpp"
 #include "WifiServiceImpl.hpp"
 #include "AtsStorageServiceImpl.hpp"
 #include "HttpUploadServiceImpl.hpp"
@@ -207,10 +211,12 @@ bool MqttServiceImpl::mqttSubscribeRaw(const char* topic, uint8_t qos) {
 }
 
 bool MqttServiceImpl::mqttPublishRaw(const char* topic, const char* payload) {
-    uint16_t payloadLen = (uint16_t)strlen(payload);
-    uint8_t pkt[300];
-    uint16_t len = MqttPacket::buildPublish(pkt, sizeof(pkt), topic,
-                                             (const uint8_t*)payload, payloadLen);
+    return mqttPublishBin(topic, (const uint8_t*)payload, (uint16_t)strlen(payload));
+}
+
+bool MqttServiceImpl::mqttPublishBin(const char* topic, const uint8_t* data, uint16_t dataLen) {
+    uint8_t pkt[192];
+    uint16_t len = MqttPacket::buildPublish(pkt, sizeof(pkt), topic, data, dataLen);
     if (len > sizeof(pkt)) return false;
     return sendMqttPacket(pkt, len);
 }
@@ -416,9 +422,34 @@ void MqttServiceImpl::runTask() {
     }
 }
 
+// --- Protobuf manual encoder (SensorData, 6 varint fields) ---
+// Proto: sint32 temp_x10=1, sint32 ax=2, sint32 ay=3, sint32 az=4, uint32 als=5, uint32 ps=6
+
+static const uint8_t SID_SENSOR = 0x20;
+
+static uint16_t pbVarint(uint8_t* buf, uint32_t val) {
+    uint16_t n = 0;
+    while (val > 0x7F) { buf[n++] = (val & 0x7F) | 0x80; val >>= 7; }
+    buf[n++] = val & 0x7F;
+    return n;
+}
+
+static uint16_t pbSint32(uint8_t* buf, uint8_t fieldNum, int32_t val) {
+    buf[0] = (fieldNum << 3);  // wire type 0
+    uint32_t zz = (uint32_t)((val << 1) ^ (val >> 31));  // zigzag
+    return 1 + pbVarint(buf + 1, zz);
+}
+
+static uint16_t pbUint32(uint8_t* buf, uint8_t fieldNum, uint32_t val) {
+    buf[0] = (fieldNum << 3);
+    return 1 + pbVarint(buf + 1, val);
+}
+
 // --- Publish sensor data ---
 
 bool MqttServiceImpl::publishSensorData(SensorDataModel* model) {
+#ifdef MQTT_SENSOR_PLAINTEXT
+    // Debug: plain JSON (human-readable, unencrypted)
     char payload[192];
     int tInt = (int)model->temperature;
     int tFrac = (int)(model->temperature * 10) % 10;
@@ -428,8 +459,44 @@ bool MqttServiceImpl::publishSensorData(SensorDataModel* model) {
              tInt, tFrac,
              (int)model->accelX, (int)model->accelY, (int)model->accelZ,
              mLatestLight.ambientLight, mLatestLight.proximity);
-
     return mqttPublishRaw(TOPIC_SENSOR, payload);
+#else
+    // Production: FrameCodec + ChaCha20 encrypted protobuf
+    uint8_t key[32];
+    crypto::DeviceKey::deriveKey(key);
+
+    // 1. Encode protobuf (~20-30 bytes)
+    uint8_t pb[40];
+    uint16_t pos = 0;
+    pos += pbSint32(pb + pos, 1, (int32_t)(model->temperature * 10));
+    pos += pbSint32(pb + pos, 2, (int32_t)model->accelX);
+    pos += pbSint32(pb + pos, 3, (int32_t)model->accelY);
+    pos += pbSint32(pb + pos, 4, (int32_t)model->accelZ);
+    pos += pbUint32(pb + pos, 5, mLatestLight.ambientLight);
+    pos += pbUint32(pb + pos, 6, mLatestLight.proximity);
+
+    // 2. Nonce: [tick:4][0:8] — unique at 1Hz (tick increments each ms)
+    uint8_t nonce[12] = {};
+    uint32_t tick = xTaskGetTickCount();
+    memcpy(nonce, &tick, 4);
+
+    // 3. Encrypt in-place
+    crypto::ChaCha20::crypt(key, nonce, 0, pb, pos);
+
+    // 4. Build payload: [nonce:12][encrypted_pb:N]
+    uint8_t enc[52];
+    memcpy(enc, nonce, 12);
+    memcpy(enc + 12, pb, pos);
+
+    // 5. FrameCodec wrap
+    uint8_t frame[72];
+    size_t frameLen;
+    if (!FrameCodec::frame(enc, 12 + pos, FrameCodec::kFlagFin, SID_SENSOR,
+                            frame, sizeof(frame), frameLen)) return false;
+
+    // 6. Publish binary
+    return mqttPublishBin(TOPIC_SENSOR, frame, (uint16_t)frameLen);
+#endif
 }
 
 // --- Process incoming +IPD (raw MQTT packets) ---

@@ -38,6 +38,7 @@ private:
     bool mqttHandshake();
     bool mqttSubscribeRaw(const char* topic, uint8_t qos = 0);
     bool mqttPublishRaw(const char* topic, const char* payload);
+    bool mqttPublishBin(const char* topic, const uint8_t* data, uint16_t len);
     bool mqttDisconnectRaw();
 
     // Low-level: send MQTT packet via AT+CIPSEND

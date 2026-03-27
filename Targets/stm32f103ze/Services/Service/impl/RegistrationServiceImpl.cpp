@@ -65,6 +65,9 @@ extern "C" volatile uint8_t g_exfat_ready;
 
 // --- Common: encrypt/decrypt + pack/unpack ---
 
+// Validation magic at plaintext[218..219] — detects corrupt decryption
+static const uint8_t CRED_VALID_MAGIC[2] = {0xCE, 0xED};
+
 static void packCreds(uint8_t* plain, const RegistrationService::Credentials& c) {
     memset(plain, 0, CRED_PLAIN_SIZE);
     uint16_t off = 0;
@@ -73,10 +76,17 @@ static void packCreds(uint8_t* plain, const RegistrationService::Credentials& c)
     memcpy(plain + off, c.mqttBroker,  36); off += 36;
     memcpy(plain + off, &c.mqttPort,    2); off += 2;
     memcpy(plain + off, c.uploadToken, 72); off += 72;
-    memcpy(plain + off, c.topicPrefix, 36);
+    memcpy(plain + off, c.topicPrefix, 36); off += 36;
+    // Validation magic in last 2 bytes (offset 218-219)
+    plain[218] = CRED_VALID_MAGIC[0];
+    plain[219] = CRED_VALID_MAGIC[1];
 }
 
 static bool unpackCreds(const uint8_t* plain, RegistrationService::Credentials& c) {
+    // Check decryption validity first
+    if (plain[218] != CRED_VALID_MAGIC[0] || plain[219] != CRED_VALID_MAGIC[1]) {
+        return false;  // corrupt or wrong key
+    }
     uint16_t off = 0;
     memcpy(c.mqttUser,    plain + off, 36); off += 36;
     memcpy(c.mqttPass,    plain + off, 36); off += 36;
