@@ -259,7 +259,7 @@ bool RegistrationServiceImpl::doRegistration() {
     if (!mForceRegister && loadCredentials() && mCreds.valid) return true;
     mForceRegister = false;
 
-    // ECDH runs in caller's task — MQTT task stack must be >= 640 words
+    // Server-side comm_key — no ECDH on device, httpRegister fits in MQTT task stack
     Esp8266& esp = Esp8266::getInstance();
     if (!httpRegister(esp)) return false;
 
