@@ -4,6 +4,8 @@
   <img src="https://img.shields.io/badge/RTOS-FreeRTOS-00A86B?style=for-the-badge" alt="FreeRTOS">
   <img src="https://img.shields.io/badge/Language-C++14-00599C?style=for-the-badge&logo=cplusplus" alt="C++">
   <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License">
+  <img src="https://img.shields.io/badge/Coverage-100%25-brightgreen?style=for-the-badge" alt="Coverage">
+  <img src="https://img.shields.io/badge/Tests-15_suites-blue?style=for-the-badge&logo=googletest" alt="Tests">
 </p>
 
 <h1 align="center">Arcana Embedded STM32</h1>
@@ -17,6 +19,7 @@
   <a href="#architecture">Architecture</a> •
   <a href="#directory-structure">Structure</a> •
   <a href="#features">Features</a> •
+  <a href="#quality--cicd">Quality</a> •
   <a href="#build">Build</a> •
   <a href="#pros--cons">Pros & Cons</a>
 </p>
@@ -347,6 +350,54 @@ Device                                    Server
 
 ---
 
+## Quality & CI/CD
+
+### SonarQube Metrics
+
+| Metric | Value |
+|--------|-------|
+| **Coverage** | 100.0% |
+| **Bugs** | 0 |
+| **Vulnerabilities** | 0 |
+| **Code Smells** | 0 |
+| **Duplications** | 0.0% |
+| **Lines of Code** | 1.3K (analyzed) |
+
+### Test Suite
+
+15 test executables, Google Test v1.14.0, all running on host (x86/ARM64):
+
+| Test | Covers |
+|------|--------|
+| test_crc16 | CRC-16/KERMIT (FrameCodec wire protocol) |
+| test_crc32 | CRC-32 IEEE 802.3 (ArcanaTS / OTA) |
+| test_frame_codec | Frame encode/decode, magic, CRC validation |
+| test_frame_assembler | BLE MTU reassembly state machine |
+| test_command_codec | Binary command request/response serialization |
+| test_registry | Command registration, lookup, capacity |
+| test_models | Model base class, TimerModel, CounterModel |
+| test_services | CounterService, TimeDisplayService |
+| test_dispatcher | CommandDispatcher sync/async, CommandService |
+| test_commands | PingCommand, GetCounterCommand |
+| test_timer_service | FreeRTOS timer mock, Observable publish |
+| test_log | ArcanaLog Logger: ring buffer, appenders, level filtering, ISR path |
+| test_ota_header | OTA metadata struct layout, flash constants |
+| test_observable | Observable subscribe/unsubscribe/notify, publish variants, Dispatcher |
+| test_observable_errors | Queue-null + queue-full error paths, mock-captured lambda dispatch |
+
+### CI/CD Pipeline
+
+```
+git push → Jenkins (Docker) → Build (F051+F103) → GTest → lcov → SonarQube
+```
+
+- **Build**: Docker multi-target ARM cross-compile (gcc-arm-none-eabi)
+- **Test**: GTest on gcc:12, coverage via `--coverage` + lcov
+- **Analysis**: sonar-scanner-cli → SonarQube (Cobertura XML)
+- **Coverage strategy**: Mock FreeRTOS stubs, controllable queue behavior, mock-captured DispatchItem for RTOS callback lambda coverage
+
+---
+
 ## Build
 
 ### Prerequisites
@@ -419,7 +470,7 @@ python3 read_serial.py    # /dev/tty.usbserial-1120 @ 115200
 | **ViewModel has FreeRTOS deps** | Not pure platform-independent | Extract callbacks to adapter layer |
 | **LcdService nearly empty** | Only initHAL + getLcd, could merge into Driver | Keep for interface consistency |
 | **subdir.mk manual sync** | CubeIDE regenerates with old paths on .ioc change | Fixed in .cproject, auto-correct via sed |
-| **No unit tests** | All validation via on-board serial debug | Add host-side test with mock PAL |
+| **F103 services not unit-tested** | F103 drivers/services depend on HAL, tested on-board | Expand mock HAL for host-side testing |
 | **ECG tightly coupled** | AtsStorageService knows about MainView | Route through Observable |
 | **Header-only ViewModel** | Large header with Observable + FreeRTOS includes | Split to .hpp/.cpp if compile time grows |
 | **Single View** | Only MainView, no navigation | ViewManager ready, add SettingsView when needed |
@@ -496,7 +547,7 @@ python3 read_serial.py    # /dev/tty.usbserial-1120 @ 115200
 - [ ] ECG Observable (decouple AtsStorage → View)
 - [ ] SettingsView / ChartView (multi-view navigation with ViewManager)
 - [ ] XPT2046 touch driver + GestureDetector
-- [ ] Host-side unit tests with mock PAL
+- [x] Host-side unit tests (15 suites, 100% coverage, Jenkins CI/CD + SonarQube)
 - [ ] BLE baud upgrade (9600 → 115200 for ECG streaming)
 - [ ] Multi-key COMPANY_PRIV (per-customer isolation)
 - [ ] comm_key auto-expiry + periodic re-register
