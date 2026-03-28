@@ -10,6 +10,10 @@
 
 // Controllable stub behavior
 static bool g_queueSendShouldFail = false;
+// Capture last enqueued item to invoke notifyFunc (covers lambda bodies)
+static uint8_t g_lastItem[64];
+static size_t  g_lastItemSize = 0;
+static bool    g_captureItem = false;
 
 // Override FreeRTOS stubs with controllable versions
 #include "FreeRTOS.h"
@@ -24,11 +28,19 @@ extern "C" TickType_t xTaskGetTickCount(void) { return 0; }
 extern "C" QueueHandle_t xQueueCreateStatic(UBaseType_t, UBaseType_t, uint8_t*, StaticQueue_t* q) {
     return (QueueHandle_t)q;
 }
-extern "C" BaseType_t xQueueSendToBack(QueueHandle_t, const void*, TickType_t) {
+extern "C" BaseType_t xQueueSendToBack(QueueHandle_t, const void* pvItem, TickType_t) {
+    if (g_captureItem && pvItem) {
+        memcpy(g_lastItem, pvItem, sizeof(g_lastItem));
+        g_lastItemSize = sizeof(g_lastItem);
+    }
     return g_queueSendShouldFail ? pdFALSE : pdTRUE;
 }
-extern "C" BaseType_t xQueueSendToBackFromISR(QueueHandle_t, const void*, BaseType_t* p) {
+extern "C" BaseType_t xQueueSendToBackFromISR(QueueHandle_t, const void* pvItem, BaseType_t* p) {
     if (p) *p = pdFALSE;
+    if (g_captureItem && pvItem) {
+        memcpy(g_lastItem, pvItem, sizeof(g_lastItem));
+        g_lastItemSize = sizeof(g_lastItem);
+    }
     return g_queueSendShouldFail ? pdFALSE : pdTRUE;
 }
 extern "C" BaseType_t xQueueReceive(QueueHandle_t, void*, TickType_t) { return pdFALSE; }
@@ -166,4 +178,62 @@ TEST(ObsErrorTest, ErrorCallbackOnQueueFull) {
 
     g_queueSendShouldFail = false;
     ObservableDispatcher::setErrorCallback(nullptr);
+}
+
+// ── Lambda body coverage (Observable.hpp template notifyFunc) ────────────────
+// Capture DispatchItem from mock queue, then invoke notifyFunc manually.
+// This simulates what dispatcherTask does on real hardware.
+
+#include "Models.hpp"
+
+TEST(ObsLambdaTest, PublishNotifyFuncCoversLambda) {
+    ObservableDispatcher::start();
+    g_captureItem = true;
+
+    bool notified = false;
+    Observable<TimerModel> obs{"lambda"};
+    obs.subscribe([](TimerModel*, void* ctx) {
+        *static_cast<bool*>(ctx) = true;
+    }, &notified);
+
+    TimerModel model;
+
+    // 1. publish() — covers Observable<T>::publish() lambda body
+    g_lastItemSize = 0;
+    obs.publish(&model);
+    ASSERT_GT(g_lastItemSize, 0u);
+    auto* item = reinterpret_cast<ObservableDispatcher::DispatchItem*>(g_lastItem);
+    ASSERT_NE(item->notifyFunc, nullptr);
+    item->notifyFunc(item->observable, item->model);
+    EXPECT_TRUE(notified);
+
+    // 2. publishHighPriority() — covers that lambda body
+    notified = false;
+    g_lastItemSize = 0;
+    obs.publishHighPriority(&model);
+    ASSERT_GT(g_lastItemSize, 0u);
+    item = reinterpret_cast<ObservableDispatcher::DispatchItem*>(g_lastItem);
+    item->notifyFunc(item->observable, item->model);
+    EXPECT_TRUE(notified);
+
+    // 3. publishFromISR() — covers that lambda body
+    notified = false;
+    g_lastItemSize = 0;
+    BaseType_t woken = pdFALSE;
+    obs.publishFromISR(&model, &woken);
+    ASSERT_GT(g_lastItemSize, 0u);
+    item = reinterpret_cast<ObservableDispatcher::DispatchItem*>(g_lastItem);
+    item->notifyFunc(item->observable, item->model);
+    EXPECT_TRUE(notified);
+
+    // 4. publishHighPriorityFromISR() — covers that lambda body
+    notified = false;
+    g_lastItemSize = 0;
+    obs.publishHighPriorityFromISR(&model, &woken);
+    ASSERT_GT(g_lastItemSize, 0u);
+    item = reinterpret_cast<ObservableDispatcher::DispatchItem*>(g_lastItem);
+    item->notifyFunc(item->observable, item->model);
+    EXPECT_TRUE(notified);
+
+    g_captureItem = false;
 }
