@@ -114,14 +114,48 @@ add_executable(test_timer_service
 target_include_directories(test_timer_service PRIVATE ${COMMON_INCS} ${F051_SVC})
 target_link_libraries(test_timer_service PRIVATE GTest::gtest_main)
 
+# ── test_crc32 ───────────────────────────────────────────────────────────────
+add_executable(test_crc32 test_crc32.cpp)
+target_include_directories(test_crc32 PRIVATE ${COMMON_INCS})
+target_link_libraries(test_crc32 PRIVATE GTest::gtest_main)
+
+# ── test_frame_assembler ─────────────────────────────────────────────────────
+add_executable(test_frame_assembler test_frame_assembler.cpp)
+target_include_directories(test_frame_assembler PRIVATE ${COMMON_INCS})
+target_link_libraries(test_frame_assembler PRIVATE GTest::gtest_main)
+
+# ── test_log ─────────────────────────────────────────────────────────────────
+add_executable(test_log test_log.cpp ${FREERTOS_STUBS})
+target_include_directories(test_log PRIVATE ${COMMON_INCS} ${SHARED_INC}/ats)
+target_link_libraries(test_log PRIVATE GTest::gtest_main)
+
+# ── test_ota_header ──────────────────────────────────────────────────────────
+add_executable(test_ota_header test_ota_header.cpp)
+target_include_directories(test_ota_header PRIVATE ${COMMON_INCS})
+target_link_libraries(test_ota_header PRIVATE GTest::gtest_main)
+
+# ── test_observable (extra coverage) ─────────────────────────────────────────
+add_executable(test_observable
+    test_observable.cpp
+    ${SHARED_SRC}/Observable.cpp
+    ${FREERTOS_STUBS}
+)
+target_include_directories(test_observable PRIVATE ${COMMON_INCS})
+target_link_libraries(test_observable PRIVATE GTest::gtest_main)
+
 # ── CTest registration ────────────────────────────────────────────────────────
 enable_testing()
-add_test(NAME test_crc16          COMMAND test_crc16)
-add_test(NAME test_frame_codec    COMMAND test_frame_codec)
-add_test(NAME test_command_codec  COMMAND test_command_codec)
-add_test(NAME test_registry       COMMAND test_registry)
-add_test(NAME test_models         COMMAND test_models)
-add_test(NAME test_services       COMMAND test_services)
-add_test(NAME test_dispatcher     COMMAND test_dispatcher)
-add_test(NAME test_commands       COMMAND test_commands)
-add_test(NAME test_timer_service  COMMAND test_timer_service)
+add_test(NAME test_crc16             COMMAND test_crc16)
+add_test(NAME test_frame_codec       COMMAND test_frame_codec)
+add_test(NAME test_command_codec     COMMAND test_command_codec)
+add_test(NAME test_registry          COMMAND test_registry)
+add_test(NAME test_models            COMMAND test_models)
+add_test(NAME test_services          COMMAND test_services)
+add_test(NAME test_dispatcher        COMMAND test_dispatcher)
+add_test(NAME test_commands          COMMAND test_commands)
+add_test(NAME test_timer_service     COMMAND test_timer_service)
+add_test(NAME test_crc32             COMMAND test_crc32)
+add_test(NAME test_frame_assembler   COMMAND test_frame_assembler)
+add_test(NAME test_log               COMMAND test_log)
+add_test(NAME test_ota_header        COMMAND test_ota_header)
+add_test(NAME test_observable        COMMAND test_observable)

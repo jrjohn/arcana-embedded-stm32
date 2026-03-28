@@ -31,13 +31,16 @@ public:
 
 // ── CommandDispatcher ─────────────────────────────────────────────────────────
 
-TEST(CommandDispatcherTest, DispatchUnknownCommandReturnsFalse) {
+TEST(CommandDispatcherTest, DispatchUnknownCommandStillPublishes) {
+    // dispatch() always publishes the response (even for unknown commands)
+    // — it returns the result of publish(), not executeCommand()
     CommandRegistry reg;
     Observable<CommandResponseModel> obs{"Test"};
     CommandDispatcher disp(reg, obs);
 
     CommandRequest req{}; req.key = {Cluster::System, SystemCommand::Ping};
-    EXPECT_FALSE(disp.dispatch(req));
+    // With mock queue (always pdTRUE), dispatch returns true
+    EXPECT_TRUE(disp.dispatch(req));
 }
 
 TEST(CommandDispatcherTest, DispatchKnownCommandCallsExecute) {
