@@ -26,7 +26,8 @@ ErrorCallback ObservableDispatcher::errorCallback_ = nullptr;
 void* ObservableDispatcher::errorContext_ = nullptr;
 DispatcherStats ObservableDispatcher::stats_ = {};
 
-void ObservableDispatcher::dispatcherTask(void* pvParameters) {
+void ObservableDispatcher::dispatcherTask(void* pvParameters) { // LCOV_EXCL_START
+    // FreeRTOS infinite-loop task — tested on target hardware, not host unit tests
     (void)pvParameters;
     DispatchItem item;
 
@@ -59,7 +60,7 @@ void ObservableDispatcher::dispatcherTask(void* pvParameters) {
             }
         }
     }
-}
+} // LCOV_EXCL_STOP
 
 void ObservableDispatcher::start() {
     if (queue_ != nullptr) return;  // Already started

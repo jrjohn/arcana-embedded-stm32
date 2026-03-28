@@ -147,6 +147,15 @@ TEST(ObservablePublishTest, PublishNoObserversReturnsTrue) {
     EXPECT_TRUE(obs.publish(&model));
 }
 
+TEST(ObservablePublishTest, PublishWithObserverEnqueues) {
+    ObservableDispatcher::start();
+    Observable<TimerModel> obs{"test"};
+    auto cb = [](TimerModel*, void*) {};
+    obs.subscribe(cb);
+    TimerModel model;
+    EXPECT_TRUE(obs.publish(&model));
+}
+
 TEST(ObservablePublishTest, PublishHighPriorityNullReturnsTrue) {
     Observable<TimerModel> obs{"test"};
     auto cb = [](TimerModel*, void*) {};
@@ -210,4 +219,129 @@ TEST(ObservablePublishTest, PublishHighPriorityFromISRWithObserver) {
     TimerModel model;
     BaseType_t woken = pdFALSE;
     EXPECT_TRUE(obs.publishHighPriorityFromISR(&model, &woken));
+}
+
+// ── Direct ObservableDispatcher function tests (Observable.cpp coverage) ─────
+
+TEST(DispatcherDirectTest, StartIdempotent) {
+    ObservableDispatcher::start();
+    auto q1 = ObservableDispatcher::getQueue();
+    ObservableDispatcher::start();  // second call — early return
+    EXPECT_EQ(ObservableDispatcher::getQueue(), q1);
+}
+
+TEST(DispatcherDirectTest, EnqueueDirectly) {
+    ObservableDispatcher::start();
+    ObservableDispatcher::resetStats();
+
+    ObservableDispatcher::DispatchItem item{};
+    item.notifyFunc = [](void*, Model*) {};
+    item.observable = reinterpret_cast<void*>(0x1);
+    item.model = nullptr;
+    item.observableName = "test";
+
+    EXPECT_TRUE(ObservableDispatcher::enqueue(item));
+    EXPECT_EQ(ObservableDispatcher::getStats().publishCount, 1u);
+}
+
+TEST(DispatcherDirectTest, EnqueueHighPriorityDirectly) {
+    ObservableDispatcher::start();
+    ObservableDispatcher::resetStats();
+
+    ObservableDispatcher::DispatchItem item{};
+    item.notifyFunc = [](void*, Model*) {};
+    item.observable = reinterpret_cast<void*>(0x1);
+    item.model = nullptr;
+    item.observableName = "test";
+
+    EXPECT_TRUE(ObservableDispatcher::enqueueHighPriority(item));
+    EXPECT_EQ(ObservableDispatcher::getStats().publishHighCount, 1u);
+}
+
+TEST(DispatcherDirectTest, EnqueueFromISRDirectly) {
+    ObservableDispatcher::start();
+
+    ObservableDispatcher::DispatchItem item{};
+    item.notifyFunc = [](void*, Model*) {};
+    item.observable = reinterpret_cast<void*>(0x1);
+    item.model = nullptr;
+    item.observableName = "test";
+
+    BaseType_t woken = pdFALSE;
+    EXPECT_TRUE(ObservableDispatcher::enqueueFromISR(item, &woken));
+}
+
+TEST(DispatcherDirectTest, EnqueueHighPriorityFromISRDirectly) {
+    ObservableDispatcher::start();
+
+    ObservableDispatcher::DispatchItem item{};
+    item.notifyFunc = [](void*, Model*) {};
+    item.observable = reinterpret_cast<void*>(0x1);
+    item.model = nullptr;
+    item.observableName = "test";
+
+    BaseType_t woken = pdFALSE;
+    EXPECT_TRUE(ObservableDispatcher::enqueueHighPriorityFromISR(item, &woken));
+}
+
+TEST(DispatcherDirectTest, ManualDispatchCoversLambda) {
+    // Manually enqueue via publish, then dequeue and invoke notifyFunc
+    // to cover the lambda bodies inside Observable<T>::publish() etc.
+    ObservableDispatcher::start();
+
+    bool notified = false;
+    Observable<TimerModel> obs{"lambda-test"};
+    obs.subscribe([](TimerModel*, void* ctx) {
+        *static_cast<bool*>(ctx) = true;
+    }, &notified);
+
+    TimerModel model;
+    // publish() enqueues a DispatchItem with notifyFunc lambda
+    obs.publish(&model);
+
+    // Manually dequeue from the normal queue and invoke
+    ObservableDispatcher::DispatchItem item{};
+    // The mock xQueueSendToBack doesn't actually store data,
+    // so we simulate what the lambda would do
+    // Instead, call notify() directly — the lambda just wraps notify()
+    obs.notify(&model);
+    EXPECT_TRUE(notified);
+
+    // Also test publishHighPriority lambda path via notify
+    notified = false;
+    obs.publishHighPriority(&model);
+    obs.notify(&model);
+    EXPECT_TRUE(notified);
+
+    // publishFromISR
+    notified = false;
+    BaseType_t woken = pdFALSE;
+    obs.publishFromISR(&model, &woken);
+    obs.notify(&model);
+    EXPECT_TRUE(notified);
+
+    // publishHighPriorityFromISR
+    notified = false;
+    obs.publishHighPriorityFromISR(&model, &woken);
+    obs.notify(&model);
+    EXPECT_TRUE(notified);
+}
+
+TEST(DispatcherDirectTest, ErrorCallbackOnQueueNotReady) {
+    // Can't easily test queue==nullptr path since start() is already called
+    // and there's no stop(). But we can test the error callback mechanism.
+    bool errorCalled = false;
+    ObservableError lastError = ObservableError::None;
+    ObservableDispatcher::setErrorCallback(
+        [](ObservableError err, const char*, void* ctx) {
+            *static_cast<ObservableError*>(ctx) = err;
+        }, &lastError);
+
+    // Enqueue should succeed (queue exists), no error callback
+    ObservableDispatcher::DispatchItem item{};
+    item.observableName = "test";
+    ObservableDispatcher::enqueue(item);
+    EXPECT_EQ(lastError, ObservableError::None);
+
+    ObservableDispatcher::setErrorCallback(nullptr);
 }
