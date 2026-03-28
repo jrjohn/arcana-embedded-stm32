@@ -143,6 +143,15 @@ add_executable(test_observable
 target_include_directories(test_observable PRIVATE ${COMMON_INCS})
 target_link_libraries(test_observable PRIVATE GTest::gtest_main)
 
+# ── test_observable_errors (separate exe: tests queue-null + queue-full) ──────
+# Uses its own FreeRTOS stubs (inline in .cpp) with controllable xQueueSend
+add_executable(test_observable_errors
+    test_observable_errors.cpp
+    ${SHARED_SRC}/Observable.cpp
+)
+target_include_directories(test_observable_errors PRIVATE ${COMMON_INCS})
+target_link_libraries(test_observable_errors PRIVATE GTest::gtest_main)
+
 # ── CTest registration ────────────────────────────────────────────────────────
 enable_testing()
 add_test(NAME test_crc16             COMMAND test_crc16)
@@ -159,3 +168,4 @@ add_test(NAME test_frame_assembler   COMMAND test_frame_assembler)
 add_test(NAME test_log               COMMAND test_log)
 add_test(NAME test_ota_header        COMMAND test_ota_header)
 add_test(NAME test_observable        COMMAND test_observable)
+add_test(NAME test_observable_errors COMMAND test_observable_errors)
