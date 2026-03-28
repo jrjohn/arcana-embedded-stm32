@@ -136,6 +136,7 @@ target_include_directories(arcana-f103.elf PRIVATE
     Shared/Inc/ats
     Shared/Inc/display
     Shared/Inc/nanopb
+    Shared/Inc/mbedtls
 )
 target_compile_options(arcana-f103.elf PRIVATE
     $<$<COMPILE_LANGUAGE:C>:${F103_MCU_FLAGS} -Wall -fdata-sections -ffunction-sections -std=gnu11 -Wno-dangling-pointer>
