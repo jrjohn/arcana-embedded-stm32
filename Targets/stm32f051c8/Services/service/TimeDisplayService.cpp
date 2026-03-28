@@ -14,9 +14,6 @@ void TimeDisplayService::onTimerEvent(TimerModel* model, void* context) {
     TimeDisplayService* self = static_cast<TimeDisplayService*>(context);
     if (self == nullptr || model == nullptr) return;
 
-    /* Update timer period from model */
-    self->timerPeriodMs_ = model->periodMs;
-
     /* Accumulate milliseconds */
     self->milliseconds_ += model->periodMs;
 

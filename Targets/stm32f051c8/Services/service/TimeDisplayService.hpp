@@ -26,7 +26,6 @@ public:
 private:
     uint32_t totalSeconds_ = 0;
     uint32_t milliseconds_ = 0;
-    uint16_t timerPeriodMs_ = 100;
     char timeBuffer_[TIME_BUFFER_SIZE] = "00:00:00.000";
 
     /* Observer callback */

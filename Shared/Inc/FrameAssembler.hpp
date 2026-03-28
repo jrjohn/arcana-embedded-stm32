@@ -28,61 +28,11 @@ public:
      */
     bool feedByte(uint8_t b) {
         switch (mState) {
-        case State::IDLE:
-            if (b == FrameCodec::kMagic0) {
-                mBuf[0] = b;
-                mPos = 1;
-                mState = State::MAGIC1;
-            }
-            break;
-
-        case State::MAGIC1:
-            if (b == FrameCodec::kMagic1) {
-                mBuf[mPos++] = b;
-                mState = State::HEADER;
-                mHeaderLeft = 5;  // ver + flags + sid + lenLo + lenHi
-            } else if (b == FrameCodec::kMagic0) {
-                // Could be start of new header — stay at pos 1
-                mBuf[0] = b;
-                mPos = 1;
-            } else {
-                reset();
-            }
-            break;
-
-        case State::HEADER:
-            if (mPos >= MAX_FRAME) { reset(); break; }
-            mBuf[mPos++] = b;
-            mHeaderLeft--;
-            if (mHeaderLeft == 0) {
-                // Extract payload length from header
-                uint16_t payloadLen =
-                    static_cast<uint16_t>(mBuf[FrameCodec::kOffLenLo]) |
-                    (static_cast<uint16_t>(mBuf[FrameCodec::kOffLenHi]) << 8);
-
-                mRemaining = payloadLen + 2;  // payload + 2 CRC bytes
-                if (mPos + mRemaining > MAX_FRAME) {
-                    // Frame too large for buffer
-                    reset();
-                } else {
-                    mState = State::PAYLOAD;
-                }
-            }
-            break;
-
-        case State::PAYLOAD:
-            mBuf[mPos++] = b;
-            mRemaining--;
-            if (mRemaining == 0) {
-                mFrameLen = mPos;
-                mState = State::COMPLETE;
-                return true;
-            }
-            break;
-
-        case State::COMPLETE:
-            // Caller hasn't consumed yet — ignore new bytes
-            break;
+        case State::IDLE:    handleIdle(b);    break;
+        case State::MAGIC1:  handleMagic1(b);  break;
+        case State::HEADER:  handleHeader(b);  break;
+        case State::PAYLOAD: return handlePayload(b);
+        case State::COMPLETE: break;  // Caller hasn't consumed yet
         }
         return false;
     }
@@ -106,6 +56,58 @@ private:
         PAYLOAD,
         COMPLETE
     };
+
+    void handleIdle(uint8_t b) {
+        if (b == FrameCodec::kMagic0) {
+            mBuf[0] = b;
+            mPos = 1;
+            mState = State::MAGIC1;
+        }
+    }
+
+    void handleMagic1(uint8_t b) {
+        if (b == FrameCodec::kMagic1) {
+            mBuf[mPos++] = b;
+            mState = State::HEADER;
+            mHeaderLeft = 5;  // ver + flags + sid + lenLo + lenHi
+        } else if (b == FrameCodec::kMagic0) {
+            // Could be start of new header -- stay at pos 1
+            mBuf[0] = b;
+            mPos = 1;
+        } else {
+            reset();
+        }
+    }
+
+    void handleHeader(uint8_t b) {
+        if (mPos >= MAX_FRAME) { reset(); return; }
+        mBuf[mPos++] = b;
+        mHeaderLeft--;
+        if (mHeaderLeft != 0) return;
+
+        // Extract payload length from header
+        uint16_t payloadLen =
+            static_cast<uint16_t>(mBuf[FrameCodec::kOffLenLo]) |
+            (static_cast<uint16_t>(mBuf[FrameCodec::kOffLenHi]) << 8);
+
+        mRemaining = payloadLen + 2;  // payload + 2 CRC bytes
+        if (mPos + mRemaining > MAX_FRAME) {
+            reset();  // Frame too large for buffer
+        } else {
+            mState = State::PAYLOAD;
+        }
+    }
+
+    bool handlePayload(uint8_t b) {
+        mBuf[mPos++] = b;
+        mRemaining--;
+        if (mRemaining == 0) {
+            mFrameLen = mPos;
+            mState = State::COMPLETE;
+            return true;
+        }
+        return false;
+    }
 
     State    mState;
     uint8_t  mBuf[MAX_FRAME];

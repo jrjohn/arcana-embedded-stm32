@@ -67,7 +67,7 @@ struct LogConfig {
 
 class IAppender {
 public:
-    virtual ~IAppender() {}
+    virtual ~IAppender() = default;
     virtual void append(const LogEvent& event) = 0;
     virtual Level minLevel() const = 0;
 };
