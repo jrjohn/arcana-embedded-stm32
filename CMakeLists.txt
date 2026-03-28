@@ -95,6 +95,8 @@ file(GLOB_RECURSE F103_FATFS     "${F103_ROOT}/Middlewares/Third_Party/FatFs/src
 file(GLOB_RECURSE F103_FLASHDB   "${F103_ROOT}/Middlewares/Third_Party/FlashDB/src/*.c")
 file(GLOB_RECURSE F103_SERVICES  "${F103_ROOT}/Services/**/*.cpp")
 file(GLOB_RECURSE F103_SHARED    "Shared/Src/*.cpp")
+file(GLOB         F103_NANOPB    "Shared/Src/nanopb/*.c")
+file(GLOB         F103_PROTO     "Shared/Src/*.c")
 
 # Exclude FatFs backup directory (duplicate ff.c)
 list(FILTER F103_FATFS EXCLUDE REGEX ".*/backup/.*")
@@ -103,6 +105,7 @@ add_executable(arcana-f103.elf
     ${F103_CORE} ${F103_HAL} ${F103_RTOS} ${F103_STARTUP}
     ${F103_FATFS} ${F103_FLASHDB}
     ${F103_SERVICES} ${F103_SHARED}
+    ${F103_NANOPB} ${F103_PROTO}
 )
 
 target_compile_definitions(arcana-f103.elf PRIVATE
@@ -131,6 +134,7 @@ target_include_directories(arcana-f103.elf PRIVATE
     Shared/Inc
     Shared/Inc/ats
     Shared/Inc/display
+    Shared/Inc/nanopb
 )
 target_compile_options(arcana-f103.elf PRIVATE
     $<$<COMPILE_LANGUAGE:C>:${F103_MCU_FLAGS} -Wall -fdata-sections -ffunction-sections -std=gnu11 -Wno-dangling-pointer>
