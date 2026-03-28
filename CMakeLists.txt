@@ -97,6 +97,7 @@ file(GLOB_RECURSE F103_SERVICES  "${F103_ROOT}/Services/**/*.cpp")
 file(GLOB_RECURSE F103_SHARED    "Shared/Src/*.cpp")
 file(GLOB         F103_NANOPB    "Shared/Src/nanopb/*.c")
 file(GLOB         F103_PROTO     "Shared/Src/*.c")
+file(GLOB         F103_MBEDTLS   "Shared/Src/mbedtls/*.c")
 
 # Exclude FatFs backup directory (duplicate ff.c)
 list(FILTER F103_FATFS EXCLUDE REGEX ".*/backup/.*")
@@ -105,7 +106,7 @@ add_executable(arcana-f103.elf
     ${F103_CORE} ${F103_HAL} ${F103_RTOS} ${F103_STARTUP}
     ${F103_FATFS} ${F103_FLASHDB}
     ${F103_SERVICES} ${F103_SHARED}
-    ${F103_NANOPB} ${F103_PROTO}
+    ${F103_NANOPB} ${F103_PROTO} ${F103_MBEDTLS}
 )
 
 target_compile_definitions(arcana-f103.elf PRIVATE
