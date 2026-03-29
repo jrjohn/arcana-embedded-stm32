@@ -1,0 +1,844 @@
+<?xml version="1.0" ?>
+<!DOCTYPE coverage
+  SYSTEM 'http://cobertura.sourceforge.net/xml/coverage-04.dtd'>
+<coverage branch-rate="0.0" branches-covered="0" branches-valid="0" complexity="0" line-rate="0.807570977917981" lines-covered="256" lines-valid="317" timestamp="1774627255" version="2.0.3">
+	<sources>
+		<source>.</source>
+	</sources>
+	<packages>
+		<package line-rate="0.9166666666666666" branch-rate="0.0" name="Shared.Inc" complexity="0">
+			<classes>
+				<class branch-rate="0.0" complexity="0" filename="Shared/Inc/CommandTypes.hpp" line-rate="1.0" name="Shared.Inc.CommandTypes.hpp">
+					<methods>
+						<method name="_ZNK6arcana10CommandKeyeqERKS0_" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="48" number="45" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana20CommandResponseModelC2Ev" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="20" number="95" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana20CommandResponseModel5resetEv" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="8" number="97" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana20CommandResponseModel9setUint32Ej" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="8" number="107" branch="false"/>
+							</lines>
+						</method>
+					</methods>
+					<lines>
+						<line branch="false" hits="48" number="45"/>
+						<line branch="false" hits="48" number="46"/>
+						<line branch="false" hits="20" number="95"/>
+						<line branch="false" hits="8" number="97"/>
+						<line branch="false" hits="8" number="98"/>
+						<line branch="false" hits="8" number="99"/>
+						<line branch="false" hits="8" number="100"/>
+						<line branch="false" hits="8" number="101"/>
+						<line branch="false" hits="8" number="102"/>
+						<line branch="false" hits="8" number="107"/>
+						<line branch="false" hits="8" number="108"/>
+						<line branch="false" hits="8" number="109"/>
+						<line branch="false" hits="8" number="110"/>
+						<line branch="false" hits="8" number="111"/>
+						<line branch="false" hits="8" number="112"/>
+						<line branch="false" hits="8" number="113"/>
+					</lines>
+				</class>
+				<class branch-rate="0.0" complexity="0" filename="Shared/Inc/Crc16.hpp" line-rate="1.0" name="Shared.Inc.Crc16.hpp">
+					<methods>
+						<method name="_ZN6arcana5crc16EtPKhm" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="40" number="24" branch="false"/>
+							</lines>
+						</method>
+					</methods>
+					<lines>
+						<line branch="false" hits="40" number="24"/>
+						<line branch="false" hits="40" number="25"/>
+						<line branch="false" hits="359" number="26"/>
+						<line branch="false" hits="319" number="27"/>
+						<line branch="false" hits="2871" number="28"/>
+						<line branch="false" hits="2552" number="29"/>
+						<line branch="false" hits="1301" number="30"/>
+						<line branch="false" hits="1251" number="32"/>
+						<line branch="false" hits="40" number="36"/>
+					</lines>
+				</class>
+				<class branch-rate="0.0" complexity="0" filename="Shared/Inc/FrameCodec.hpp" line-rate="1.0" name="Shared.Inc.FrameCodec.hpp">
+					<methods>
+						<method name="_ZN6arcana10FrameCodec5frameEPKhmhhPhmRm" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="19" number="55" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana10FrameCodec7deframeEPKhmRS2_RmRhS5_" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="13" number="96" branch="false"/>
+							</lines>
+						</method>
+					</methods>
+					<lines>
+						<line branch="false" hits="19" number="55"/>
+						<line branch="false" hits="19" number="59"/>
+						<line branch="false" hits="19" number="60"/>
+						<line branch="false" hits="17" number="61"/>
+						<line branch="false" hits="17" number="64"/>
+						<line branch="false" hits="17" number="65"/>
+						<line branch="false" hits="17" number="66"/>
+						<line branch="false" hits="17" number="67"/>
+						<line branch="false" hits="17" number="68"/>
+						<line branch="false" hits="17" number="69"/>
+						<line branch="false" hits="17" number="70"/>
+						<line branch="false" hits="17" number="73"/>
+						<line branch="false" hits="15" number="74"/>
+						<line branch="false" hits="17" number="78"/>
+						<line branch="false" hits="17" number="79"/>
+						<line branch="false" hits="17" number="80"/>
+						<line branch="false" hits="17" number="82"/>
+						<line branch="false" hits="17" number="83"/>
+						<line branch="false" hits="13" number="96"/>
+						<line branch="false" hits="13" number="101"/>
+						<line branch="false" hits="11" number="104"/>
+						<line branch="false" hits="1" number="105"/>
+						<line branch="false" hits="10" number="109"/>
+						<line branch="false" hits="10" number="112"/>
+						<line branch="false" hits="10" number="113"/>
+						<line branch="false" hits="10" number="115"/>
+						<line branch="false" hits="10" number="118"/>
+						<line branch="false" hits="10" number="119"/>
+						<line branch="false" hits="10" number="120"/>
+						<line branch="false" hits="10" number="121"/>
+						<line branch="false" hits="7" number="124"/>
+						<line branch="false" hits="7" number="125"/>
+						<line branch="false" hits="7" number="126"/>
+						<line branch="false" hits="7" number="127"/>
+						<line branch="false" hits="7" number="128"/>
+					</lines>
+				</class>
+				<class branch-rate="0.0" complexity="0" filename="Shared/Inc/ICommand.hpp" line-rate="1.0" name="Shared.Inc.ICommand.hpp">
+					<methods>
+						<method name="_ZN6arcana8ICommandD0Ev" signature="" line-rate="0.0" branch-rate="0.0">
+							<lines>
+								<line hits="0" number="21" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana8ICommandD2Ev" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="26" number="21" branch="false"/>
+							</lines>
+						</method>
+					</methods>
+					<lines>
+						<line branch="false" hits="26" number="21"/>
+					</lines>
+				</class>
+				<class branch-rate="0.0" complexity="0" filename="Shared/Inc/Models.hpp" line-rate="1.0" name="Shared.Inc.Models.hpp">
+					<methods>
+						<method name="_ZN6arcana10TimerModelC2Ev" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="19" number="32" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana10TimerModel6updateEt" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="14" number="34" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana12CounterModelC2Ev" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="3" number="48" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana12CounterModel9incrementEv" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="2" number="50" branch="false"/>
+							</lines>
+						</method>
+					</methods>
+					<lines>
+						<line branch="false" hits="19" number="32"/>
+						<line branch="false" hits="14" number="34"/>
+						<line branch="false" hits="14" number="35"/>
+						<line branch="false" hits="14" number="36"/>
+						<line branch="false" hits="14" number="37"/>
+						<line branch="false" hits="14" number="38"/>
+						<line branch="false" hits="3" number="48"/>
+						<line branch="false" hits="2" number="50"/>
+						<line branch="false" hits="2" number="51"/>
+						<line branch="false" hits="2" number="52"/>
+						<line branch="false" hits="2" number="53"/>
+					</lines>
+				</class>
+				<class branch-rate="0.0" complexity="0" filename="Shared/Inc/Observable.hpp" line-rate="0.75" name="Shared.Inc.Observable.hpp">
+					<methods>
+						<method name="_ZN6arcana5ModelC2Eh" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="42" number="66" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana5ModelD0Ev" signature="" line-rate="0.0" branch-rate="0.0">
+							<lines>
+								<line hits="0" number="67" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana5ModelD2Ev" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="42" number="67" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana5Model15updateTimestampEv" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="25" number="69" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana10ObservableINS_10TimerModelEEC2EPKc" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="16" number="98" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana10ObservableINS_20CommandResponseModelEEC2EPKc" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="11" number="98" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana10ObservableINS_10TimerModelEE9subscribeEPFvPS1_PvES4_" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="10" number="107" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana10ObservableINS_20CommandResponseModelEE9subscribeEPFvPS1_PvES4_" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="1" number="107" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana10ObservableINS_20CommandResponseModelEE6notifyEPS1_" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="5" number="152" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana10ObservableINS_10TimerModelEE6notifyEPS1_" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="36650" number="152" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana20ObservableDispatcher22getQueueSpaceAvailableEv" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="3" number="302" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana20ObservableDispatcher13hasQueueSpaceEv" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="3" number="320" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana20ObservableDispatcher8getQueueEv" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="1" number="328" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana10ObservableINS_20CommandResponseModelEE7publishEPS1_" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="3" number="334" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana10ObservableINS_10TimerModelEE7publishEPS1_" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="1" number="334" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZZN6arcana10ObservableINS_10TimerModelEE7publishEPS1_ENKUlPvPNS_5ModelEE_clES4_S6_" signature="" line-rate="0.0" branch-rate="0.0">
+							<lines>
+								<line hits="0" number="340" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZZN6arcana10ObservableINS_20CommandResponseModelEE7publishEPS1_ENKUlPvPNS_5ModelEE_clES4_S6_" signature="" line-rate="0.0" branch-rate="0.0">
+							<lines>
+								<line hits="0" number="340" branch="false"/>
+							</lines>
+						</method>
+					</methods>
+					<lines>
+						<line branch="false" hits="42" number="66"/>
+						<line branch="false" hits="42" number="67"/>
+						<line branch="false" hits="25" number="69"/>
+						<line branch="false" hits="27" number="98"/>
+						<line branch="false" hits="27" number="99"/>
+						<line branch="false" hits="11" number="107"/>
+						<line branch="false" hits="11" number="108"/>
+						<line branch="false" hits="11" number="111"/>
+						<line branch="false" hits="0" number="112"/>
+						<line branch="false" hits="0" number="113"/>
+						<line branch="false" hits="0" number="114"/>
+						<line branch="false" hits="11" number="119"/>
+						<line branch="false" hits="11" number="122"/>
+						<line branch="false" hits="11" number="123"/>
+						<line branch="false" hits="11" number="124"/>
+						<line branch="false" hits="11" number="125"/>
+						<line branch="false" hits="36655" number="152"/>
+						<line branch="false" hits="73305" number="153"/>
+						<line branch="false" hits="36650" number="154"/>
+						<line branch="false" hits="36650" number="155"/>
+						<line branch="false" hits="36655" number="158"/>
+						<line branch="false" hits="3" number="302"/>
+						<line branch="false" hits="3" number="303"/>
+						<line branch="false" hits="1" number="304"/>
+						<line branch="false" hits="3" number="320"/>
+						<line branch="false" hits="1" number="328"/>
+						<line branch="false" hits="4" number="334"/>
+						<line branch="false" hits="4" number="335"/>
+						<line branch="false" hits="4" number="336"/>
+						<line branch="false" hits="1" number="337"/>
+						<line branch="false" hits="0" number="340"/>
+						<line branch="false" hits="0" number="341"/>
+						<line branch="false" hits="0" number="343"/>
+						<line branch="false" hits="0" number="344"/>
+						<line branch="false" hits="0" number="345"/>
+						<line branch="false" hits="0" number="347"/>
+					</lines>
+				</class>
+			</classes>
+		</package>
+		<package line-rate="0.08771929824561403" branch-rate="0.0" name="Shared.Src" complexity="0">
+			<classes>
+				<class branch-rate="0.0" complexity="0" filename="Shared/Src/Observable.cpp" line-rate="0.08771929824561403" name="Shared.Src.Observable.cpp">
+					<methods>
+						<method name="_ZN6arcana20ObservableDispatcher14dispatcherTaskEPv" signature="" line-rate="0.0" branch-rate="0.0">
+							<lines>
+								<line hits="0" number="29" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana20ObservableDispatcher5startEv" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="1" number="64" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana20ObservableDispatcher7enqueueERKNS0_12DispatchItemE" signature="" line-rate="0.0" branch-rate="0.0">
+							<lines>
+								<line hits="0" number="95" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana20ObservableDispatcher19enqueueHighPriorityERKNS0_12DispatchItemE" signature="" line-rate="0.0" branch-rate="0.0">
+							<lines>
+								<line hits="0" number="119" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana20ObservableDispatcher14enqueueFromISRERKNS0_12DispatchItemEPl" signature="" line-rate="0.0" branch-rate="0.0">
+							<lines>
+								<line hits="0" number="143" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana20ObservableDispatcher26enqueueHighPriorityFromISRERKNS0_12DispatchItemEPl" signature="" line-rate="0.0" branch-rate="0.0">
+							<lines>
+								<line hits="0" number="158" branch="false"/>
+							</lines>
+						</method>
+					</methods>
+					<lines>
+						<line branch="false" hits="0" number="29"/>
+						<line branch="false" hits="0" number="35"/>
+						<line branch="false" hits="0" number="36"/>
+						<line branch="false" hits="0" number="37"/>
+						<line branch="false" hits="0" number="38"/>
+						<line branch="false" hits="0" number="42"/>
+						<line branch="false" hits="0" number="43"/>
+						<line branch="false" hits="0" number="44"/>
+						<line branch="false" hits="0" number="49"/>
+						<line branch="false" hits="0" number="50"/>
+						<line branch="false" hits="0" number="51"/>
+						<line branch="false" hits="0" number="52"/>
+						<line branch="false" hits="0" number="56"/>
+						<line branch="false" hits="0" number="57"/>
+						<line branch="false" hits="0" number="58"/>
+						<line branch="false" hits="0" number="61"/>
+						<line branch="false" hits="1" number="64"/>
+						<line branch="false" hits="1" number="65"/>
+						<line branch="false" hits="1" number="68"/>
+						<line branch="false" hits="1" number="76"/>
+						<line branch="false" hits="1" number="84"/>
+						<line branch="false" hits="0" number="95"/>
+						<line branch="false" hits="0" number="96"/>
+						<line branch="false" hits="0" number="98"/>
+						<line branch="false" hits="0" number="100"/>
+						<line branch="false" hits="0" number="101"/>
+						<line branch="false" hits="0" number="103"/>
+						<line branch="false" hits="0" number="106"/>
+						<line branch="false" hits="0" number="108"/>
+						<line branch="false" hits="0" number="110"/>
+						<line branch="false" hits="0" number="111"/>
+						<line branch="false" hits="0" number="113"/>
+						<line branch="false" hits="0" number="116"/>
+						<line branch="false" hits="0" number="119"/>
+						<line branch="false" hits="0" number="120"/>
+						<line branch="false" hits="0" number="122"/>
+						<line branch="false" hits="0" number="124"/>
+						<line branch="false" hits="0" number="125"/>
+						<line branch="false" hits="0" number="127"/>
+						<line branch="false" hits="0" number="130"/>
+						<line branch="false" hits="0" number="132"/>
+						<line branch="false" hits="0" number="134"/>
+						<line branch="false" hits="0" number="135"/>
+						<line branch="false" hits="0" number="137"/>
+						<line branch="false" hits="0" number="140"/>
+						<line branch="false" hits="0" number="143"/>
+						<line branch="false" hits="0" number="146"/>
+						<line branch="false" hits="0" number="147"/>
+						<line branch="false" hits="0" number="150"/>
+						<line branch="false" hits="0" number="152"/>
+						<line branch="false" hits="0" number="155"/>
+						<line branch="false" hits="0" number="158"/>
+						<line branch="false" hits="0" number="161"/>
+						<line branch="false" hits="0" number="162"/>
+						<line branch="false" hits="0" number="165"/>
+						<line branch="false" hits="0" number="167"/>
+						<line branch="false" hits="0" number="170"/>
+					</lines>
+				</class>
+			</classes>
+		</package>
+		<package line-rate="1.0" branch-rate="0.0" name="Targets.stm32f051c8.Services.command" complexity="0">
+			<classes>
+				<class branch-rate="0.0" complexity="0" filename="Targets/stm32f051c8/Services/command/CommandCodec.cpp" line-rate="1.0" name="Targets.stm32f051c8.Services.command.CommandCodec.cpp">
+					<methods>
+						<method name="_ZN6arcana12CommandCodec13decodeRequestEPKhmRNS_14CommandRequestE" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="4" number="11" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana12CommandCodec14encodeResponseERKNS_20CommandResponseModelEPhmRmhh" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="5" number="41" branch="false"/>
+							</lines>
+						</method>
+					</methods>
+					<lines>
+						<line branch="false" hits="4" number="11"/>
+						<line branch="false" hits="4" number="14"/>
+						<line branch="false" hits="4" number="15"/>
+						<line branch="false" hits="4" number="16"/>
+						<line branch="false" hits="4" number="17"/>
+						<line branch="false" hits="4" number="19"/>
+						<line branch="false" hits="2" number="20"/>
+						<line branch="false" hits="2" number="24"/>
+						<line branch="false" hits="2" number="26"/>
+						<line branch="false" hits="2" number="27"/>
+						<line branch="false" hits="2" number="28"/>
+						<line branch="false" hits="2" number="31"/>
+						<line branch="false" hits="2" number="32"/>
+						<line branch="false" hits="2" number="33"/>
+						<line branch="false" hits="2" number="34"/>
+						<line branch="false" hits="1" number="35"/>
+						<line branch="false" hits="2" number="38"/>
+						<line branch="false" hits="5" number="41"/>
+						<line branch="false" hits="5" number="45"/>
+						<line branch="false" hits="5" number="46"/>
+						<line branch="false" hits="5" number="48"/>
+						<line branch="false" hits="5" number="51"/>
+						<line branch="false" hits="5" number="52"/>
+						<line branch="false" hits="5" number="53"/>
+						<line branch="false" hits="5" number="54"/>
+						<line branch="false" hits="5" number="55"/>
+						<line branch="false" hits="2" number="56"/>
+						<line branch="false" hits="5" number="60"/>
+						<line branch="false" hits="5" number="61"/>
+					</lines>
+				</class>
+				<class branch-rate="0.0" complexity="0" filename="Targets/stm32f051c8/Services/command/CommandDispatcher.cpp" line-rate="1.0" name="Targets.stm32f051c8.Services.command.CommandDispatcher.cpp">
+					<methods>
+						<method name="_ZN6arcana17CommandDispatcher14executeCommandERKNS_14CommandRequestE" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="8" number="10" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana17CommandDispatcher8dispatchERKNS_14CommandRequestE" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="3" number="24" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana17CommandDispatcher12dispatchSyncERKNS_14CommandRequestE" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="5" number="29" branch="false"/>
+							</lines>
+						</method>
+					</methods>
+					<lines>
+						<line branch="false" hits="8" number="10"/>
+						<line branch="false" hits="8" number="11"/>
+						<line branch="false" hits="8" number="12"/>
+						<line branch="false" hits="8" number="14"/>
+						<line branch="false" hits="8" number="15"/>
+						<line branch="false" hits="3" number="16"/>
+						<line branch="false" hits="3" number="17"/>
+						<line branch="false" hits="5" number="20"/>
+						<line branch="false" hits="5" number="21"/>
+						<line branch="false" hits="3" number="24"/>
+						<line branch="false" hits="3" number="25"/>
+						<line branch="false" hits="3" number="26"/>
+						<line branch="false" hits="5" number="29"/>
+						<line branch="false" hits="5" number="30"/>
+						<line branch="false" hits="5" number="31"/>
+						<line branch="false" hits="5" number="32"/>
+					</lines>
+				</class>
+				<class branch-rate="0.0" complexity="0" filename="Targets/stm32f051c8/Services/command/CommandDispatcher.hpp" line-rate="1.0" name="Targets.stm32f051c8.Services.command.CommandDispatcher.hpp">
+					<methods>
+						<method name="_ZN6arcana17CommandDispatcherC2ERNS_15CommandRegistryERNS_10ObservableINS_20CommandResponseModelEEE" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="11" number="27" branch="false"/>
+							</lines>
+						</method>
+					</methods>
+					<lines>
+						<line branch="false" hits="11" number="27"/>
+						<line branch="false" hits="11" number="28"/>
+					</lines>
+				</class>
+				<class branch-rate="0.0" complexity="0" filename="Targets/stm32f051c8/Services/command/CommandRegistry.cpp" line-rate="1.0" name="Targets.stm32f051c8.Services.command.CommandRegistry.cpp">
+					<methods>
+						<method name="_ZN6arcana15CommandRegistry15registerCommandEPNS_8ICommandE" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="30" number="10" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZNK6arcana15CommandRegistry11findCommandENS_10CommandKeyE" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="14" number="27" branch="false"/>
+							</lines>
+						</method>
+					</methods>
+					<lines>
+						<line branch="false" hits="30" number="10"/>
+						<line branch="false" hits="30" number="11"/>
+						<line branch="false" hits="29" number="12"/>
+						<line branch="false" hits="28" number="15"/>
+						<line branch="false" hits="62" number="16"/>
+						<line branch="false" hits="35" number="17"/>
+						<line branch="false" hits="1" number="18"/>
+						<line branch="false" hits="27" number="22"/>
+						<line branch="false" hits="27" number="23"/>
+						<line branch="false" hits="27" number="24"/>
+						<line branch="false" hits="14" number="27"/>
+						<line branch="false" hits="18" number="28"/>
+						<line branch="false" hits="13" number="29"/>
+						<line branch="false" hits="9" number="30"/>
+						<line branch="false" hits="5" number="33"/>
+					</lines>
+				</class>
+				<class branch-rate="0.0" complexity="0" filename="Targets/stm32f051c8/Services/command/CommandRegistry.hpp" line-rate="1.0" name="Targets.stm32f051c8.Services.command.CommandRegistry.hpp">
+					<methods>
+						<method name="_ZNK6arcana15CommandRegistry15getCommandCountEv" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="8" number="40" branch="false"/>
+							</lines>
+						</method>
+					</methods>
+					<lines>
+						<line branch="false" hits="8" number="40"/>
+					</lines>
+				</class>
+				<class branch-rate="0.0" complexity="0" filename="Targets/stm32f051c8/Services/command/CommandService.cpp" line-rate="1.0" name="Targets.stm32f051c8.Services.command.CommandService.cpp">
+					<methods>
+						<method name="_ZN6arcana14CommandService4initEv" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="5" number="19" branch="false"/>
+							</lines>
+						</method>
+					</methods>
+					<lines>
+						<line branch="false" hits="5" number="19"/>
+						<line branch="false" hits="5" number="20"/>
+						<line branch="false" hits="5" number="21"/>
+						<line branch="false" hits="5" number="22"/>
+					</lines>
+				</class>
+				<class branch-rate="0.0" complexity="0" filename="Targets/stm32f051c8/Services/command/CommandService.hpp" line-rate="1.0" name="Targets.stm32f051c8.Services.command.CommandService.hpp">
+					<methods>
+						<method name="_ZN6arcana14CommandService7executeERKNS_14CommandRequestE" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="1" number="32" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana14CommandService11executeSyncERKNS_14CommandRequestE" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="2" number="39" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZNK6arcana14CommandService15getCommandCountEv" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="1" number="46" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana14CommandService11getRegistryEv" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="1" number="51" branch="false"/>
+							</lines>
+						</method>
+					</methods>
+					<lines>
+						<line branch="false" hits="1" number="32"/>
+						<line branch="false" hits="1" number="33"/>
+						<line branch="false" hits="2" number="39"/>
+						<line branch="false" hits="2" number="40"/>
+						<line branch="false" hits="1" number="46"/>
+						<line branch="false" hits="1" number="51"/>
+					</lines>
+				</class>
+			</classes>
+		</package>
+		<package line-rate="1.0" branch-rate="0.0" name="Targets.stm32f051c8.Services.command.impl" complexity="0">
+			<classes>
+				<class branch-rate="0.0" complexity="0" filename="Targets/stm32f051c8/Services/command/impl/GetCounterCommand.hpp" line-rate="1.0" name="Targets.stm32f051c8.Services.command.impl.GetCounterCommand.hpp">
+					<methods>
+						<method name="_ZNK6arcana17GetCounterCommand6getKeyEv" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="8" number="21" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana17GetCounterCommand7executeERKNS_14CommandRequestERNS_20CommandResponseModelE" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="2" number="25" branch="false"/>
+							</lines>
+						</method>
+					</methods>
+					<lines>
+						<line branch="false" hits="8" number="21"/>
+						<line branch="false" hits="8" number="22"/>
+						<line branch="false" hits="2" number="25"/>
+						<line branch="false" hits="2" number="27"/>
+						<line branch="false" hits="2" number="28"/>
+						<line branch="false" hits="2" number="29"/>
+						<line branch="false" hits="2" number="30"/>
+					</lines>
+				</class>
+				<class branch-rate="0.0" complexity="0" filename="Targets/stm32f051c8/Services/command/impl/PingCommand.hpp" line-rate="1.0" name="Targets.stm32f051c8.Services.command.impl.PingCommand.hpp">
+					<methods>
+						<method name="_ZNK6arcana11PingCommand6getKeyEv" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="15" number="23" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana11PingCommand7executeERKNS_14CommandRequestERNS_20CommandResponseModelE" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="3" number="27" branch="false"/>
+							</lines>
+						</method>
+					</methods>
+					<lines>
+						<line branch="false" hits="15" number="23"/>
+						<line branch="false" hits="15" number="24"/>
+						<line branch="false" hits="3" number="27"/>
+						<line branch="false" hits="3" number="29"/>
+						<line branch="false" hits="3" number="30"/>
+						<line branch="false" hits="3" number="31"/>
+						<line branch="false" hits="3" number="32"/>
+					</lines>
+				</class>
+			</classes>
+		</package>
+		<package line-rate="1.0" branch-rate="0.0" name="Targets.stm32f051c8.Services.service" complexity="0">
+			<classes>
+				<class branch-rate="0.0" complexity="0" filename="Targets/stm32f051c8/Services/service/CounterService.cpp" line-rate="1.0" name="Targets.stm32f051c8.Services.service.CounterService.cpp">
+					<methods>
+						<method name="_ZN6arcana14CounterService12onTimerEventEPNS_10TimerModelEPv" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="17" number="13" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana14CounterService4initEPNS_10ObservableINS_10TimerModelEEE" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="7" number="21" branch="false"/>
+							</lines>
+						</method>
+					</methods>
+					<lines>
+						<line branch="false" hits="17" number="13"/>
+						<line branch="false" hits="17" number="15"/>
+						<line branch="false" hits="17" number="16"/>
+						<line branch="false" hits="17" number="17"/>
+						<line branch="false" hits="17" number="19"/>
+						<line branch="false" hits="7" number="21"/>
+						<line branch="false" hits="7" number="22"/>
+						<line branch="false" hits="7" number="23"/>
+						<line branch="false" hits="4" number="24"/>
+						<line branch="false" hits="7" number="26"/>
+					</lines>
+				</class>
+				<class branch-rate="0.0" complexity="0" filename="Targets/stm32f051c8/Services/service/CounterService.hpp" line-rate="1.0" name="Targets.stm32f051c8.Services.service.CounterService.hpp">
+					<methods>
+						<method name="_ZNK6arcana14CounterService8getCountEv" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="10" number="37" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana14CounterService5resetEv" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="3" number="42" branch="false"/>
+							</lines>
+						</method>
+					</methods>
+					<lines>
+						<line branch="false" hits="10" number="37"/>
+						<line branch="false" hits="3" number="42"/>
+					</lines>
+				</class>
+				<class branch-rate="0.0" complexity="0" filename="Targets/stm32f051c8/Services/service/TimeDisplayService.cpp" line-rate="1.0" name="Targets.stm32f051c8.Services.service.TimeDisplayService.cpp">
+					<methods>
+						<method name="_ZN6arcana18TimeDisplayService12onTimerEventEPNS_10TimerModelEPv" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="36633" number="13" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana18TimeDisplayService16updateTimeStringEv" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="36640" number="33" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana18TimeDisplayService4initEPNS_10ObservableINS_10TimerModelEEE" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="7" number="47" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana18TimeDisplayService5resetEv" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="8" number="55" branch="false"/>
+							</lines>
+						</method>
+					</methods>
+					<lines>
+						<line branch="false" hits="36633" number="13"/>
+						<line branch="false" hits="36633" number="14"/>
+						<line branch="false" hits="36633" number="15"/>
+						<line branch="false" hits="36632" number="18"/>
+						<line branch="false" hits="36632" number="21"/>
+						<line branch="false" hits="40295" number="24"/>
+						<line branch="false" hits="3663" number="25"/>
+						<line branch="false" hits="3663" number="26"/>
+						<line branch="false" hits="36632" number="30"/>
+						<line branch="false" hits="36640" number="33"/>
+						<line branch="false" hits="36640" number="34"/>
+						<line branch="false" hits="36640" number="35"/>
+						<line branch="false" hits="36640" number="36"/>
+						<line branch="false" hits="36640" number="37"/>
+						<line branch="false" hits="36640" number="40"/>
+						<line branch="false" hits="36640" number="44"/>
+						<line branch="false" hits="36640" number="45"/>
+						<line branch="false" hits="7" number="47"/>
+						<line branch="false" hits="7" number="48"/>
+						<line branch="false" hits="7" number="50"/>
+						<line branch="false" hits="6" number="51"/>
+						<line branch="false" hits="7" number="53"/>
+						<line branch="false" hits="8" number="55"/>
+						<line branch="false" hits="8" number="56"/>
+						<line branch="false" hits="8" number="57"/>
+						<line branch="false" hits="8" number="58"/>
+						<line branch="false" hits="8" number="59"/>
+					</lines>
+				</class>
+				<class branch-rate="0.0" complexity="0" filename="Targets/stm32f051c8/Services/service/TimeDisplayService.hpp" line-rate="1.0" name="Targets.stm32f051c8.Services.service.TimeDisplayService.hpp">
+					<methods>
+						<method name="_ZNK6arcana18TimeDisplayService13getTimeStringEv" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="3" number="49" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZNK6arcana18TimeDisplayService15getTotalSecondsEv" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="6" number="54" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZNK6arcana18TimeDisplayService8getHoursEv" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="36641" number="59" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZNK6arcana18TimeDisplayService10getMinutesEv" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="36641" number="64" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZNK6arcana18TimeDisplayService10getSecondsEv" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="36641" number="69" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZNK6arcana18TimeDisplayService15getMillisecondsEv" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="36644" number="74" branch="false"/>
+							</lines>
+						</method>
+					</methods>
+					<lines>
+						<line branch="false" hits="3" number="49"/>
+						<line branch="false" hits="6" number="54"/>
+						<line branch="false" hits="36641" number="59"/>
+						<line branch="false" hits="36641" number="64"/>
+						<line branch="false" hits="36641" number="69"/>
+						<line branch="false" hits="36644" number="74"/>
+					</lines>
+				</class>
+				<class branch-rate="0.0" complexity="0" filename="Targets/stm32f051c8/Services/service/TimerService.cpp" line-rate="1.0" name="Targets.stm32f051c8.Services.service.TimerService.cpp">
+					<methods>
+						<method name="_ZN6arcana12TimerService13timerCallbackEPv" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="3" number="13" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana12TimerService4initEt" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="4" number="28" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana12TimerService5startEv" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="2" number="43" branch="false"/>
+							</lines>
+						</method>
+						<method name="_ZN6arcana12TimerService4stopEv" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="2" number="49" branch="false"/>
+							</lines>
+						</method>
+					</methods>
+					<lines>
+						<line branch="false" hits="3" number="13"/>
+						<line branch="false" hits="3" number="15"/>
+						<line branch="false" hits="3" number="16"/>
+						<line branch="false" hits="3" number="19"/>
+						<line branch="false" hits="3" number="22"/>
+						<line branch="false" hits="1" number="23"/>
+						<line branch="false" hits="4" number="28"/>
+						<line branch="false" hits="4" number="29"/>
+						<line branch="false" hits="4" number="30"/>
+						<line branch="false" hits="4" number="33"/>
+						<line branch="false" hits="4" number="41"/>
+						<line branch="false" hits="2" number="43"/>
+						<line branch="false" hits="2" number="44"/>
+						<line branch="false" hits="1" number="45"/>
+						<line branch="false" hits="2" number="47"/>
+						<line branch="false" hits="2" number="49"/>
+						<line branch="false" hits="2" number="50"/>
+						<line branch="false" hits="1" number="51"/>
+						<line branch="false" hits="2" number="53"/>
+					</lines>
+				</class>
+				<class branch-rate="0.0" complexity="0" filename="Targets/stm32f051c8/Services/service/TimerService.hpp" line-rate="1.0" name="Targets.stm32f051c8.Services.service.TimerService.hpp">
+					<methods>
+						<method name="_ZNK6arcana12TimerService12getTickCountEv" signature="" line-rate="1.0" branch-rate="1.0">
+							<lines>
+								<line hits="4" number="55" branch="false"/>
+							</lines>
+						</method>
+					</methods>
+					<lines>
+						<line branch="false" hits="4" number="55"/>
+					</lines>
+				</class>
+			</classes>
+		</package>
+	</packages>
+</coverage>
