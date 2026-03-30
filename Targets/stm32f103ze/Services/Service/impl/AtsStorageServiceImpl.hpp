@@ -23,6 +23,9 @@ namespace atsstorage {
  * - ChaCha20 encryption, CRC-32 integrity
  * - Daily midnight rotation
  */
+/// ECG sample callback type (decouples Service from View)
+using EcgSampleCallback = void (*)(uint8_t sample);
+
 class AtsStorageServiceImpl : public AtsStorageService {
 public:
     static AtsStorageService& getInstance();
@@ -31,6 +34,9 @@ public:
     ServiceStatus init() override;
     ServiceStatus start() override;
     void stop() override;
+
+    /** Register ECG sample callback (called from Controller wiring) */
+    void setEcgCallback(EcgSampleCallback cb) { mEcgCallback = cb; }
 
     uint16_t queryByDate(uint32_t dateYYYYMMDD,
                          SensorDataModel* out, uint16_t maxCount) override;
@@ -141,6 +147,7 @@ private:
     bool mDeviceDbReady;
     volatile bool mFormatRequested;
     volatile bool mUploadPause;
+    EcgSampleCallback mEcgCallback = nullptr;
     volatile bool mUploadRequested;
 
     // Pending write data

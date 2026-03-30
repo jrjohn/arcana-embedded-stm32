@@ -54,8 +54,8 @@ Controller& Controller::getInstance() {
 static lcd::LcdViewModel sViewModel;
 static lcd::MainView     sMainView;
 
-// Global pointer for cross-module ECG push (AtsStorageService → MainView)
-lcd::MainView* g_mainView = &sMainView;
+// ECG callback: Service → Controller → View (no direct Service→View coupling)
+static void ecgCallback(uint8_t sample) { sMainView.pushEcgSample(sample); }
 
 void Controller::run() {
     wireServices();
@@ -79,6 +79,9 @@ void Controller::wireServices() {
     mMqtt      = &mqtt::MqttServiceImpl::getInstance();
     mBle       = &ble::BleServiceImpl::getInstance();
     mOta       = &OtaServiceImpl::getInstance();
+
+    // Wire ECG callback: AtsStorage → Controller → MainView (decoupled)
+    static_cast<atsstorage::AtsStorageServiceImpl*>(mSdStorage)->setEcgCallback(ecgCallback);
 
     // Wire OTA <- ESP8266
     static_cast<OtaServiceImpl*>(mOta)->input.esp = &Esp8266::getInstance();
