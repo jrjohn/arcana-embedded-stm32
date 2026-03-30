@@ -59,7 +59,7 @@ target_include_directories(arcana-f051.elf PRIVATE
 )
 target_compile_options(arcana-f051.elf PRIVATE
     $<$<COMPILE_LANGUAGE:C>:${F051_MCU_FLAGS} -Wall -fdata-sections -ffunction-sections -std=gnu11>
-    $<$<COMPILE_LANGUAGE:CXX>:${F051_MCU_FLAGS} -Wall -fdata-sections -ffunction-sections -std=gnu++14 -fno-exceptions -fno-rtti -fno-use-cxa-atexit>
+    $<$<COMPILE_LANGUAGE:CXX>:${F051_MCU_FLAGS} -Wall -fdata-sections -ffunction-sections -std=gnu++20 -fno-exceptions -fno-rtti -fno-use-cxa-atexit>
     $<$<COMPILE_LANGUAGE:ASM>:${F051_MCU_FLAGS} -x assembler-with-cpp>
 )
 target_link_options(arcana-f051.elf PRIVATE
@@ -140,7 +140,7 @@ target_include_directories(arcana-f103.elf PRIVATE
 )
 target_compile_options(arcana-f103.elf PRIVATE
     $<$<COMPILE_LANGUAGE:C>:${F103_MCU_FLAGS} -Wall -fdata-sections -ffunction-sections -std=gnu11 -Wno-dangling-pointer>
-    $<$<COMPILE_LANGUAGE:CXX>:${F103_MCU_FLAGS} -Wall -fdata-sections -ffunction-sections -std=gnu++14 -fno-exceptions -fno-rtti -fno-use-cxa-atexit>
+    $<$<COMPILE_LANGUAGE:CXX>:${F103_MCU_FLAGS} -Wall -fdata-sections -ffunction-sections -std=gnu++20 -fno-exceptions -fno-rtti -fno-use-cxa-atexit>
     $<$<COMPILE_LANGUAGE:ASM>:${F103_MCU_FLAGS} -x assembler-with-cpp>
 )
 target_link_options(arcana-f103.elf PRIVATE
