@@ -1,5 +1,7 @@
 #include "BleServiceImpl.hpp"
 #include "CommandBridge.hpp"
+#include "ChaCha20.hpp"
+#include "RegistrationServiceImpl.hpp"
 #include "Log.hpp"
 #include "EventCodes.hpp"
 #ifdef ARCANA_CMD_CRYPTO
@@ -106,18 +108,10 @@ void BleServiceImpl::taskLoop() {
             }
         }
 
-        // Sensor push at ~1Hz
+        // Sensor push at ~1Hz — ChaCha20 encrypted protobuf (same format as MQTT)
         if (mSensorDirty) {
             mSensorDirty = false;
-#ifdef ARCANA_CMD_CRYPTO
-            // Only push when BLE session is established (same gate as WiFi/MQTT)
-            if (CommandBridge::getInstance().mEncryptionEnabled &&
-                CommandBridge::getInstance().mKeyExchange.hasSession(CmdFrameItem::BLE, 0)) {
-                pushSensorEncrypted();
-            }
-#else
-            pushSensorJson();
-#endif
+            pushSensorEncrypted();
         }
     }
 }
@@ -171,10 +165,9 @@ void BleServiceImpl::pushSensorJson() {
     }
 }
 
-#ifdef ARCANA_CMD_CRYPTO
 // ---------------------------------------------------------------------------
-// Encrypted sensor push — AES-256-CCM with BLE session key
-// Same protobuf format as MQTT encrypted publish for App compatibility
+// Encrypted sensor push — ChaCha20 + FrameCodec (same format as MQTT)
+// No ARCANA_CMD_CRYPTO dependency — uses ChaCha20 (software, zero extra RAM)
 // ---------------------------------------------------------------------------
 
 static uint16_t bleVarInt(uint8_t* buf, uint32_t val) {
@@ -185,7 +178,7 @@ static uint16_t bleVarInt(uint8_t* buf, uint32_t val) {
 }
 
 static uint16_t blePbSint32(uint8_t* buf, uint8_t fieldNum, int32_t val) {
-    buf[0] = (fieldNum << 3);  // wire type 0
+    buf[0] = (fieldNum << 3);
     uint32_t zz = (uint32_t)((val << 1) ^ (val >> 31));
     return 1 + bleVarInt(buf + 1, zz);
 }
@@ -196,9 +189,11 @@ static uint16_t blePbUint32(uint8_t* buf, uint8_t fieldNum, uint32_t val) {
 }
 
 void BleServiceImpl::pushSensorEncrypted() {
-    CommandBridge& bridge = CommandBridge::getInstance();
+    // Same key as MQTT: comm_key (ECDH-derived) or device_key (fallback)
+    auto& regSvc = reg::RegistrationServiceImpl::getInstance();
+    const uint8_t* key = regSvc.getCommKey();
 
-    // 1. Encode protobuf (~20-30 bytes)
+    // 1. Encode protobuf (~20-30 bytes) — identical to MQTT
     uint8_t pb[40];
     uint16_t pos = 0;
     pos += blePbSint32(pb + pos, 1, (int32_t)(mTemp * 10));
@@ -208,21 +203,55 @@ void BleServiceImpl::pushSensorEncrypted() {
     pos += blePbUint32(pb + pos, 5, (uint32_t)mAls);
     pos += blePbUint32(pb + pos, 6, (uint32_t)mPs);
 
-    // 2. Encrypt with BLE session key (AES-256-CCM)
-    uint8_t enc[40 + CryptoEngine::kOverhead];
-    size_t encLen = 0;
-    if (!bridge.mKeyExchange.encryptWithSession(
-            CmdFrameItem::BLE, 0, pb, pos, enc, sizeof(enc), encLen)) {
-        return;
-    }
+    // 2. Nonce: [tick:4][0:8] — same as MQTT
+    uint8_t nonce[12] = {};
+    uint32_t tick = xTaskGetTickCount();
+    memcpy(nonce, &tick, 4);
 
-    // 3. FrameCodec wrap (streamId 0x20 = sensor stream)
-    uint8_t frame[80];
+    // 3. ChaCha20 encrypt in-place
+    crypto::ChaCha20::crypt(key, nonce, 0, pb, pos);
+
+    // 4. Build payload: [nonce:12][encrypted_pb:N]
+    uint8_t enc[52];
+    memcpy(enc, nonce, 12);
+    memcpy(enc + 12, pb, pos);
+
+    // 5. FrameCodec wrap (streamId 0x20 = sensor stream)
+    uint8_t frame[72];
     size_t frameLen = 0;
-    if (!FrameCodec::frame(enc, encLen, FrameCodec::kFlagFin, 0x20,
+    if (!FrameCodec::frame(enc, 12 + pos, FrameCodec::kFlagFin, 0x20,
                             frame, sizeof(frame), frameLen)) {
         return;
     }
+
+    mBle.send(frame, (uint16_t)frameLen);
+}
+
+#ifdef ARCANA_CMD_CRYPTO
+void BleServiceImpl::pushSensorEncryptedCcm() {
+    // AES-256-CCM version — only when ARCANA_CMD_CRYPTO enabled + session up
+    CommandBridge& bridge = CommandBridge::getInstance();
+    if (!bridge.mEncryptionEnabled ||
+        !bridge.mKeyExchange.hasSession(CmdFrameItem::BLE, 0)) return;
+
+    uint8_t pb[40];
+    uint16_t pos = 0;
+    pos += blePbSint32(pb + pos, 1, (int32_t)(mTemp * 10));
+    pos += blePbSint32(pb + pos, 2, (int32_t)mAx);
+    pos += blePbSint32(pb + pos, 3, (int32_t)mAy);
+    pos += blePbSint32(pb + pos, 4, (int32_t)mAz);
+    pos += blePbUint32(pb + pos, 5, (uint32_t)mAls);
+    pos += blePbUint32(pb + pos, 6, (uint32_t)mPs);
+
+    uint8_t enc[40 + CryptoEngine::kOverhead];
+    size_t encLen = 0;
+    if (!bridge.mKeyExchange.encryptWithSession(
+            CmdFrameItem::BLE, 0, pb, pos, enc, sizeof(enc), encLen)) return;
+
+    uint8_t frame[80];
+    size_t frameLen = 0;
+    if (!FrameCodec::frame(enc, encLen, FrameCodec::kFlagFin, 0x20,
+                            frame, sizeof(frame), frameLen)) return;
 
     mBle.send(frame, (uint16_t)frameLen);
 }
