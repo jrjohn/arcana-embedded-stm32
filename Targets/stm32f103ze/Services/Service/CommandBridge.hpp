@@ -3,10 +3,6 @@
 #include "CommandTypes.hpp"
 #include "ICommand.hpp"
 #include "FrameCodec.hpp"
-#ifdef ARCANA_CMD_CRYPTO
-#include "CryptoEngine.hpp"
-#include "KeyExchangeManager.hpp"
-#endif
 #include "SensorDataCache.hpp"
 #include "FreeRTOS.h"
 #include "queue.h"
@@ -15,48 +11,50 @@
 
 namespace arcana {
 
-// Forward — defined in Hc08Ble.hpp but avoid circular include
+// Forward
 struct FrameItem;
 
 /**
- * Shared frame item for RX queue — used by both BLE and MQTT.
- * When ARCANA_CMD_CRYPTO is defined, MAX_DATA is larger to accommodate
- * encrypted protobuf frames (max 143 pb + 12 crypto + 9 frame = 164).
+ * Shared frame item for RX queue.
+ * MAX_DATA=80 fits encrypted commands: [nonce:12][cipher:28max][hmac:32] = 72B
  */
 struct CmdFrameItem {
-#ifdef ARCANA_CMD_CRYPTO
-    static constexpr uint16_t MAX_DATA = 176;
-#else
-    static constexpr uint16_t MAX_DATA = 64;
-#endif
+    static constexpr uint16_t MAX_DATA = 80;
     uint8_t data[MAX_DATA];
     uint16_t len;
     enum Transport : uint8_t { BLE = 0, MQTT = 1 } source;
 };
 
-/** TX item — response routed back to originating transport */
-struct TxItem {
-#ifdef ARCANA_CMD_CRYPTO
-    static constexpr uint16_t MAX_DATA = 300;
-#else
-    static constexpr uint16_t MAX_DATA = 64;
-#endif
-    uint8_t data[MAX_DATA];
-    uint16_t len;
-    CmdFrameItem::Transport target;
+/**
+ * Lightweight ChaCha20 session — replaces CryptoEngine + KeyExchangeManager.
+ * 41 bytes per session vs ~430 bytes per CryptoEngine instance.
+ */
+struct ChaChaSession {
+    uint8_t key[32] = {};
+    uint32_t txCounter = 0;
+    uint32_t rxCounter = 0;
+    bool active = false;
 };
 
 /**
  * CommandBridge — shared command registry + frame processing.
- * Owns RX frame queue (BLE/MQTT push) and TX queue (responses).
- * Two FreeRTOS tasks: bridgeTask processes RX, txTask sends TX.
+ * Transport-agnostic: BLE and MQTT share the same crypto path.
+ *
+ * Crypto: uECC (ECDH) + ChaCha20 (encrypt) + HMAC-SHA256 (auth)
+ * Zero mbedtls dependency.
+ *
+ * StreamId routing:
+ *   0x00 = plaintext binary command (backward compatible)
+ *   0x10 = ChaCha20 + HMAC encrypted command
+ *   0x20 = ChaCha20 encrypted sensor stream (BleServiceImpl)
  */
 class CommandBridge {
 public:
-    /** Response callback — transport sends this back to the peer */
-    typedef void (*ResponseCallback)(const uint8_t* frameBuf, uint16_t frameLen, void* ctx);
+    static constexpr uint8_t SID_PLAINTEXT = 0x00;
+    static constexpr uint8_t SID_ENCRYPTED = 0x10;
+    static constexpr uint8_t SID_SENSOR    = 0x20;
 
-    /** Transport send function — called by TX task */
+    /** Transport send function */
     typedef bool (*TransportSendFn)(const uint8_t* data, uint16_t len, void* ctx);
 
     static CommandBridge& getInstance();
@@ -67,93 +65,72 @@ public:
     /** Submit a complete frame for processing (called from BLE/MQTT) */
     bool submitFrame(const uint8_t* data, uint16_t len, CmdFrameItem::Transport source);
 
-    /** Register transport send functions (called during init) */
+    /** Register transport send functions */
     void setBleSend(TransportSendFn fn, void* ctx) { mBleSend = fn; mBleCtx = ctx; }
     void setMqttSend(TransportSendFn fn, void* ctx) { mMqttSend = fn; mMqttCtx = ctx; }
 
     /** Shared sensor cache — commands read from here */
     SensorDataCache& getSensorCache() { return mSensorCache; }
 
-    /** Start bridge + TX tasks */
+    /** Start bridge task */
     void startTasks();
 
     /**
-     * Process a received frame: deframe → decode → execute → encode → callback.
-     * @param data     Raw bytes from transport (FrameCodec framed)
-     * @param len      Length of raw bytes
-     * @param respCb   Callback to send response back via originating transport
-     * @param ctx      Context pointer passed to callback
+     * Legacy: process a frame directly (callback-based, no queue).
      */
     void processFrame(const uint8_t* data, uint16_t len,
-                      ResponseCallback respCb, void* ctx);
+                      void (*respCb)(const uint8_t*, uint16_t, void*), void* ctx);
 
     uint8_t getCommandCount() const { return mCommandCount; }
+
+    /** Check if session is active for a transport source */
+    bool hasSession(uint8_t source) const { return mSessions[source & 1].active; }
 
 private:
     CommandBridge();
 
     static void bridgeTask(void* param);
-#ifdef ARCANA_CMD_CRYPTO
-    static void txTask(void* param);
-#endif
 
+    // Command registry
     static const uint8_t MAX_COMMANDS = 16;
     ICommand* mCommands[MAX_COMMANDS];
     uint8_t mCommandCount;
-
     ICommand* findCommand(CommandKey key);
 
     // Shared sensor cache
     SensorDataCache mSensorCache;
 
-    // RX frame queue (depth 2 with crypto — commands are low-frequency)
-#ifdef ARCANA_CMD_CRYPTO
+    // RX frame queue
     static const uint8_t RX_QUEUE_LEN = 4;
-    static const uint8_t TX_QUEUE_LEN = 2;
-#else
-    static const uint8_t RX_QUEUE_LEN = 8;
-    static const uint8_t TX_QUEUE_LEN = 8;
-#endif
     QueueHandle_t mRxQueue;
     StaticQueue_t mRxQueueBuf;
     uint8_t mRxQueueStorage[RX_QUEUE_LEN * sizeof(CmdFrameItem)];
 
-#ifdef ARCANA_CMD_CRYPTO
-    // TX response queue — only with TX task
-    QueueHandle_t mTxQueue;
-    StaticQueue_t mTxQueueBuf;
-    uint8_t mTxQueueStorage[TX_QUEUE_LEN * sizeof(TxItem)];
-#endif
+    // Lightweight crypto sessions (1 BLE + 1 MQTT)
+    static const uint8_t MAX_SESSIONS = 2;
+    ChaChaSession mSessions[MAX_SESSIONS];
+    uint8_t mDeviceKey[32];  // for KE auth tag verification
 
-#ifdef ARCANA_CMD_CRYPTO
-public:
-    // CryptoEngine for command encryption (PSK-based, AES-256-CCM)
-    // Public: MqttServiceImpl needs direct access for KeyExchange in MQTT task context
-    CryptoEngine mCrypto;
-    KeyExchangeManager mKeyExchange;
-    bool mEncryptionEnabled;
-private:
-
-    // Larger bridge stack for protobuf + crypto buffers on stack
+    // Bridge task — 512 words for uECC ECDH (~700B peak + frame processing)
     static const uint16_t BRIDGE_STACK_SIZE = 512;
-#else
-    static const uint16_t BRIDGE_STACK_SIZE = 256;
-#endif
     StaticTask_t mBridgeTaskBuf;
     StackType_t mBridgeStack[BRIDGE_STACK_SIZE];
-
-#ifdef ARCANA_CMD_CRYPTO
-    // TX task — only on boards with enough RAM
-    static const uint16_t TX_STACK_SIZE = 256;
-    StaticTask_t mTxTaskBuf;
-    StackType_t mTxStack[TX_STACK_SIZE];
-#endif
 
     // Transport send functions
     TransportSendFn mBleSend;
     void* mBleCtx;
     TransportSendFn mMqttSend;
     void* mMqttCtx;
+
+    // Internal helpers
+    bool handleKeyExchange(uint8_t source, const uint8_t* clientPub,
+                           uint8_t* serverPub, uint8_t* authTag);
+    bool encryptAndFrame(uint8_t source, uint8_t streamId,
+                         const uint8_t* plain, size_t plainLen,
+                         uint8_t* frameBuf, size_t frameBufSize, size_t& frameLen);
+    bool decryptAndVerify(uint8_t source,
+                          const uint8_t* payload, size_t payloadLen,
+                          uint8_t* plain, size_t plainBufSize, size_t& plainLen);
 };
 
 } // namespace arcana

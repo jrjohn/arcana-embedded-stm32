@@ -26,7 +26,7 @@ export class NobleBleTransport {
   constructor() {
     this.peripheral = null;
     this.characteristic = null;
-    this.assembler = new FrameAssembler();
+    this.assembler = new FrameAssembler(112); // KE response: 109B frame
     this.pendingResolve = null;
     this.pendingTimeout = null;
     this.connected = false;

@@ -30,6 +30,7 @@ import {
 import { commands, findCommand } from './commands.js';
 import {
   CryptoEngine, KeyExchangeClient,
+  ChaChaSession, ChaChaKeyExchangeClient,
   deriveDeviceKey, LEGACY_FLEET_MASTER,
 } from './crypto.js';
 import { encodeCmdRequest, decodeCmdResponse } from './protobuf.js';
@@ -73,7 +74,7 @@ function logHex(label, buf) {
 }
 
 function banner() {
-  const crypto = ENCRYPT_MODE ? 'AES-256-CCM encrypted' : 'plaintext';
+  const crypto = ENCRYPT_MODE ? 'ChaCha20 + HMAC-SHA256' : 'plaintext';
   const transport = BLE_MODE ? 'native BLE GATT (noble)' : 'serial dongle';
   console.log('');
   console.log('  ╔══════════════════════════════════════════════╗');
@@ -285,141 +286,130 @@ class PlaintextExecutor {
   }
 }
 
-// ─── Command Executor (encrypted — protobuf + AES-256-CCM) ─────────────────
+// ─── Command Executor (encrypted — ChaCha20 + HMAC-SHA256) ─────────────────
+
+const SID_ENCRYPTED = 0x10;
 
 class EncryptedExecutor {
-  constructor(transport, cryptoEngine, timeoutMs = 3000) {
+  constructor(transport, deviceKey, timeoutMs = 3000) {
     this.transport = transport;
-    this.crypto = cryptoEngine;
+    this.deviceKey = deviceKey;
+    this.session = null; // set after key exchange
     this.timeoutMs = timeoutMs;
     this.encrypted = true;
   }
 
-  /** Switch to session key after key exchange */
-  setCryptoEngine(engine) { this.crypto = engine; }
-
   async execute(command) {
+    if (!this.session) return { success: false, error: 'No session — run key exchange first (k)' };
+
     const { cluster, commandId } = command.key;
     const params = command.buildParams();
 
-    // 1. Protobuf encode
-    const pb = encodeCmdRequest(cluster, commandId, params);
-    log(`TX ${command.name} [${cluster.toString(16).padStart(2,'0')}:${commandId.toString(16).padStart(2,'0')}] pb=${pb.length}B`);
+    // 1. Binary encode: [cluster][cmdId][paramsLen][params]
+    const binary = encodeRequest(cluster, commandId, params);
+    log(`TX ${command.name} [${cluster.toString(16).padStart(2,'0')}:${commandId.toString(16).padStart(2,'0')}]`);
 
-    // 2. AES-256-CCM encrypt
-    const encrypted = this.crypto.encrypt(pb);
-    log(`   Encrypted: ${encrypted.length}B (counter=${this.crypto.txCounter - 1})`);
+    // 2. ChaCha20 + HMAC encrypt
+    const encrypted = this.session.encrypt(binary);
+    log(`   Encrypted: ${encrypted.length}B (counter=${this.session.txCounter - 1})`);
 
-    // 3. Frame
-    const frameBuf = frame(encrypted);
+    // 3. Frame with sid=0x10
+    const frameBuf = frame(encrypted, 0x01, SID_ENCRYPTED);
     logHex('   Frame', frameBuf);
 
     // 4. Send
     await this.transport.send(frameBuf);
 
-    // 5. Wait for response
-    const rxFrame = await this.transport.waitFrame(this.timeoutMs);
-    if (!rxFrame) return { success: false, error: 'Timeout waiting for response' };
+    // 5. Wait for response — skip sensor stream frames (sid=0x20)
+    let deframed = null;
+    const deadline = Date.now() + this.timeoutMs;
+    while (Date.now() < deadline) {
+      const rxFrame = await this.transport.waitFrame(Math.max(500, deadline - Date.now()));
+      if (!rxFrame) break;
+      const d = deframe(rxFrame);
+      if (!d) continue;
+      if (d.streamId === 0x20) continue;
+      logHex('   RX Frame', rxFrame);
+      deframed = d;
+      break;
+    }
+    if (!deframed) return { success: false, error: 'Timeout waiting for response' };
 
-    logHex('   RX Frame', rxFrame);
-
-    // 6. Deframe
-    const deframed = deframe(rxFrame);
-    if (!deframed) return { success: false, error: 'Invalid frame (CRC mismatch)' };
-
-    // 7. Decrypt
+    // 6. Decrypt + verify HMAC
     let plaintext;
     try {
-      plaintext = this.crypto.decrypt(deframed.payload);
-      log(`   Decrypted: ${plaintext.length}B (rxCounter=${this.crypto.rxCounter})`);
+      plaintext = this.session.decrypt(deframed.payload);
+      log(`   Decrypted: ${plaintext.length}B`);
     } catch (e) {
-      return { success: false, error: `Decrypt failed: ${e.message}` };
+      return { success: false, error: `Decrypt/HMAC failed: ${e.message}` };
     }
 
-    // 8. Protobuf decode
-    let rsp;
-    try {
-      rsp = decodeCmdResponse(plaintext);
-    } catch (e) {
-      return { success: false, error: `Protobuf decode failed: ${e.message}` };
-    }
+    // 8. Binary decode response: [cluster][cmdId][status][dataLen][data]
+    const response = decodeResponse(plaintext);
+    if (!response) return { success: false, error: 'Invalid response payload' };
 
-    const statusName = CommandStatusName[rsp.status] || `Unknown(${rsp.status})`;
-    const response = {
-      cluster: rsp.cluster,
-      commandId: rsp.command,
-      status: rsp.status,
-      statusName,
-      data: rsp.payload,
-    };
-
-    const decoded = rsp.status === 0
-      ? command.decodeResponse(rsp.payload)
-      : { error: statusName };
+    const decoded = response.status === 0
+      ? command.decodeResponse(response.data)
+      : { error: response.statusName };
 
     return { success: true, response, decoded };
   }
 
   /**
-   * Perform ECDH P-256 key exchange.
-   * @param {Buffer} psk Raw 32-byte PSK
-   * @returns {Promise<boolean>} true if session established
+   * ECDH P-256 Key Exchange → ChaCha20 session.
+   * KE request/response are plaintext (sid=0x00).
    */
-  async performKeyExchange(psk) {
-    log('─── ECDH P-256 Key Exchange ───');
-    const ke = new KeyExchangeClient(this.crypto, psk);
+  async performKeyExchange() {
+    log('─── ECDH P-256 Key Exchange (ChaCha20+HMAC) ───');
+    const ke = new ChaChaKeyExchangeClient(this.deviceKey);
     const clientPub = ke.getClientPubKey();
     log(`Client pub: ${clientPub.subarray(0, 8).toString('hex')}...${clientPub.subarray(56).toString('hex')}`);
 
-    // Build KeyExchange request
-    const pb = encodeCmdRequest(ClusterEnum.Security, 0x01, clientPub);
-    const encrypted = this.crypto.encrypt(pb);
-    const frameBuf = frame(encrypted);
+    // Build plaintext KE request: Security::KeyExchange with 64B client pub key
+    // Binary: [cluster=0x04][cmdId=0x01][paramsLen=0x00] + raw 64B pubkey after header
+    const kePayload = Buffer.alloc(3 + 64);
+    kePayload[0] = ClusterEnum.Security; // 0x04
+    kePayload[1] = 0x01; // KeyExchange
+    kePayload[2] = 0x00; // paramsLen=0 (pub key follows as extended payload)
+    clientPub.copy(kePayload, 3);
 
+    const frameBuf = frame(kePayload, 0x01, 0x00); // plaintext sid=0x00
     log(`TX KeyExchange (${frameBuf.length}B)`);
     await this.transport.send(frameBuf);
 
-    // Wait for response
-    const rxFrame = await this.transport.waitFrame(this.timeoutMs + 5000); // extra time for ECDH
-    if (!rxFrame) {
-      log('[KE] Timeout — no response from board');
+    // Wait for response — skip sensor stream frames (sid=0x20)
+    let deframed = null;
+    const deadline = Date.now() + this.timeoutMs + 10000;
+    while (Date.now() < deadline) {
+      const rxFrame = await this.transport.waitFrame(Math.max(1000, deadline - Date.now()));
+      if (!rxFrame) break;
+      const d = deframe(rxFrame);
+      if (!d) continue;
+      if (d.streamId === 0x20) continue; // skip sensor stream
+      logHex('[KE] RX Frame', rxFrame);
+      deframed = d;
+      break;
+    }
+    if (!deframed) {
+      log('[KE] Timeout — no KE response from board');
       return false;
     }
 
-    logHex('[KE] RX Frame', rxFrame);
-
-    const deframed = deframe(rxFrame);
-    if (!deframed) { log('[KE] Deframe failed'); return false; }
-
-    let plaintext;
-    try {
-      plaintext = this.crypto.decrypt(deframed.payload);
-    } catch (e) {
-      log(`[KE] Decrypt failed: ${e.message}`);
-      return false;
-    }
-
-    let rsp;
-    try {
-      rsp = decodeCmdResponse(plaintext);
-    } catch (e) {
-      log(`[KE] Protobuf decode failed: ${e.message}`);
-      return false;
-    }
-
+    // Parse binary response: [cluster][cmdId][status][dataLen][data...]
+    const rsp = decodeResponse(deframed.payload);
+    if (!rsp) { log('[KE] Response decode failed'); return false; }
     if (rsp.status !== 0) {
-      log(`[KE] Server rejected: status=${rsp.status}`);
+      log(`[KE] Server rejected: status=${rsp.statusName}`);
       return false;
     }
 
-    // Process response: derive session key
-    const result = ke.processResponse(rsp.payload);
-    if (!result) return false;
+    // KE response data = [serverPub:64][authTag:32]
+    const session = ke.processResponse(rsp.data);
+    if (!session) return false;
 
-    // Switch to session key
-    this.setCryptoEngine(result.sessionEngine);
+    this.session = session;
     log('[KE] Session established — Perfect Forward Secrecy active');
-    log('─'.repeat(40));
+    log('─'.repeat(45));
     return true;
   }
 }
@@ -540,7 +530,7 @@ async function runInteractiveMode(executor) {
     }
 
     if ((input === 'k' || input === 'ke') && executor instanceof EncryptedExecutor) {
-      await executor.performKeyExchange(executor.crypto.key);
+      await executor.performKeyExchange();
       continue;
     }
 
@@ -717,10 +707,9 @@ async function main() {
   // Create executor (plaintext or encrypted)
   let executor;
   if (ENCRYPT_MODE) {
-    const psk = setupPSK();
-    const cryptoEngine = new CryptoEngine(psk);
-    executor = new EncryptedExecutor(transport, cryptoEngine, TIMEOUT_MS);
-    log('Encryption enabled: AES-256-CCM');
+    const deviceKey = setupPSK();
+    executor = new EncryptedExecutor(transport, deviceKey, TIMEOUT_MS);
+    log('Encryption enabled: ChaCha20 + HMAC-SHA256 (key exchange required)');
   } else {
     executor = new PlaintextExecutor(transport, TIMEOUT_MS);
     log('Mode: plaintext (use --encrypt to enable encryption)');
@@ -734,7 +723,7 @@ async function main() {
 
   // Auto key exchange if requested
   if (KEY_EXCHANGE && executor instanceof EncryptedExecutor) {
-    const ok = await executor.performKeyExchange(executor.crypto.key);
+    const ok = await executor.performKeyExchange();
     if (!ok) {
       log('Key exchange failed. Continuing with PSK...');
     }

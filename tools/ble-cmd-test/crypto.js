@@ -225,12 +225,135 @@ function hmacSha256(key, data) {
  * @returns {Buffer}
  */
 export function hkdfSha256(ikm, salt, info, length = 32) {
-  // Extract: PRK = HMAC-SHA256(salt, ikm)
   const prk = hmacSha256(salt, ikm);
-  // Expand: T(1) = HMAC-SHA256(PRK, info || 0x01)
   const expandInput = Buffer.concat([info, Buffer.from([0x01])]);
   const t = hmacSha256(prk, expandInput);
   return t.subarray(0, length);
+}
+
+// ─── ChaCha20 + HMAC-SHA256 Session (zero mbedtls) ─────────────────────────
+
+export const HMAC_LEN = 32;
+export const NONCE_LEN = 12;
+export const CHACHA_OVERHEAD = NONCE_LEN + HMAC_LEN; // 44
+
+/**
+ * Lightweight encrypted session — matches STM32 CommandBridge ChaChaSession.
+ * Encrypt: [nonce:12][ciphertext:N][hmac:32]
+ * Nonce:   [counter:4 LE][tick:4 LE][zeros:4]
+ */
+export class ChaChaSession {
+  constructor(key) {
+    if (typeof key === 'string') key = Buffer.from(key, 'hex');
+    this.key = key;
+    this.txCounter = 0;
+    this.rxCounter = -1;
+  }
+
+  /**
+   * Encrypt: returns [nonce:12][ciphertext:N][hmac:32]
+   */
+  encrypt(plaintext) {
+    // Build nonce: [counter:4 LE][tick:4 LE][zeros:4]
+    const nonce = Buffer.alloc(12);
+    const counter = this.txCounter++;
+    nonce.writeUInt32LE(counter, 0);
+    nonce.writeUInt32LE(Math.floor(Date.now() / 1000) & 0xFFFFFFFF, 4);
+
+    // ChaCha20 encrypt
+    const ciphertext = Buffer.from(plaintext);
+    chacha20Crypt(this.key, nonce, 0, ciphertext);
+
+    // HMAC-SHA256(key, nonce || ciphertext)
+    const hmacData = Buffer.concat([nonce, ciphertext]);
+    const mac = hmacSha256(this.key, hmacData);
+
+    return Buffer.concat([nonce, ciphertext, mac]);
+  }
+
+  /**
+   * Decrypt: [nonce:12][ciphertext:N][hmac:32] → plaintext
+   */
+  decrypt(data) {
+    if (data.length < CHACHA_OVERHEAD + 1) throw new Error('Too short');
+
+    const nonce = data.subarray(0, 12);
+    const cipherLen = data.length - 12 - 32;
+    const ciphertext = data.subarray(12, 12 + cipherLen);
+    const receivedMac = data.subarray(12 + cipherLen);
+
+    // Verify HMAC
+    const hmacData = Buffer.concat([nonce, ciphertext]);
+    const expectedMac = hmacSha256(this.key, hmacData);
+    if (!crypto.timingSafeEqual(receivedMac, expectedMac)) {
+      throw new Error('HMAC verification failed');
+    }
+
+    // Replay protection
+    const rxCounter = nonce.readUInt32LE(0);
+    if (this.rxCounter >= 0 && rxCounter <= this.rxCounter) {
+      throw new Error(`Replay: ${rxCounter} <= ${this.rxCounter}`);
+    }
+    this.rxCounter = rxCounter;
+
+    // ChaCha20 decrypt
+    const plaintext = Buffer.from(ciphertext);
+    chacha20Crypt(this.key, nonce, 0, plaintext);
+    return plaintext;
+  }
+}
+
+// ─── ChaCha20 Key Exchange Client (uECC compatible) ────────────────────────
+
+/**
+ * Lightweight KE client for CommandBridge ChaCha20+HMAC protocol.
+ * No AES-256-CCM, no protobuf — pure binary + ChaCha20.
+ */
+export class ChaChaKeyExchangeClient {
+  constructor(deviceKey) {
+    this.deviceKey = (typeof deviceKey === 'string')
+      ? Buffer.from(deviceKey, 'hex') : deviceKey;
+    this.ecdh = crypto.createECDH('prime256v1');
+    this.ecdh.generateKeys();
+    this.sessionEngine = null;
+  }
+
+  /** 64-byte client public key (x||y, strip 0x04 prefix) */
+  getClientPubKey() {
+    return this.ecdh.getPublicKey().subarray(1);
+  }
+
+  /**
+   * Process KE response: [serverPub:64][authTag:32]
+   * Returns ChaChaSession or null on failure.
+   */
+  processResponse(data) {
+    if (data.length < 96) return null;
+
+    const serverPub = data.subarray(0, 64);
+    const authTag = data.subarray(64, 96);
+    const clientPub = this.getClientPubKey();
+
+    // Verify auth tag: HMAC-SHA256(device_key, serverPub || clientPub)
+    const authData = Buffer.concat([serverPub, clientPub]);
+    const expectedTag = hmacSha256(this.deviceKey, authData);
+    if (!crypto.timingSafeEqual(authTag, expectedTag)) {
+      console.error('  [KE] Auth tag MISMATCH');
+      return null;
+    }
+    console.log('  [KE] Auth tag verified OK');
+
+    // ECDH shared secret
+    const serverPubFull = Buffer.concat([Buffer.from([0x04]), serverPub]);
+    const sharedSecret = this.ecdh.computeSecret(serverPubFull);
+
+    // Session key = HKDF-SHA256(shared, device_key, "ARCANA-SESSION")
+    const sessionKey = hkdfSha256(sharedSecret, this.deviceKey, Buffer.from('ARCANA-SESSION'));
+    console.log(`  [KE] Session key: ${sessionKey.subarray(0, 8).toString('hex')}...`);
+
+    this.sessionEngine = new ChaChaSession(sessionKey);
+    return this.sessionEngine;
+  }
 }
 
 // ─── ECDH P-256 Key Exchange (client side) ──────────────────────────────────

@@ -40,11 +40,8 @@ private:
     static void onLightData(LightDataModel* model, void* ctx);
     void pushSensorJson();
     void pushSensorEncrypted();
-#ifdef ARCANA_CMD_CRYPTO
-    void pushSensorEncryptedCcm();
-#endif
 
-    // Task (256 words = 1KB — enough for AES-CCM on small payloads)
+    // Task (256 words = 1KB)
     static const uint16_t TASK_STACK_SIZE = 256;
     StaticTask_t mTaskBuf;
     StackType_t mTaskStack[TASK_STACK_SIZE];

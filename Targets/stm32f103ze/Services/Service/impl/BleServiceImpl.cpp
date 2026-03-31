@@ -4,10 +4,6 @@
 #include "RegistrationServiceImpl.hpp"
 #include "Log.hpp"
 #include "EventCodes.hpp"
-#ifdef ARCANA_CMD_CRYPTO
-#include "CryptoEngine.hpp"
-#include "KeyExchangeManager.hpp"
-#endif
 #include <cstring>
 #include <cstdio>
 
@@ -226,36 +222,6 @@ void BleServiceImpl::pushSensorEncrypted() {
 
     mBle.send(frame, (uint16_t)frameLen);
 }
-
-#ifdef ARCANA_CMD_CRYPTO
-void BleServiceImpl::pushSensorEncryptedCcm() {
-    // AES-256-CCM version — only when ARCANA_CMD_CRYPTO enabled + session up
-    CommandBridge& bridge = CommandBridge::getInstance();
-    if (!bridge.mEncryptionEnabled ||
-        !bridge.mKeyExchange.hasSession(CmdFrameItem::BLE, 0)) return;
-
-    uint8_t pb[40];
-    uint16_t pos = 0;
-    pos += blePbSint32(pb + pos, 1, (int32_t)(mTemp * 10));
-    pos += blePbSint32(pb + pos, 2, (int32_t)mAx);
-    pos += blePbSint32(pb + pos, 3, (int32_t)mAy);
-    pos += blePbSint32(pb + pos, 4, (int32_t)mAz);
-    pos += blePbUint32(pb + pos, 5, (uint32_t)mAls);
-    pos += blePbUint32(pb + pos, 6, (uint32_t)mPs);
-
-    uint8_t enc[40 + CryptoEngine::kOverhead];
-    size_t encLen = 0;
-    if (!bridge.mKeyExchange.encryptWithSession(
-            CmdFrameItem::BLE, 0, pb, pos, enc, sizeof(enc), encLen)) return;
-
-    uint8_t frame[80];
-    size_t frameLen = 0;
-    if (!FrameCodec::frame(enc, encLen, FrameCodec::kFlagFin, 0x20,
-                            frame, sizeof(frame), frameLen)) return;
-
-    mBle.send(frame, (uint16_t)frameLen);
-}
-#endif
 
 } // namespace ble
 } // namespace arcana

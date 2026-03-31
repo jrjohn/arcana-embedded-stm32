@@ -18,7 +18,7 @@ namespace arcana {
 
 class FrameAssembler {
 public:
-    static constexpr uint16_t MAX_FRAME = 64;
+    static constexpr uint16_t MAX_FRAME = 112;  // KE response: 100B payload + 9B frame
 
     FrameAssembler() { reset(); }
 
