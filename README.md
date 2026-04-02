@@ -2,7 +2,7 @@
   <img src="https://img.shields.io/badge/Architecture-MVVM_Embedded-gold?style=for-the-badge" alt="Architecture">
   <img src="https://img.shields.io/badge/MCU-STM32F051_/_F103-03234B?style=for-the-badge&logo=stmicroelectronics" alt="STM32">
   <img src="https://img.shields.io/badge/RTOS-FreeRTOS-00A86B?style=for-the-badge" alt="FreeRTOS">
-  <img src="https://img.shields.io/badge/Language-C++14-00599C?style=for-the-badge&logo=cplusplus" alt="C++">
+  <img src="https://img.shields.io/badge/Language-C++20-00599C?style=for-the-badge&logo=cplusplus" alt="C++">
   <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License">
   <img src="https://img.shields.io/badge/Coverage-100%25-brightgreen?style=for-the-badge" alt="Coverage">
   <img src="https://img.shields.io/badge/Tests-15_suites-blue?style=for-the-badge&logo=googletest" alt="Tests">
@@ -187,9 +187,18 @@ HC-08 BLE 4.0 splits frames larger than 20 bytes across multiple UART IDLE event
 Same FrameCodec wire protocol (magic `0xAC DA` + CRC-16) for both transports.
 New commands register once in CommandBridge, available on BLE + MQTT simultaneously.
 
-BLE also streams sensor JSON at 1Hz (no framing, plain text):
+#### StreamId Routing
+
+| sid | Direction | Meaning |
+|-----|-----------|---------|
+| `0x00` | RX/TX | Plaintext binary command (backward-compatible) |
+| `0x10` | RX/TX | ChaCha20 + HMAC-SHA256 encrypted command |
+| `0x20` | TX (push) | ChaCha20 encrypted sensor stream (BleServiceImpl 1Hz) |
+
+BLE sensor push (1Hz, sid=0x20) — ChaCha20 encrypted + FrameCodec, decoded by `tools/ble-sensor-monitor.js`:
 ```
-{"t":28.6,"ax":-40,"ay":-1992,"az":17520,"als":682,"ps":78}
+[FrameCodec: magic=0xAC DA, sid=0x20, len=26]
+payload: ChaCha20{ temp:i16 ax:i16 ay:i16 az:i16 als:u16 ps:u16 }
 ```
 
 ### Display Abstraction Layer
@@ -296,9 +305,9 @@ Shared/
 | **ArcanaTS** | Daily .ats rotation, device.ats lifecycle, ChaCha20 encrypted |
 | **SDIO Recovery** | Proactive reinit every 200 writes + reactive on failure |
 | **Event-Driven LCD** | xTaskNotify render (no timer polling), dirty flag optimization |
-| **BLE 4.0** | HC-08 transparent UART, sensor JSON streaming + FrameCodec commands |
+| **BLE 4.0** | HC-08 transparent UART, ChaCha20 encrypted sensor push (sid=0x20) + FrameCodec commands |
 | **Frame Reassembly** | FrameAssembler state machine handles BLE MTU=20 fragmentation + concatenation |
-| **CommandBridge** | RX/TX queue architecture — BLE + MQTT share one command registry, 8 commands |
+| **CommandBridge** | RX/TX queue architecture — BLE + MQTT share one command registry + crypto path, 8 commands |
 | **NTP Clock** | ESP8266 UDP NTP, RTC restore from device.ats on boot |
 
 ### Security Architecture
@@ -321,17 +330,17 @@ Device                                    Server
   │ ═══ Communication (no daemon needed) ═══
   │                                         │
   │ MQTT sensor: ChaCha20(comm_key)         │ Client: query DB → derive comm_key
-  │ MQTT command: AES-256-CCM(comm_key)     │
-  │ BLE: ECDH session key (device_key PSK)  │
+  │ MQTT command: ChaCha20+HMAC(comm_key)   │ (same crypto path as BLE)
+  │ BLE: ChaCha20+HMAC(session key)         │
 ```
 
 | Layer | Protection |
 |-------|-----------|
 | Transport | TLS/SSL (MQTT 8883, HTTPS registration, OTA, upload) |
 | Sensor data | ChaCha20 + comm_key (rotates on re-register) |
-| Commands | AES-256-CCM + PSK/session key |
+| Commands | ChaCha20 + HMAC-SHA256 + session key (BLE and MQTT share identical path) |
 | BLE | Session gate — ECDH required before any communication |
-| Key exchange | ECDH P-256 via micro-ecc (lightweight, ~600B stack) |
+| Key exchange | ECDH P-256 via micro-ecc (zero mbedtls, 41B/session, ~600B stack) |
 | Server auth | ECDSA signature on server_pub (company private key) |
 | Key storage | Device: flash KeyStore (RDP protected). Server: DB has zero secrets |
 | Logging | Structured LOG_* macros → Serial + ATS file + Syslog (no operational detail in UDP) |
@@ -452,7 +461,9 @@ python3 read_serial.py    # /dev/tty.usbserial-1120 @ 115200
 | **Cross-platform ArcanaTS** | PAL interfaces work on STM32/ESP32/Linux |
 | **Shared CommandBridge** | RX/TX queue decoupling — bridgeTask processes, txTask sends, zero blocking |
 | **BLE frame reassembly** | Ring buffer (ISR) → FrameAssembler (task) → submitFrame — lock-free pipeline |
-| **BLE sensor streaming** | 1Hz JSON push via HC-08 FFE1, phone receives automatically |
+| **BLE sensor push encrypted** | 1Hz ChaCha20+FrameCodec (sid=0x20) via HC-08, decoded by ble-sensor-monitor.js |
+| **Unified BLE/MQTT crypto** | Zero mbedtls — uECC+ChaCha20+HMAC-SHA256, 41B/session, same path for both transports |
+| **ECG decoupled (EcgSampleCallback)** | AtsStorageService → callback → Controller → View, no cross-layer import |
 | **Static allocation** | No malloc, predictable memory, no fragmentation |
 | **Registration-embedded ECDH** | Key exchange in one HTTP round-trip, no runtime daemon needed |
 | **PFS (Perfect Forward Secrecy)** | Ephemeral device keypair discarded after registration |
@@ -466,12 +477,11 @@ python3 read_serial.py    # /dev/tty.usbserial-1120 @ 115200
 
 | Limitation | Impact | Mitigation Path |
 |------------|--------|-----------------|
-| **g_mainView global pointer** | ECG push bypasses MVVM (AtsStorage → View) | Add ECG Observable on AtsStorageService.output |
 | **ViewModel has FreeRTOS deps** | Not pure platform-independent | Extract callbacks to adapter layer |
 | **LcdService nearly empty** | Only initHAL + getLcd, could merge into Driver | Keep for interface consistency |
 | **subdir.mk manual sync** | CubeIDE regenerates with old paths on .ioc change | Fixed in .cproject, auto-correct via sed |
 | **F103 services not unit-tested** | F103 drivers/services depend on HAL, tested on-board | Expand mock HAL for host-side testing |
-| **ECG tightly coupled** | AtsStorageService knows about MainView | Route through Observable |
+| ~~**ECG tightly coupled**~~ | ~~AtsStorageService knows about MainView~~ | **RESOLVED** — EcgSampleCallback (aa89b72) |
 | **Header-only ViewModel** | Large header with Observable + FreeRTOS includes | Split to .hpp/.cpp if compile time grows |
 | **Single View** | Only MainView, no navigation | ViewManager ready, add SettingsView when needed |
 | **MutexDisplay disabled** | g_display not thread-safe (88B RAM cost) | Enable when RAM budget allows |
@@ -479,7 +489,7 @@ python3 read_serial.py    # /dev/tty.usbserial-1120 @ 115200
 | **Hardcoded 240px** | Toast/StatusLine assume 240 width | Parameterize from IDisplay::width() |
 | **COMPANY_PRIV is single root secret** | If leaked + DB breached = all devices compromised | HSM / multi-key per customer / monitoring |
 | **comm_key lifetime** | Valid until re-register (no auto-expiry) | Add expires_in enforcement + periodic re-register |
-| **Non-standard protocol** | Custom ECDH+ECDSA, not OAuth/mTLS/X.509 | Document thoroughly, security audit |
+| **Non-standard protocol** | Custom ECDH+ECDSA+ChaCha20, not OAuth/mTLS/X.509 | Document thoroughly, security audit |
 | **Syslog UDP unencrypted** | Event codes only (no params), but still visible | Migrate to MQTT publish or TLS syslog |
 
 ### Risk Mitigation
@@ -505,9 +515,9 @@ python3 read_serial.py    # /dev/tty.usbserial-1120 @ 115200
 | **Resource Efficiency** | 9/10 | +1.6KB Flash, +16B RAM for full abstraction. gc-sections strips unused widgets |
 | **Extensibility** | 8/10 | Widget system, ViewManager, FormWidgets ready. Feature flags enable incrementally |
 | **Cross-Platform** | 8/10 | `Shared/Inc/display/` portable to ESP32/Linux. Only Adapter is target-specific |
-| **Thread Safety** | 6/10 | MutexDisplay exists but disabled (88B RAM). MQTT fixed via ViewModel. Other services still direct-write |
+| **Thread Safety** | 7/10 | MutexDisplay exists but disabled (88B RAM). MQTT + ECG via ViewModel/callback. Other services still direct-write |
 | **Compositing** | 5/10 | No hardware layers, no framebuffer. Repaint-on-top is pragmatic but limited |
-| **Overall** | **7.5/10** | Solid embedded display abstraction within severe HW constraints (64KB RAM, FSMC direct-write). Correct tradeoffs for ILI9341 without LTDC |
+| **Overall** | **7.8/10** | Solid embedded display abstraction within severe HW constraints (64KB RAM, FSMC direct-write). Correct tradeoffs for ILI9341 without LTDC |
 
 **Key architectural decisions:**
 - **Repaint-on-top** over framebuffer — 150KB framebuffer impossible on 64KB RAM
@@ -540,11 +550,16 @@ python3 read_serial.py    # /dev/tty.usbserial-1120 @ 115200
 - [x] ECDSA server authentication (company private key signing)
 - [x] Server device_token table (key rotation on re-register)
 - [x] Syslog info leak mitigation (event codes only, no params)
+- [x] ECG decoupled via EcgSampleCallback (Service → callback → Controller → View)
+- [x] BLE sensor push encrypted (ChaCha20 FrameCodec sid=0x20, replaces plain JSON)
+- [x] Unified BLE/MQTT crypto (zero mbedtls — uECC+ChaCha20+HMAC-SHA256, 41B/session)
+- [x] Node.js BLE test tools (ble-cmd-test, ble-sensor-monitor)
+- [x] Upgrade C++ standard to C++20
 - [ ] Enable MutexDisplay (needs RAM optimization elsewhere)
 - [ ] Device-side ECDSA verification (currently server-side only, needs more stack)
 - [ ] arcana-android BLE integration (sensor dashboard)
 - [ ] Real ADS1298 SPI ECG (replace synthetic LUT)
-- [ ] ECG Observable (decouple AtsStorage → View)
+- [ ] ECG Observable on AtsStorageService.output (full pub/sub decoupling)
 - [ ] SettingsView / ChartView (multi-view navigation with ViewManager)
 - [ ] XPT2046 touch driver + GestureDetector
 - [x] Host-side unit tests (15 suites, 100% coverage, Jenkins CI/CD + SonarQube)
