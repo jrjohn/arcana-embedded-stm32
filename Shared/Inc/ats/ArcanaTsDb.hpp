@@ -198,6 +198,7 @@ private:
 
     AtsIndexEntry   mIndex[MAX_INDEX_ENTRIES];
     uint16_t        mIndexCount;
+    uint32_t        mPersistedIndexBlockNum;  // 0 = no index persisted yet
 };
 
 } // namespace ats

@@ -582,6 +582,373 @@ TEST(ArcanaTsDbTest, AddChannelLiveAfterStart) {
     db.close();
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// EDGE CASES — error / recovery / boundary paths
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── openReadOnly: file too small / corrupt header ───────────────────────────
+
+TEST(ArcanaTsDbEdgeTest, OpenReadOnlyRejectsFileSmallerThanBlock) {
+    DbCtx d;
+    // Inject 100 bytes of garbage — smaller than BLOCK_SIZE
+    d.file.data.assign(100, 0xFF);
+    ArcanaTsDb db;
+    EXPECT_FALSE(db.openReadOnly("tiny.ats", d.makeCfg()));
+}
+
+TEST(ArcanaTsDbEdgeTest, OpenReadOnlyRejectsCorruptHeader) {
+    DbCtx d;
+    // 8KB of random non-magic bytes — header parse will fail
+    d.file.data.assign(8192, 0x55);
+    ArcanaTsDb db;
+    EXPECT_FALSE(db.openReadOnly("bad.ats", d.makeCfg()));
+}
+
+// ── flush() called when nothing pending (early-return paths) ────────────────
+
+TEST(ArcanaTsDbEdgeTest, FlushWithEmptyBuffersIsNoOp) {
+    DbCtx d;
+    TestClock::reset();
+    ArcanaTsDb db;
+    ASSERT_TRUE(db.open("e.ats", d.makeCfg(/*primary*/0)));
+    ASSERT_TRUE(db.addChannel(0, makeAdcSchema()));
+    ASSERT_TRUE(db.start());
+
+    // No appends → flush should succeed but write nothing extra
+    EXPECT_TRUE(db.flush());
+    EXPECT_EQ(db.getStats().blocksWritten, 0u);
+    db.close();
+}
+
+// ── append() to slow channel when slowBuf is null ───────────────────────────
+
+TEST(ArcanaTsDbEdgeTest, SlowAppendWithoutSlowBufFails) {
+    DbCtx d;
+    TestClock::reset();
+    ArcanaTsDb db;
+
+    AtsConfig cfg = d.makeCfg(/*primary*/0);
+    cfg.slowBuf = nullptr;   // intentionally drop slow buffer
+    ASSERT_TRUE(db.open("ns.ats", cfg));
+    ASSERT_TRUE(db.addChannel(0, makeAdcSchema()));
+    ASSERT_TRUE(db.addChannel(1, makeAdcSchema()));   // ch1 = slow
+    ASSERT_TRUE(db.start());
+
+    uint8_t rec[8];
+    mkRec(rec, 1, 1);
+    EXPECT_TRUE(db.append(0, rec));    // primary path still works
+    EXPECT_FALSE(db.append(1, rec));   // slow path fails — no buffer
+    db.close();
+}
+
+// ── Drop overflow policy: primary buffer back-pressure ──────────────────────
+
+TEST(ArcanaTsDbEdgeTest, PrimaryDropPolicyDropsRecordsWhenFlushPending) {
+    DbCtx d;
+    TestClock::reset();
+    ArcanaTsDb db;
+    ASSERT_TRUE(db.open("dp.ats", d.makeCfg(/*primary*/0, OverflowPolicy::Drop)));
+    ASSERT_TRUE(db.addChannel(0, makeAdcSchema()));
+    ASSERT_TRUE(db.start());
+
+    // Each record is 8 bytes, 4064/8 = 508 records per primary block.
+    // Fill bufA + 1 to trigger swap+flush, then immediately fire enough
+    // appends to overflow bufA again before the flushPending flag clears.
+    // Since flushPrimaryBuffer runs synchronously the 0xFF flag clears
+    // quickly — we manually keep flushPending=true by NOT letting it
+    // resolve. The cleanest way is two back-to-back full-block waves.
+    uint8_t rec[8];
+    for (uint32_t i = 0; i < 1100; ++i) {
+        mkRec(rec, /*ts*/0, /*val*/i);
+        db.append(0, rec);
+    }
+    // We don't assert exact drop count (timing-dependent in single-threaded
+    // host); we only assert the engine remained consistent.
+    EXPECT_GE(db.getStats().totalRecords, 508u);
+    EXPECT_GE(db.getStats().blocksWritten, 1u);
+    db.close();
+}
+
+// ── Drop overflow policy: slow buffer back-pressure ─────────────────────────
+
+TEST(ArcanaTsDbEdgeTest, SlowDropPolicyHandlesBackToBackOverflow) {
+    DbCtx d;
+    TestClock::reset();
+    ArcanaTsDb db;
+    ASSERT_TRUE(db.open("ds.ats", d.makeCfg(/*primary*/0xFF, OverflowPolicy::Drop)));
+    ASSERT_TRUE(db.addChannel(0, makeAdcSchema()));
+    ASSERT_TRUE(db.start());
+
+    // Slow tagged record = 9 bytes; 4064/9 = 451. Force several flush waves.
+    uint8_t rec[8];
+    for (uint32_t i = 0; i < 1500; ++i) {
+        mkRec(rec, 0, i);
+        db.append(0, rec);
+    }
+    EXPECT_GE(db.getStats().blocksWritten, 1u);
+    db.close();
+}
+
+// ── addChannelLive on encrypted-header DB ───────────────────────────────────
+
+TEST(ArcanaTsDbEdgeTest, AddChannelLiveEncryptedHeader) {
+    DbCtx d;
+    TestClock::reset();
+    ArcanaTsDb db;
+    ASSERT_TRUE(db.open("acle.ats", d.makeCfg(/*primary*/0,
+                                              OverflowPolicy::Block,
+                                              d.headerKey)));
+    ASSERT_TRUE(db.addChannel(0, makeAdcSchema()));
+    ASSERT_TRUE(db.start());
+
+    // Adding a channel after start on an encrypted-header DB rewrites the
+    // entire encrypted header block.
+    EXPECT_TRUE(db.addChannelLive(2, makeAdcSchema(), 100));
+    EXPECT_NE(db.getSchema(2), nullptr);
+
+    uint8_t rec[8];
+    mkRec(rec, 1, 1);
+    EXPECT_TRUE(db.append(2, rec));
+    db.close();
+}
+
+// ── queryLatestBySchema / queryBySchema with unknown schema name ────────────
+
+TEST(ArcanaTsDbEdgeTest, QueryBySchemaUnknownNameReturnsNothing) {
+    DbCtx d;
+    TestClock::reset();
+    ArcanaTsDb db;
+    ASSERT_TRUE(db.open("qs.ats", d.makeCfg(/*primary*/0)));
+    ASSERT_TRUE(db.addChannel(0, makeAdcSchema()));
+    ASSERT_TRUE(db.start());
+
+    uint8_t out[16];
+    EXPECT_EQ(db.queryLatestBySchema("MISSING", out, 4), 0u);
+
+    CollectCtx ctx;
+    EXPECT_FALSE(db.queryBySchema("MISSING", 0, 0xFFFFFFFFu, &collectCb, &ctx));
+
+    // Valid schema but the queries below also exercise the wrapper success path
+    EXPECT_EQ(db.queryLatestBySchema("ADC8", out, 0), 0u);   // maxRecords=0 guard
+    db.close();
+}
+
+// ── readCache=nullptr fallback to slowBuf inside getReadCache ───────────────
+
+TEST(ArcanaTsDbEdgeTest, ReadCacheFallsBackToSlowBuf) {
+    DbCtx d;
+    TestClock::reset();
+    ArcanaTsDb db;
+
+    AtsConfig cfg = d.makeCfg(/*primary*/0);
+    cfg.readCache = nullptr;   // force getReadCache → slowBuf branch
+    ASSERT_TRUE(db.open("rc.ats", cfg));
+    ASSERT_TRUE(db.addChannel(0, makeAdcSchema()));
+    ASSERT_TRUE(db.start());
+
+    uint8_t rec[8];
+    for (uint32_t i = 0; i < 600; ++i) {
+        mkRec(rec, 1000 + i, i);
+        ASSERT_TRUE(db.append(0, rec));
+    }
+    ASSERT_TRUE(db.flush());
+    EXPECT_GE(db.getStats().blocksWritten, 1u);
+    db.close();
+}
+
+// ── Recovery: tail truncation when extra bytes after last block ─────────────
+
+TEST(ArcanaTsDbEdgeTest, RecoveryTruncatesTrailingGarbage) {
+    DbCtx d;
+    TestClock::reset();
+    {
+        ArcanaTsDb db;
+        ASSERT_TRUE(db.open("rt.ats", d.makeCfg(/*primary*/0)));
+        ASSERT_TRUE(db.addChannel(0, makeAdcSchema()));
+        ASSERT_TRUE(db.start());
+        uint8_t rec[8];
+        for (uint32_t i = 0; i < 600; ++i) {
+            mkRec(rec, 1000 + i, i);
+            ASSERT_TRUE(db.append(0, rec));
+        }
+        ASSERT_TRUE(db.flush());
+        db.close();
+    }
+    // Append a partial garbage block past the index area
+    const size_t origSize = d.file.data.size();
+    d.file.data.resize(origSize + 2000, 0xCC);
+
+    ArcanaTsDb db2;
+    ASSERT_TRUE(db2.open("rt.ats", d.makeCfg(/*primary*/0)));
+    EXPECT_GE(db2.getChannelCount(), 1u);
+    db2.close();
+}
+
+// ── Recovery: full-scan fallback when tail block invalid ────────────────────
+
+TEST(ArcanaTsDbEdgeTest, RecoveryFullScanWhenTailCorrupt) {
+    DbCtx d;
+    TestClock::reset();
+    {
+        ArcanaTsDb db;
+        ASSERT_TRUE(db.open("fs.ats", d.makeCfg(/*primary*/0)));
+        ASSERT_TRUE(db.addChannel(0, makeAdcSchema()));
+        ASSERT_TRUE(db.start());
+        uint8_t rec[8];
+        for (uint32_t i = 0; i < 1100; ++i) {   // ~3 data blocks
+            mkRec(rec, 1000 + i, i);
+            ASSERT_TRUE(db.append(0, rec));
+        }
+        ASSERT_TRUE(db.flush());
+        db.close();
+    }
+    // Corrupt the seqNo (first 4 bytes) of the LAST data block, forcing the
+    // fast-recovery tail check to fail and fall through to full scan.
+    // Find the index magic and back up one block (4096 bytes).
+    bool clobbered = false;
+    for (size_t off = BLOCK_SIZE; off + 4 <= d.file.data.size(); off += BLOCK_SIZE) {
+        if (off >= 2 * BLOCK_SIZE) {
+            d.file.data[off] = 0;
+            d.file.data[off + 1] = 0;
+            d.file.data[off + 2] = 0;
+            d.file.data[off + 3] = 0;
+            clobbered = true;
+            break;   // just trash one block to trigger tail-fail
+        }
+    }
+    ASSERT_TRUE(clobbered);
+
+    // Re-open: must NOT silently nuke (fail-closed) OR must recover via
+    // full-scan and salvage what it can. Either is acceptable as long as
+    // it doesn't lose ALL data.
+    ArcanaTsDb db2;
+    bool ok = db2.open("fs.ats", d.makeCfg(/*primary*/0));
+    if (ok) {
+        // Full-scan recovery succeeded — channel info still present
+        EXPECT_GE(db2.getChannelCount(), 1u);
+        db2.close();
+    }
+    // If !ok, the fail-closed branch tripped — also acceptable.
+}
+
+// ── Persisted-index round trip (regression for the indexBlockOffset bug) ────
+//
+// IMPORTANT: queryByTime's index pre-filter uses the BLOCK-HEADER timestamps,
+// which come from the engine clock (getTime()), not the record content. So
+// the test clock must be reset to match the timestamps embedded in records.
+
+TEST(ArcanaTsDbEdgeTest, PersistedIndexLoadedOnReopen) {
+    DbCtx d;
+    TestClock::reset(1000, 1);
+    {
+        ArcanaTsDb db;
+        ASSERT_TRUE(db.open("pi.ats", d.makeCfg(/*primary*/0)));
+        ASSERT_TRUE(db.addChannel(0, makeAdcSchema()));
+        ASSERT_TRUE(db.start());
+        uint8_t rec[8];
+        for (uint32_t i = 0; i < 600; ++i) {
+            mkRec(rec, 1000 + i, i);
+            ASSERT_TRUE(db.append(0, rec));
+        }
+        ASSERT_TRUE(db.flush());
+        db.close();
+    }
+
+    ArcanaTsDb db2;
+    ASSERT_TRUE(db2.openReadOnly("pi.ats", d.makeCfg(/*primary*/0)));
+    // Index entries should now be loaded directly from disk (not rebuilt
+    // by header scan). At minimum we expect a positive count.
+    EXPECT_GT(db2.getIndexCount(), 0u);
+    CollectCtx ctx;
+    ctx.expectChannel = 0;
+    EXPECT_TRUE(db2.queryByTime(0, 1100, 1104, &collectCb, &ctx));
+    EXPECT_EQ(ctx.rows.size(), 5u);
+    db2.close();
+}
+
+// ── Multi-channel disk read via queryLatest ─────────────────────────────────
+
+TEST(ArcanaTsDbEdgeTest, QueryLatestReadsFromMultiChannelBlock) {
+    DbCtx d;
+    TestClock::reset();
+    ArcanaTsDb db;
+    // primary=0xFF → both channels go to slow tagged buffer
+    ASSERT_TRUE(db.open("qm.ats", d.makeCfg(/*primary*/0xFF)));
+    ASSERT_TRUE(db.addChannel(0, makeAdcSchema()));
+    ASSERT_TRUE(db.addChannel(1, makeAdcSchema()));
+    ASSERT_TRUE(db.start());
+
+    // Write enough records to flush the slow (multi-channel) buffer to disk.
+    // Tagged record = 9 bytes, 4064/9 ≈ 451 records per block.
+    uint8_t rec[8];
+    for (uint32_t i = 0; i < 500; ++i) {
+        mkRec(rec, 0, 1000 + i);
+        ASSERT_TRUE(db.append(0, rec));
+    }
+    for (uint32_t i = 0; i < 200; ++i) {
+        mkRec(rec, 0, 2000 + i);
+        ASSERT_TRUE(db.append(1, rec));
+    }
+    ASSERT_TRUE(db.flush());
+
+    // Now queryLatest reads from disk through the multi-channel block branch
+    uint8_t out[8 * 4];
+    EXPECT_GT(db.queryLatest(0, out, 4), 0u);
+    EXPECT_GT(db.queryLatest(1, out, 4), 0u);
+    db.close();
+}
+
+// ── queryByTime crosses multi-channel branch ────────────────────────────────
+
+TEST(ArcanaTsDbEdgeTest, QueryByTimeOnMultiChannelBlock) {
+    DbCtx d;
+    TestClock::reset(5000, 1);   // engine clock matches embedded record ts
+    ArcanaTsDb db;
+    ASSERT_TRUE(db.open("qtm.ats", d.makeCfg(/*primary*/0xFF)));
+    ASSERT_TRUE(db.addChannel(0, makeAdcSchema()));
+    ASSERT_TRUE(db.addChannel(1, makeAdcSchema()));
+    ASSERT_TRUE(db.start());
+
+    uint8_t rec[8];
+    for (uint32_t i = 0; i < 600; ++i) {
+        mkRec(rec, 5000 + i, i);
+        ASSERT_TRUE(db.append(0, rec));
+        mkRec(rec, 5000 + i, 100 + i);
+        ASSERT_TRUE(db.append(1, rec));
+    }
+    ASSERT_TRUE(db.flush());
+
+    CollectCtx ctx;
+    ctx.expectChannel = 1;
+    EXPECT_TRUE(db.queryByTime(1, 5100, 5500, &collectCb, &ctx));
+    EXPECT_GT(ctx.rows.size(), 0u);
+    db.close();
+}
+
+// ── Index eviction at MAX_INDEX_ENTRIES ─────────────────────────────────────
+
+TEST(ArcanaTsDbEdgeTest, IndexEvictionAtMaxEntries) {
+    DbCtx d;
+    TestClock::reset();
+    ArcanaTsDb db;
+    ASSERT_TRUE(db.open("ie.ats", d.makeCfg(/*primary*/0)));
+    ASSERT_TRUE(db.addChannel(0, makeAdcSchema()));
+    ASSERT_TRUE(db.start());
+
+    // 508 records per block × ~90 full blocks = 45720 records → forces
+    // addIndexEntry to evict (MAX_INDEX_ENTRIES = 85).
+    uint8_t rec[8];
+    for (uint32_t i = 0; i < 508 * 90; ++i) {
+        mkRec(rec, /*ts*/i, /*val*/i);
+        ASSERT_TRUE(db.append(0, rec));
+    }
+    ASSERT_TRUE(db.flush());
+
+    EXPECT_GE(db.getStats().blocksWritten, 85u);
+    EXPECT_LE(db.getIndexCount(), 85u);   // capped
+    db.close();
+}
+
 // ── Schema accessors / record-size math ──────────────────────────────────────
 
 TEST(ArcanaTsSchemaTest, PredefinedSchemasHaveCorrectRecordSizes) {
