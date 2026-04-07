@@ -11,9 +11,12 @@
  */
 #pragma once
 
-/* Production Esp8266.hpp includes stm32f1xx_hal.h transitively, so any
- * consumer of this mock implicitly gets UID_BASE / SysTick / DWT / ADC1 too. */
+/* Production Esp8266.hpp includes stm32f1xx_hal.h + FreeRTOS.h + semphr.h
+ * transitively, so any consumer of this mock implicitly gets UID_BASE,
+ * SysTick, DWT, ADC1 plus pdMS_TO_TICKS / vTaskDelay too. */
 #include "stm32f1xx_hal.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 #include <cstdint>
 #include <cstddef>

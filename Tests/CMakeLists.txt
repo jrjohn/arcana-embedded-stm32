@@ -326,6 +326,19 @@ target_include_directories(test_ota PRIVATE
     ${F103_DRV})
 target_link_libraries(test_ota PRIVATE GTest::gtest_main)
 
+# ── test_wifi (WifiServiceImpl AT-command sequencing) ────────────────────────
+add_executable(test_wifi
+    test_wifi.cpp
+    ${F103_SVC_IMPL}/WifiServiceImpl.cpp
+    ${MOCKS_DIR}/test_hal_stub.cpp
+    ${MOCKS_DIR}/Esp8266_stub.cpp
+    ${FREERTOS_STUBS}
+)
+target_include_directories(test_wifi PRIVATE
+    ${COMMON_INCS} ${F103_COMMON} ${F103_SVC_INC} ${F103_SVC_IMPL}
+    ${F103_DRV} ${F103_MODEL})
+target_link_libraries(test_wifi PRIVATE GTest::gtest_main)
+
 # ── test_lcd_viewmodel (LcdViewModel observable wiring + dirty flags) ────────
 add_executable(test_lcd_viewmodel
     test_lcd_viewmodel.cpp
@@ -404,3 +417,4 @@ add_test(NAME test_mqtt_packet       COMMAND test_mqtt_packet)
 add_test(NAME test_ota               COMMAND test_ota)
 add_test(NAME test_widgets           COMMAND test_widgets)
 add_test(NAME test_lcd_viewmodel     COMMAND test_lcd_viewmodel)
+add_test(NAME test_wifi              COMMAND test_wifi)
