@@ -14,8 +14,11 @@
 // ChaCha20.hpp lives under Targets/stm32f103ze/Services/Common/. The test
 // CMake target adds that as -I so flat include works.
 #include "ChaCha20.hpp"
+#include "ChaCha20Cipher.hpp"
 
 using arcana::crypto::ChaCha20;
+using arcana::ats::ChaCha20Cipher;
+using arcana::ats::ICipher;
 
 namespace {
 
@@ -105,6 +108,34 @@ TEST(ChaCha20Test, EmptyInputIsNoOp) {
 }
 
 // ── Streaming across multiple blocks (covers the while loop wraparound) ─────
+
+// ── ChaCha20Cipher (ats::ICipher wrapper) ───────────────────────────────────
+
+TEST(ChaCha20CipherTest, WrapperDelegatesToChaCha20) {
+    uint8_t key[32]; key0to31(key);
+    const uint8_t nonce[12] = {
+        0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x4a,0x00,0x00,0x00,0x00
+    };
+    const char* msg = "wrapper roundtrip";
+    const size_t len = std::strlen(msg);
+    uint8_t a[32], b[32];
+    std::memcpy(a, msg, len);
+    std::memcpy(b, msg, len);
+
+    // Direct call vs ICipher dispatch must produce identical ciphertext.
+    ChaCha20::crypt(key, nonce, /*counter=*/1, a, len);
+
+    ChaCha20Cipher wrapper;
+    ICipher& ic = wrapper;
+    EXPECT_EQ(ic.cipherType(), 1);
+    ic.crypt(key, nonce, /*counter=*/1, b, static_cast<uint16_t>(len));
+
+    EXPECT_EQ(0, std::memcmp(a, b, len));
+
+    // Decrypt back via the wrapper
+    ic.crypt(key, nonce, /*counter=*/1, b, static_cast<uint16_t>(len));
+    EXPECT_EQ(0, std::memcmp(b, msg, len));
+}
 
 TEST(ChaCha20Test, MultiBlockMatchesSingleShot) {
     uint8_t key[32]; key0to31(key);
