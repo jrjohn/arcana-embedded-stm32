@@ -326,6 +326,18 @@ target_include_directories(test_ota PRIVATE
     ${F103_DRV})
 target_link_libraries(test_ota PRIVATE GTest::gtest_main)
 
+# ── test_lcd_viewmodel (LcdViewModel observable wiring + dirty flags) ────────
+add_executable(test_lcd_viewmodel
+    test_lcd_viewmodel.cpp
+    ${SHARED_SRC}/Observable.cpp
+    ${MOCKS_DIR}/test_hal_stub.cpp
+    ${FREERTOS_STUBS}
+)
+target_include_directories(test_lcd_viewmodel PRIVATE
+    ${COMMON_INCS} ${F103_COMMON} ${F103_MODEL}
+    ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/ViewModel)
+target_link_libraries(test_lcd_viewmodel PRIVATE GTest::gtest_main)
+
 # ── test_widgets (FormWidgets + DialogWidgets + Widget + WidgetGroup) ────────
 add_executable(test_widgets test_widgets.cpp)
 target_include_directories(test_widgets PRIVATE
@@ -391,3 +403,4 @@ add_test(NAME test_httpupload        COMMAND test_httpupload)
 add_test(NAME test_mqtt_packet       COMMAND test_mqtt_packet)
 add_test(NAME test_ota               COMMAND test_ota)
 add_test(NAME test_widgets           COMMAND test_widgets)
+add_test(NAME test_lcd_viewmodel     COMMAND test_lcd_viewmodel)

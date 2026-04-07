@@ -19,6 +19,8 @@ void         vTaskDelay(TickType_t xTicksToDelay);
 void         vTaskDelete(TaskHandle_t xTaskToDelete);
 void         vTaskDelayUntil(TickType_t* pxPreviousWakeTime,
                              TickType_t xTimeIncrement);
+BaseType_t   xTaskNotifyGive(TaskHandle_t xTaskToNotify);
+uint32_t     ulTaskNotifyTake(BaseType_t xClearCountOnExit, TickType_t xTicksToWait);
 #ifdef __cplusplus
 }
 #endif

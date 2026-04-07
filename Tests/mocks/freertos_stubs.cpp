@@ -46,6 +46,8 @@ extern "C" void vTaskDelete(TaskHandle_t) {}
 extern "C" void vTaskDelayUntil(TickType_t* prev, TickType_t inc) {
     if (prev) *prev += inc;
 }
+extern "C" BaseType_t xTaskNotifyGive(TaskHandle_t) { return pdTRUE; }
+extern "C" uint32_t   ulTaskNotifyTake(BaseType_t, TickType_t) { return 0; }
 
 /* ── Timer stubs (store callback so tests can invoke it) ────────────────── */
 static TimerCallbackFunction_t s_timer_cb = nullptr;
