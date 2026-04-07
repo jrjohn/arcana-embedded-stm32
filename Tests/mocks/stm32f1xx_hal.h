@@ -51,6 +51,30 @@ extern GPIO_TypeDef* const GPIOC;
 typedef int GPIO_PinState;
 GPIO_PinState HAL_GPIO_ReadPin(GPIO_TypeDef* port, uint16_t pin);
 
+/* SDIO surface — HttpUploadServiceImpl::streamFileBody pokes DCTRL/ICR
+ * directly between f_read calls (DMA reset). Stub fields = 0. */
+typedef struct {
+    volatile uint32_t POWER;
+    volatile uint32_t CLKCR;
+    volatile uint32_t ARG;
+    volatile uint32_t CMD;
+    volatile uint32_t RESPCMD;
+    volatile uint32_t RESP1;
+    volatile uint32_t RESP2;
+    volatile uint32_t RESP3;
+    volatile uint32_t RESP4;
+    volatile uint32_t DTIMER;
+    volatile uint32_t DLEN;
+    volatile uint32_t DCTRL;
+    volatile uint32_t DCOUNT;
+    volatile uint32_t STA;
+    volatile uint32_t ICR;
+    volatile uint32_t MASK;
+    volatile uint32_t FIFOCNT;
+    volatile uint32_t FIFO;
+} SDIO_TypeDef;
+extern SDIO_TypeDef* const SDIO;
+
 /* ADC surface — RegistrationServiceImpl::ueccRng() XORs ADC1->DR for entropy */
 typedef struct {
     volatile uint32_t SR;

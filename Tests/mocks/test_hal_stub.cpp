@@ -33,6 +33,10 @@ GPIO_TypeDef* const GPIOC = &sGpiocStorage;
 static ADC_TypeDef sAdc1Storage = {};
 ADC_TypeDef* const ADC1 = &sAdc1Storage;
 
+/* SDIO peripheral stub — HttpUploadServiceImpl writes DCTRL/ICR. */
+static SDIO_TypeDef sSdioStorage = {};
+SDIO_TypeDef* const SDIO = &sSdioStorage;
+
 GPIO_PinState HAL_GPIO_ReadPin(GPIO_TypeDef* /*port*/, uint16_t /*pin*/) {
     return GPIO_PIN_SET;  /* "released" — KEY2 high = idle */
 }

@@ -280,6 +280,38 @@ target_include_directories(test_atsstorage PRIVATE
     ${F103_DRV} ${F103_MODEL})
 target_link_libraries(test_atsstorage PRIVATE GTest::gtest_main)
 
+# ── test_httpupload (HttpUploadServiceImpl HTTPS + retry + streaming) ────────
+# Links the REAL AtsStorageServiceImpl.cpp + RegistrationServiceImpl.cpp +
+# HttpUploadServiceImpl.cpp against the same heavy stub set as test_atsstorage.
+# Reuses Esp8266 mock for AT-command sequencing and the in-memory FatFs for
+# file streaming.
+add_executable(test_httpupload
+    test_httpupload.cpp
+    ${F103_SVC_IMPL}/AtsStorageServiceImpl.cpp
+    ${F103_SVC_IMPL}/RegistrationServiceImpl.cpp
+    ${F103_SVC_IMPL}/HttpUploadServiceImpl.cpp
+    ${F103_DRV}/FatFsFilePort.cpp
+    ${ATS_SRC}/ArcanaTsDb.cpp
+    ${SHARED_SRC}/Observable.cpp
+    ${SHARED_SRC}/uECC.c
+    ${SHARED_SRC}/registration.pb.c
+    ${NANOPB_SRC}/pb_encode.c
+    ${NANOPB_SRC}/pb_decode.c
+    ${NANOPB_SRC}/pb_common.c
+    ${MBEDTLS_SOURCES}
+    ${MOCKS_DIR}/test_hal_stub.cpp
+    ${MOCKS_DIR}/ff_host_stub.cpp
+    ${MOCKS_DIR}/atsstorage_host_stubs.cpp
+    ${MOCKS_DIR}/Esp8266_stub.cpp
+    ${FREERTOS_STUBS}
+)
+target_include_directories(test_httpupload PRIVATE
+    ${COMMON_INCS} ${ATS_INC} ${SHARED_INC}/display
+    ${MBEDTLS_INC} ${MBEDTLS_INC2} ${NANOPB_INC}
+    ${F103_COMMON} ${F103_SVC_INC} ${F103_SVC_IMPL} ${F103_CMD_INC}
+    ${F103_DRV} ${F103_MODEL})
+target_link_libraries(test_httpupload PRIVATE GTest::gtest_main)
+
 # ── test_command_bridge (CommandBridgeImpl crypto + dispatch) ────────────────
 add_executable(test_command_bridge
     test_command_bridge.cpp
@@ -327,3 +359,4 @@ add_test(NAME test_key_exchange      COMMAND test_key_exchange)
 add_test(NAME test_command_bridge    COMMAND test_command_bridge)
 add_test(NAME test_registration      COMMAND test_registration)
 add_test(NAME test_atsstorage        COMMAND test_atsstorage)
+add_test(NAME test_httpupload        COMMAND test_httpupload)

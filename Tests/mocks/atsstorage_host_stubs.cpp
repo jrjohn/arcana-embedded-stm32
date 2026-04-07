@@ -136,5 +136,7 @@ extern "C" {
 volatile uint8_t g_exfat_ready = 1;
 void    sdio_force_reinit(void)   {}
 void    sd_card_full_reinit(void) {}
+void    sd_enable_dma_reads(void) {}
+void    sd_disable_dma_reads(void) {}
 FRESULT texfat_format(void)       { return FR_OK; }
 } // extern "C"

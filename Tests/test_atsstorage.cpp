@@ -451,3 +451,121 @@ TEST(AtsStorageStats, PublishStatsDoesNotCrash) {
     AtsStorageTestAccess::publish(storage());
     SUCCEED();
 }
+
+// ── start / stop / ats_safe_eject ──────────────────────────────────────────
+
+extern "C" void ats_safe_eject(void);
+
+TEST(AtsStorageTaskLifecycle, StartAndStopExerciseTaskHandlePath) {
+    resetEnvironment();
+    auto& s = storage();
+    ASSERT_EQ(s.initHAL(), arcana::ServiceStatus::OK);
+    ASSERT_EQ(s.init(),    arcana::ServiceStatus::OK);
+
+    /* start() returns OK because the xTaskCreateStatic stub returns a non-null
+     * task handle (the static buffer pointer). It does NOT actually invoke
+     * storageTask — the host task scheduler is a no-op. */
+    EXPECT_EQ(s.start(), arcana::ServiceStatus::OK);
+
+    /* stop() flips mRunning, signals the (non-running) write semaphore, and
+     * vTaskDelays then clears the handle. */
+    s.stop();
+    SUCCEED();
+}
+
+TEST(AtsStorageTaskLifecycle, AtsSafeEjectCallsStop) {
+    resetEnvironment();
+    auto& s = storage();
+    ASSERT_EQ(s.initHAL(), arcana::ServiceStatus::OK);
+    ASSERT_EQ(s.init(),    arcana::ServiceStatus::OK);
+    ASSERT_EQ(s.start(),   arcana::ServiceStatus::OK);
+
+    /* The extern "C" function defined at file scope inside
+     * AtsStorageServiceImpl.cpp — covers lines 51-56. */
+    ats_safe_eject();
+    SUCCEED();
+}
+
+// ── onSensorData / start-with-wired-observable ────────────────────────────
+// onSensorData is a private static observer callback. Exercise it indirectly
+// by wiring an Observable and calling start() — the subscribe call branches
+// into the input.SensorData != nullptr path inside start(), which is the
+// only line we'd otherwise miss.
+
+TEST(AtsStorageObserver, StartWithWiredObservableExercisesSubscribePath) {
+    resetEnvironment();
+    auto& s = storage();
+    ASSERT_EQ(s.initHAL(), arcana::ServiceStatus::OK);
+    ASSERT_EQ(s.init(),    arcana::ServiceStatus::OK);
+
+    arcana::Observable<SensorDataModel> obs("test");
+    s.input.SensorData = &obs;
+    EXPECT_EQ(s.start(), arcana::ServiceStatus::OK);
+
+    s.input.SensorData = nullptr;
+    s.stop();
+    SUCCEED();
+}
+
+// ── queryByDate happy path with real records ──────────────────────────────
+
+TEST(AtsStorageQuery, QueryByDateReturnsRecordsWrittenForThatDay) {
+    resetEnvironment();
+    auto& s = storage();
+
+    /* Sync clock to a known epoch INSIDE 2023-11-14 UTC. atsGetTime reads
+     * SystemClock::now() when synced, so block-header timestamps will fall
+     * in this day's range. */
+    const uint32_t epoch = 1700000000u;  // 2023-11-14 22:13:20 UTC
+    const uint32_t dayStart = epoch - (epoch % 86400);  // 2023-11-14 00:00:00 UTC
+    const uint32_t dateYYYYMMDD = SystemClock::dateYYYYMMDD(epoch);
+    SystemClock::getInstance().sync(epoch);
+
+    ASSERT_TRUE(bootStorage());
+
+    /* Append 3 sensor records via the public path (mDb.append on channel 0).
+     * Use serializeRecord to build the bytes the schema expects. */
+    SensorDataModel m;
+    for (int i = 0; i < 3; ++i) {
+        m.temperature = 20.0f + i;
+        m.accelX = (int16_t)(100 + i);
+        m.accelY = (int16_t)(200 + i);
+        m.accelZ = (int16_t)(300 + i);
+        uint8_t rec[14];
+        AtsStorageTestAccess::serialize(s, &m, rec);
+        AtsStorageTestAccess::db(s).append(0, rec);
+    }
+    AtsStorageTestAccess::db(s).flush();
+
+    /* Query the day range — block-header timestamps == dayStart..dayEnd */
+    SensorDataModel out[8];
+    uint16_t n = s.queryByDate(dateYYYYMMDD, out, 8);
+    EXPECT_GT(n, 0u);
+    EXPECT_LE(n, 8u);
+
+    if (n > 0) {
+        EXPECT_FLOAT_EQ(out[0].temperature, 20.0f);
+        EXPECT_EQ(out[0].accelX, 100);
+    }
+}
+
+TEST(AtsStorageQuery, QueryByDateRespectsMaxCount) {
+    resetEnvironment();
+    auto& s = storage();
+    SystemClock::getInstance().sync(1700000000u);
+    ASSERT_TRUE(bootStorage());
+
+    /* Append 5 records but query with maxCount = 2 — only 2 should come back */
+    SensorDataModel m;
+    for (int i = 0; i < 5; ++i) {
+        m.temperature = (float)i;
+        uint8_t rec[14];
+        AtsStorageTestAccess::serialize(s, &m, rec);
+        AtsStorageTestAccess::db(s).append(0, rec);
+    }
+    AtsStorageTestAccess::db(s).flush();
+
+    SensorDataModel out[2];
+    uint16_t n = s.queryByDate(SystemClock::dateYYYYMMDD(1700000000u), out, 2);
+    EXPECT_LE(n, 2u);
+}
