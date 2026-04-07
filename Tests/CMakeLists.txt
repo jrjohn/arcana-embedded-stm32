@@ -457,6 +457,22 @@ target_include_directories(test_commands_f103 PRIVATE
     ${COMMON_INCS} ${F103_COMMON} ${F103_CMD_INC})
 target_link_libraries(test_commands_f103 PRIVATE GTest::gtest_main)
 
+# ── test_appenders (SerialAppender, AtsAppender, DeviceAppender, SyslogAppender) ──
+# Header-only Logger appenders. AtsAppender + DeviceAppender are tested at
+# the no-op (mDb=nullptr) level here; the production write path is covered
+# by test_atsstorage which links the full ArcanaTsDb engine.
+add_executable(test_appenders
+    test_appenders.cpp
+    ${ATS_SRC}/ArcanaTsDb.cpp
+    ${MOCKS_DIR}/test_hal_stub.cpp
+    ${MOCKS_DIR}/ff_host_stub.cpp
+    ${MOCKS_DIR}/Esp8266_stub.cpp
+    ${FREERTOS_STUBS}
+)
+target_include_directories(test_appenders PRIVATE
+    ${COMMON_INCS} ${ATS_INC} ${F103_COMMON} ${F103_DRV})
+target_link_libraries(test_appenders PRIVATE GTest::gtest_main)
+
 # ── test_arcanats_db (ArcanaTS v2 core engine + schema) ──────────────────────
 add_executable(test_arcanats_db
     test_arcanats_db.cpp
@@ -501,3 +517,4 @@ add_test(NAME test_mqtt              COMMAND test_mqtt)
 add_test(NAME test_main_view         COMMAND test_main_view)
 add_test(NAME test_ble               COMMAND test_ble)
 add_test(NAME test_commands_f103     COMMAND test_commands_f103)
+add_test(NAME test_appenders         COMMAND test_appenders)
