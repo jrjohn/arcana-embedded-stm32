@@ -63,6 +63,21 @@ public:
 
     void clearRx() { mRxLen = 0; mRxBuf[0] = '\0'; }
 
+    /* Unsolicited MQTT subscription buffer — production interface used by
+     * MqttServiceImpl. Test code can poke mMqttBuf via pushMqttMsg(). */
+    bool hasMqttMsg() const { return mMqttReady; }
+    const char* getMqttMsg() const { return mMqttBuf; }
+    uint16_t getMqttMsgLen() const { return mMqttLen; }
+    void clearMqttMsg() { mMqttReady = false; mMqttLen = 0; mMqttBuf[0] = '\0'; }
+    void pushMqttMsg(const char* data, uint16_t len) {
+        if (len > MQTT_BUF_SIZE - 1) len = MQTT_BUF_SIZE - 1;
+        std::memcpy(mMqttBuf, data, len);
+        mMqttBuf[len] = '\0';
+        mMqttLen = len;
+        mMqttReady = true;
+    }
+    static const uint16_t MQTT_BUF_SIZE = 256;
+
     void setIpdPassthrough(bool enable) { mIpdPassthrough = enable; }
     bool isIpdPassthrough() const { return mIpdPassthrough; }
 
@@ -86,6 +101,7 @@ public:
         mCurrentUser    = User::None;
         mRequestedUser  = User::None;
         clearRx();
+        clearMqttMsg();
     }
 
     /** Queue an AT-command response. Each sendCmd / waitFor / sendData call
@@ -116,6 +132,9 @@ private:
 
     char     mRxBuf[RX_BUF_SIZE] = {};
     uint16_t mRxLen = 0;
+    char     mMqttBuf[MQTT_BUF_SIZE] = {};
+    uint16_t mMqttLen = 0;
+    bool     mMqttReady = false;
     bool     mIpdPassthrough = false;
     User     mCurrentUser    = User::None;
     User     mRequestedUser  = User::None;

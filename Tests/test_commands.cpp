@@ -21,9 +21,9 @@ TEST(PingCommandTest, ExecuteReturnsTickCountAndSuccess) {
 
     EXPECT_EQ(rsp.status, CommandStatus::Success);
     EXPECT_EQ(rsp.dataLength, 4u);  // uint32_t
-    // xTaskGetTickCount() returns 0 in mock
+    /* xTaskGetTickCount() is monotonic in mock — value > 0 */
     uint32_t ticks = rsp.data[0] | (rsp.data[1] << 8) | (rsp.data[2] << 16) | (rsp.data[3] << 24);
-    EXPECT_EQ(ticks, 0u);
+    EXPECT_GT(ticks, 0u);
 }
 
 // ── GetCounterCommand ─────────────────────────────────────────────────────────

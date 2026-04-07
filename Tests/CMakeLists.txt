@@ -326,6 +326,39 @@ target_include_directories(test_ota PRIVATE
     ${F103_DRV})
 target_link_libraries(test_ota PRIVATE GTest::gtest_main)
 
+# ── test_mqtt (MqttServiceImpl raw MQTT 3.1.1 over Esp8266 SSL) ──────────────
+# Links the full kitchen sink: real Mqtt + Wifi + AtsStorage + HttpUpload +
+# Registration + CommandBridge + uECC + nanopb + mbedtls + FatFsFilePort.
+add_executable(test_mqtt
+    test_mqtt.cpp
+    ${F103_SVC_IMPL}/MqttServiceImpl.cpp
+    ${F103_SVC_IMPL}/WifiServiceImpl.cpp
+    ${F103_SVC_IMPL}/AtsStorageServiceImpl.cpp
+    ${F103_SVC_IMPL}/HttpUploadServiceImpl.cpp
+    ${F103_SVC_IMPL}/RegistrationServiceImpl.cpp
+    ${F103_SVC_IMPL}/CommandBridgeImpl.cpp
+    ${F103_DRV}/FatFsFilePort.cpp
+    ${ATS_SRC}/ArcanaTsDb.cpp
+    ${SHARED_SRC}/Observable.cpp
+    ${SHARED_SRC}/uECC.c
+    ${SHARED_SRC}/registration.pb.c
+    ${NANOPB_SRC}/pb_encode.c
+    ${NANOPB_SRC}/pb_decode.c
+    ${NANOPB_SRC}/pb_common.c
+    ${MBEDTLS_SOURCES}
+    ${MOCKS_DIR}/test_hal_stub.cpp
+    ${MOCKS_DIR}/ff_host_stub.cpp
+    ${MOCKS_DIR}/atsstorage_host_stubs.cpp
+    ${MOCKS_DIR}/Esp8266_stub.cpp
+    ${FREERTOS_STUBS}
+)
+target_include_directories(test_mqtt PRIVATE
+    ${COMMON_INCS} ${ATS_INC} ${SHARED_INC}/display
+    ${MBEDTLS_INC} ${MBEDTLS_INC2} ${NANOPB_INC}
+    ${F103_COMMON} ${F103_SVC_INC} ${F103_SVC_IMPL} ${F103_CMD_INC}
+    ${F103_DRV} ${F103_MODEL})
+target_link_libraries(test_mqtt PRIVATE GTest::gtest_main)
+
 # ── test_wifi (WifiServiceImpl AT-command sequencing) ────────────────────────
 add_executable(test_wifi
     test_wifi.cpp
@@ -418,3 +451,4 @@ add_test(NAME test_ota               COMMAND test_ota)
 add_test(NAME test_widgets           COMMAND test_widgets)
 add_test(NAME test_lcd_viewmodel     COMMAND test_lcd_viewmodel)
 add_test(NAME test_wifi              COMMAND test_wifi)
+add_test(NAME test_mqtt              COMMAND test_mqtt)

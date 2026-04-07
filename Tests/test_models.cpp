@@ -40,6 +40,6 @@ TEST(ModelsTest, ModelTypeField) {
 
 TEST(ModelsTest, ModelUpdateTimestamp) {
     TimerModel m;
-    m.updateTimestamp();   // calls xTaskGetTickCount() → 0 in mock
-    EXPECT_EQ(m.timestamp, 0u);
+    m.updateTimestamp();   // calls xTaskGetTickCount() → monotonic in mock
+    EXPECT_GT(m.timestamp, 0u);
 }

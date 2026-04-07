@@ -7,7 +7,13 @@
 #include <cstdlib>
 
 /* ── TickCount ──────────────────────────────────────────────────────────── */
-extern "C" TickType_t xTaskGetTickCount(void) { return 0; }
+/* Monotonic incrementing tick — every read jumps by 100 ms-equivalent so
+ * production polling loops with millisecond timeouts terminate quickly. */
+extern "C" TickType_t xTaskGetTickCount(void) {
+    static TickType_t sTick = 0;
+    sTick += 100;
+    return sTick;
+}
 
 /* ── Queue stubs ────────────────────────────────────────────────────────── */
 extern "C" QueueHandle_t xQueueCreateStatic(UBaseType_t, UBaseType_t, uint8_t*, StaticQueue_t* q) {

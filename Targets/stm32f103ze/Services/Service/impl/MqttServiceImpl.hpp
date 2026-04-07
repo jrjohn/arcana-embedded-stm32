@@ -23,6 +23,9 @@ public:
     void stop() override;
 
 private:
+    /* Test access — host gtest fixture exercises private helpers. */
+    friend struct MqttServiceTestAccess;
+
     MqttServiceImpl();
     ~MqttServiceImpl();
 
