@@ -27,6 +27,7 @@
 #include "Log.hpp"
 #include "ats/ArcanaTsDb.hpp"
 #include "ats/ArcanaTsSchema.hpp"
+#include "ats_mocks.hpp"
 
 #include "SerialAppender.hpp"
 #include "AtsAppender.hpp"
@@ -83,6 +84,67 @@ TEST(SerialAppenderTest, AppendUnknownSourceFallback) {
     app.append(ev);
 }
 
+// ── ArcanaTsDb test rig (real engine, in-memory file port) ─────────────────
+
+namespace {
+
+struct DbRig {
+    arcana_test::MemFilePort file;
+    arcana_test::NullCipher  cipher;
+    arcana_test::StubMutex   mutex;
+
+    std::vector<uint8_t> bufA, bufB, slow, readCache;
+    uint8_t key[32]{};
+    uint8_t deviceUid[12]{};
+
+    arcana::ats::ArcanaTsDb db;
+
+    DbRig()
+        : bufA(arcana::ats::BLOCK_SIZE, 0),
+          bufB(arcana::ats::BLOCK_SIZE, 0),
+          slow(arcana::ats::BLOCK_SIZE, 0),
+          readCache(arcana::ats::BLOCK_SIZE, 0)
+    {
+        for (int i = 0; i < 32; ++i) key[i]       = static_cast<uint8_t>(0xA0 + i);
+        for (int i = 0; i < 12; ++i) deviceUid[i] = static_cast<uint8_t>(0x10 + i);
+    }
+
+    static uint32_t fakeNow() { return 1700000000u; }
+
+    bool open() {
+        arcana::ats::AtsConfig cfg{};
+        cfg.file           = &file;
+        cfg.cipher         = &cipher;
+        cfg.mutex          = &mutex;
+        cfg.getTime        = &DbRig::fakeNow;
+        cfg.key            = key;
+        cfg.headerKey      = nullptr;
+        cfg.deviceUid      = deviceUid;
+        cfg.deviceUidSize  = 12;
+        cfg.overflow       = arcana::ats::OverflowPolicy::Block;
+        cfg.primaryChannel = 0;
+        cfg.primaryBufA    = bufA.data();
+        cfg.primaryBufB    = bufB.data();
+        cfg.slowBuf        = slow.data();
+        cfg.readCache      = readCache.data();
+
+        if (!db.open("/tmp/appender.ats", cfg)) return false;
+
+        /* 12-byte ERROR_LOG schema for AtsAppender / DeviceAppender output */
+        arcana::ats::ArcanaTsSchema schema;
+        schema.setName("ERR12");
+        schema.addField("ts",   arcana::ats::FieldType::U32);
+        schema.addField("sev",  arcana::ats::FieldType::U8);
+        schema.addField("src",  arcana::ats::FieldType::U8);
+        schema.addField("code", arcana::ats::FieldType::U16);
+        schema.addField("p",    arcana::ats::FieldType::U32);
+        if (!db.addChannel(0, schema)) return false;
+        return db.start();
+    }
+};
+
+} // anonymous namespace
+
 // ── AtsAppender ─────────────────────────────────────────────────────────────
 
 TEST(AtsAppenderTest, MinLevelIsWarn) {
@@ -98,16 +160,34 @@ TEST(AtsAppenderTest, AppendNoOpWhenNotAttached) {
     }
 }
 
-TEST(AtsAppenderTest, AttachThenDetachAcceptsAllLevels) {
+TEST(AtsAppenderTest, AppendWritesRecordToRealDb) {
+    DbRig rig;
+    ASSERT_TRUE(rig.open());
+
     AtsAppender app;
-    /* Attach with a non-null but unused db pointer just to set the field;
-     * the test does NOT call append after attach because exercising the
-     * write path would require a fully configured ArcanaTsDb (covered
-     * separately in test_atsstorage). */
-    arcana::ats::ArcanaTsDb db;
-    app.attach(&db, /*channel=*/0);
+    app.attach(&rig.db, /*channel=*/0);
+
+    /* Warn → append, no flush */
+    app.append(makeEvent(Level::Warn,  /*src=*/2, 0xABCD, 0x11));
+    /* Error → append + immediate flush (toSeverity Error branch) */
+    app.append(makeEvent(Level::Error, /*src=*/3, 0xBEEF, 0x22));
+    /* Fatal → append + immediate flush (toSeverity Fatal branch) */
+    app.append(makeEvent(Level::Fatal, /*src=*/4, 0xDEAD, 0x33));
+    /* Info → toSeverity Info branch */
+    app.append(makeEvent(Level::Info,  /*src=*/5, 0x0001, 0x44));
+
+    rig.db.close();
+}
+
+TEST(AtsAppenderTest, DetachStopsWrites) {
+    DbRig rig;
+    ASSERT_TRUE(rig.open());
+
+    AtsAppender app;
+    app.attach(&rig.db, 0);
     app.detach();
     app.append(makeEvent(Level::Error));  /* mDb null → no-op */
+    rig.db.close();
 }
 
 // ── DeviceAppender ──────────────────────────────────────────────────────────
@@ -122,12 +202,19 @@ TEST(DeviceAppenderTest, AppendNoOpWhenNotAttached) {
     app.append(makeEvent(Level::Fatal));
 }
 
-TEST(DeviceAppenderTest, AttachThenDetachAcceptsAllLevels) {
+TEST(DeviceAppenderTest, AppendWritesLifecycleErrorToRealDb) {
+    DbRig rig;
+    ASSERT_TRUE(rig.open());
+
     DeviceAppender app;
-    arcana::ats::ArcanaTsDb db;
-    app.attach(&db);
+    app.attach(&rig.db);
+
+    /* Production behaviour: Fatal events get written + flushed immediately */
+    app.append(makeEvent(Level::Fatal, /*src=*/9, 0xCAFE, 0x55));
+
     app.detach();
     app.append(makeEvent(Level::Fatal));  /* mDb null → no-op */
+    rig.db.close();
 }
 
 // ── SyslogAppender ──────────────────────────────────────────────────────────
