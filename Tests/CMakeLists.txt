@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(arcana_stm32_tests CXX)
+project(arcana_stm32_tests C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -22,9 +22,41 @@ set(SHARED_INC    ${CMAKE_SOURCE_DIR}/../Shared/Inc)
 set(SHARED_SRC    ${CMAKE_SOURCE_DIR}/../Shared/Src)
 set(ATS_INC       ${SHARED_INC}/ats)
 set(ATS_SRC       ${SHARED_SRC}/ats)
+set(F103_COMMON   ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/Common)
 set(F051_CMD      ${CMAKE_SOURCE_DIR}/../Targets/stm32f051c8/Services/command)
 set(F051_SVC      ${CMAKE_SOURCE_DIR}/../Targets/stm32f051c8/Services/service)
 set(MOCKS_DIR     ${CMAKE_SOURCE_DIR}/mocks)
+set(MBEDTLS_INC   ${SHARED_INC})            # mbedtls headers live at Shared/Inc/mbedtls/*
+set(MBEDTLS_INC2  ${SHARED_INC}/mbedtls)    # bare `#include "common.h"` etc.
+set(MBEDTLS_SRC   ${SHARED_SRC}/mbedtls)
+
+# mbedtls source subset needed for CCM/SHA256/HMAC/HKDF + ECDH P-256 + DRBG.
+# Excludes the STM32-specific entropy_hardware_alt.c — host stub provided in
+# Tests/mocks/mbedtls_host_entropy.c instead.
+set(MBEDTLS_SOURCES
+    ${MBEDTLS_SRC}/aes.c
+    ${MBEDTLS_SRC}/ccm.c
+    ${MBEDTLS_SRC}/sha256.c
+    ${MBEDTLS_SRC}/md.c
+    ${MBEDTLS_SRC}/cipher.c
+    ${MBEDTLS_SRC}/cipher_wrap.c
+    ${MBEDTLS_SRC}/constant_time.c
+    ${MBEDTLS_SRC}/platform_util.c
+    ${MBEDTLS_SRC}/bignum.c
+    ${MBEDTLS_SRC}/bignum_core.c
+    ${MBEDTLS_SRC}/bignum_mod.c
+    ${MBEDTLS_SRC}/bignum_mod_raw.c
+    ${MBEDTLS_SRC}/ecp.c
+    ${MBEDTLS_SRC}/ecp_curves.c
+    ${MBEDTLS_SRC}/ecdh.c
+    ${MBEDTLS_SRC}/asn1parse.c
+    ${MBEDTLS_SRC}/asn1write.c
+    ${MBEDTLS_SRC}/ecdsa.c
+    ${MBEDTLS_SRC}/entropy.c
+    ${MBEDTLS_SRC}/entropy_poll.c
+    ${MBEDTLS_SRC}/ctr_drbg.c
+    ${MOCKS_DIR}/mbedtls_host_entropy.c
+)
 
 # Shared stubs for all targets needing FreeRTOS
 set(FREERTOS_STUBS ${MOCKS_DIR}/freertos_stubs.cpp)
@@ -159,6 +191,31 @@ add_executable(test_sha256 test_sha256.cpp)
 target_include_directories(test_sha256 PRIVATE ${COMMON_INCS})
 target_link_libraries(test_sha256 PRIVATE GTest::gtest_main)
 
+# ── test_chacha20 (RFC 7539 KAT) ──────────────────────────────────────────────
+add_executable(test_chacha20 test_chacha20.cpp)
+target_include_directories(test_chacha20 PRIVATE ${COMMON_INCS} ${F103_COMMON})
+target_link_libraries(test_chacha20 PRIVATE GTest::gtest_main)
+
+# ── test_crypto_engine (CryptoEngine + real mbedtls CCM/SHA256) ───────────────
+add_executable(test_crypto_engine
+    test_crypto_engine.cpp
+    ${SHARED_SRC}/CryptoEngine.cpp
+    ${MBEDTLS_SOURCES}
+)
+target_include_directories(test_crypto_engine PRIVATE ${COMMON_INCS} ${MBEDTLS_INC} ${MBEDTLS_INC2})
+target_link_libraries(test_crypto_engine PRIVATE GTest::gtest_main)
+
+# ── test_key_exchange (KeyExchangeManager + ECDH P-256 over real mbedtls) ─────
+add_executable(test_key_exchange
+    test_key_exchange.cpp
+    ${SHARED_SRC}/KeyExchangeManager.cpp
+    ${SHARED_SRC}/CryptoEngine.cpp
+    ${FREERTOS_STUBS}
+    ${MBEDTLS_SOURCES}
+)
+target_include_directories(test_key_exchange PRIVATE ${COMMON_INCS} ${MBEDTLS_INC} ${MBEDTLS_INC2})
+target_link_libraries(test_key_exchange PRIVATE GTest::gtest_main)
+
 # ── test_arcanats_db (ArcanaTS v2 core engine + schema) ──────────────────────
 add_executable(test_arcanats_db
     test_arcanats_db.cpp
@@ -187,3 +244,6 @@ add_test(NAME test_observable        COMMAND test_observable)
 add_test(NAME test_observable_errors COMMAND test_observable_errors)
 add_test(NAME test_sha256            COMMAND test_sha256)
 add_test(NAME test_arcanats_db       COMMAND test_arcanats_db)
+add_test(NAME test_chacha20          COMMAND test_chacha20)
+add_test(NAME test_crypto_engine     COMMAND test_crypto_engine)
+add_test(NAME test_key_exchange      COMMAND test_key_exchange)

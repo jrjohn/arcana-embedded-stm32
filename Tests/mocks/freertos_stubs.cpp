@@ -55,3 +55,25 @@ void test_fire_timer_callback() {
 
 /* ── CMSIS-OS stub ──────────────────────────────────────────────────────── */
 extern "C" osStatus_t osDelay(uint32_t) { return 0; }
+
+/* ── Semaphore stubs (single-threaded host: take/give are no-ops) ─────── */
+#include "semphr.h"
+
+static int s_lock_balance = 0;
+
+extern "C" SemaphoreHandle_t xSemaphoreCreateMutexStatic(StaticSemaphore_t* p) {
+    return (SemaphoreHandle_t)p;
+}
+extern "C" SemaphoreHandle_t xSemaphoreCreateMutex(void) {
+    static int dummy = 0;
+    return (SemaphoreHandle_t)&dummy;
+}
+extern "C" BaseType_t xSemaphoreTake(SemaphoreHandle_t, TickType_t) {
+    ++s_lock_balance;
+    return pdTRUE;
+}
+extern "C" BaseType_t xSemaphoreGive(SemaphoreHandle_t) {
+    --s_lock_balance;
+    return pdTRUE;
+}
+extern "C" void vSemaphoreDelete(SemaphoreHandle_t) {}
