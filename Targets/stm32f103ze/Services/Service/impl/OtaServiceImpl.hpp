@@ -21,6 +21,9 @@ public:
     } input;
 
 private:
+    /* Test access — host gtest fixture exercises private helpers. */
+    friend struct OtaServiceTestAccess;
+
     OtaServiceImpl();
 
     bool httpGet(const char* host, uint16_t port, const char* path);

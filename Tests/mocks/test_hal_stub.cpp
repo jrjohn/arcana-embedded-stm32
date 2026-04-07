@@ -37,6 +37,21 @@ ADC_TypeDef* const ADC1 = &sAdc1Storage;
 static SDIO_TypeDef sSdioStorage = {};
 SDIO_TypeDef* const SDIO = &sSdioStorage;
 
+/* BKP peripheral stub — OtaServiceImpl::setOtaFlag writes DR2/DR3.
+ * NVIC_SystemReset would normally reboot the MCU; on host we use a flag
+ * + setjmp that the test can inspect. */
+static BKP_TypeDef sBkpStorage = {};
+BKP_TypeDef* const BKP = &sBkpStorage;
+
+void HAL_PWR_EnableBkUpAccess(void) {}
+
+/* Make NVIC_SystemReset a controllable abort point: tests can throw via the
+ * exception path to verify the call site is reached without actually
+ * resetting the host process. The default no-op behavior lets unit tests
+ * proceed past the call (since NVIC_SystemReset is the LAST thing in
+ * production startUpdate). */
+void NVIC_SystemReset(void) {}
+
 GPIO_PinState HAL_GPIO_ReadPin(GPIO_TypeDef* /*port*/, uint16_t /*pin*/) {
     return GPIO_PIN_SET;  /* "released" — KEY2 high = idle */
 }

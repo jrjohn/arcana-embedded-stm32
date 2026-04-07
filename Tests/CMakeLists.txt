@@ -312,6 +312,20 @@ target_include_directories(test_httpupload PRIVATE
     ${F103_DRV} ${F103_MODEL})
 target_link_libraries(test_httpupload PRIVATE GTest::gtest_main)
 
+# ── test_ota (OtaServiceImpl HTTP download + CRC + meta + flag) ──────────────
+add_executable(test_ota
+    test_ota.cpp
+    ${F103_SVC_IMPL}/OtaServiceImpl.cpp
+    ${MOCKS_DIR}/test_hal_stub.cpp
+    ${MOCKS_DIR}/ff_host_stub.cpp
+    ${MOCKS_DIR}/Esp8266_stub.cpp
+    ${FREERTOS_STUBS}
+)
+target_include_directories(test_ota PRIVATE
+    ${COMMON_INCS} ${F103_COMMON} ${F103_SVC_INC} ${F103_SVC_IMPL}
+    ${F103_DRV})
+target_link_libraries(test_ota PRIVATE GTest::gtest_main)
+
 # ── test_mqtt_packet (MqttPacket header-only build/parse) ────────────────────
 add_executable(test_mqtt_packet
     test_mqtt_packet.cpp
@@ -369,3 +383,4 @@ add_test(NAME test_registration      COMMAND test_registration)
 add_test(NAME test_atsstorage        COMMAND test_atsstorage)
 add_test(NAME test_httpupload        COMMAND test_httpupload)
 add_test(NAME test_mqtt_packet       COMMAND test_mqtt_packet)
+add_test(NAME test_ota               COMMAND test_ota)

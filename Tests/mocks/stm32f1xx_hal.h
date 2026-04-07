@@ -51,6 +51,30 @@ extern GPIO_TypeDef* const GPIOC;
 typedef int GPIO_PinState;
 GPIO_PinState HAL_GPIO_ReadPin(GPIO_TypeDef* port, uint16_t pin);
 
+/* BKP (backup register) — OtaServiceImpl::setOtaFlag writes DR2/DR3
+ * to signal the bootloader on next reset. */
+typedef struct {
+    volatile uint32_t RTCCR;
+    volatile uint32_t CR;
+    volatile uint32_t CSR;
+    volatile uint16_t DR1;
+    uint16_t _pad1;
+    volatile uint16_t DR2;
+    uint16_t _pad2;
+    volatile uint16_t DR3;
+    uint16_t _pad3;
+    volatile uint16_t DR4;
+    uint16_t _pad4;
+    /* … other DRn omitted; not used by code under test */
+} BKP_TypeDef;
+extern BKP_TypeDef* const BKP;
+
+/* HAL macros + functions referenced by OtaServiceImpl::setOtaFlag */
+#define __HAL_RCC_PWR_CLK_ENABLE()  ((void)0)
+#define __HAL_RCC_BKP_CLK_ENABLE()  ((void)0)
+void HAL_PWR_EnableBkUpAccess(void);
+void NVIC_SystemReset(void);
+
 /* SDIO surface — HttpUploadServiceImpl::streamFileBody pokes DCTRL/ICR
  * directly between f_read calls (DMA reset). Stub fields = 0. */
 typedef struct {
