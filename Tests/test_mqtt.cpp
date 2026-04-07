@@ -77,6 +77,29 @@ struct AtsStorageTestAccess {
 }}
 using arcana::atsstorage::AtsStorageTestAccess;
 
+#include "RegistrationServiceImpl.hpp"
+namespace arcana { namespace reg {
+struct RegistrationServiceTestAccess {
+    /** Populate the cached credentials so isRegistered() returns true and
+     *  the "registered" branches in MqttServiceImpl::sslConnect /
+     *  mqttHandshake exercise the broker / user / pass fields. */
+    static void populate(RegistrationServiceImpl& r,
+                         const char* broker, uint16_t port,
+                         const char* user,   const char* pass) {
+        std::strncpy(r.mCreds.mqttBroker, broker, sizeof(r.mCreds.mqttBroker));
+        r.mCreds.mqttPort = port;
+        std::strncpy(r.mCreds.mqttUser, user, sizeof(r.mCreds.mqttUser));
+        std::strncpy(r.mCreds.mqttPass, pass, sizeof(r.mCreds.mqttPass));
+        r.mCreds.valid = true;
+    }
+    static void clear(RegistrationServiceImpl& r) {
+        r.mCreds.valid = false;
+        r.mCreds.hasCommKey = false;
+    }
+};
+}}
+using arcana::reg::RegistrationServiceTestAccess;
+
 namespace {
 
 MqttServiceImpl& mqtt() {
@@ -90,6 +113,10 @@ void resetEnvironment() {
 
     /* Wire WifiService into MqttService.input — sslConnect derefs it */
     mqtt().input.Wifi = &arcana::wifi::WifiServiceImpl::getInstance();
+
+    /* Reset credentials so each test starts with isRegistered() == false */
+    RegistrationServiceTestAccess::clear(
+        arcana::reg::RegistrationServiceImpl::getInstance());
 
     /* Reset AtsStorage singleton state (same trick as test_atsstorage) */
     auto& s = static_cast<AtsStorageServiceImpl&>(
@@ -560,4 +587,80 @@ TEST(MqttObservers, InitWithObservablesSubscribes) {
     /* Detach so subsequent tests don't see stale subscriptions */
     mqtt().input.SensorData = nullptr;
     mqtt().input.LightData = nullptr;
+}
+
+// ── Registered-credentials branches ─────────────────────────────────────────
+
+TEST(MqttRegistered, SslConnectUsesCredentialBroker) {
+    /* When isRegistered() returns true, sslConnect should pull broker/port
+     * from the credentials struct (lines 117-119). */
+    resetEnvironment();
+    auto& reg = arcana::reg::RegistrationServiceImpl::getInstance();
+    RegistrationServiceTestAccess::populate(reg, "broker.test.io", 8884,
+                                             "u", "p");
+
+    auto& esp = Esp8266::getInstance();
+    esp.pushResponse("CONNECT");
+    EXPECT_TRUE(MqttServiceTestAccess::sslConnect(mqtt()));
+
+    /* Verify the AT+CIPSTART command went out with the credential broker */
+    bool seen = false;
+    for (auto& cmd : esp.sentCmds()) {
+        if (cmd.find("broker.test.io") != std::string::npos &&
+            cmd.find("8884") != std::string::npos) { seen = true; break; }
+    }
+    EXPECT_TRUE(seen);
+}
+
+TEST(MqttRegistered, HandshakeUsesCredentialUserPass) {
+    /* mqttHandshake should pull user/pass from credentials when registered
+     * (lines 172-174). */
+    resetEnvironment();
+    auto& reg = arcana::reg::RegistrationServiceImpl::getInstance();
+    RegistrationServiceTestAccess::populate(reg, "b", 1883,
+                                             "alice", "bobspassword");
+
+    auto& esp = Esp8266::getInstance();
+    /* sendMqttPacket: CIPSEND prompt + sendData + SEND OK */
+    esp.pushResponse(">");
+    esp.pushResponse("");
+    esp.pushResponse("SEND OK");
+    /* CONNACK wrapped in +IPD frame so parseIpd succeeds */
+    char connack[12] = "+IPD,4:";
+    connack[7] = (char)0x20; connack[8] = 0x02;
+    connack[9] = 0x00;       connack[10] = 0x00;
+    esp.pushMqttMsg(connack, 11);
+
+    EXPECT_TRUE(MqttServiceTestAccess::handshake(mqtt()));
+
+    /* The CONNECT packet should embed "alice" + "bobspassword" — the easiest
+     * sanity check is that some sentData blob contains those bytes. */
+    bool seen = false;
+    for (auto& blob : esp.sentData()) {
+        std::string s(blob.begin(), blob.end());
+        if (s.find("alice") != std::string::npos) { seen = true; break; }
+    }
+    EXPECT_TRUE(seen);
+}
+
+// ── publishBin: parseIpd-fail clearMqttMsg branch (lines 248-249) ───────────
+
+TEST(MqttPublish, PublishBinClearsMalformedIpdAndTimesOut) {
+    /* Push an mqtt msg that does NOT parse as a valid +IPD frame so the
+     * inner if (parseIpd) is false → falls through to clearMqttMsg + 20ms
+     * delay → loop continues until timeout. */
+    resetEnvironment();
+    MqttServiceTestAccess::nextPacketId(mqtt()) = 1;
+    MqttServiceTestAccess::mqttConnected(mqtt()) = true;
+
+    auto& esp = Esp8266::getInstance();
+    /* sendMqttPacket: CIPSEND prompt + sendData + SEND OK */
+    esp.pushResponse(">");
+    esp.pushResponse("");
+    esp.pushResponse("SEND OK");
+    /* Malformed mqtt msg — no "+IPD," prefix → parseIpd returns false */
+    esp.pushMqttMsg("garbage no IPD prefix", 21);
+
+    const uint8_t data[] = {0xAA, 0xBB};
+    EXPECT_FALSE(MqttServiceTestAccess::publishBin(mqtt(), "topic", data, 2));
 }

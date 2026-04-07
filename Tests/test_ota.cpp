@@ -287,3 +287,116 @@ TEST(OtaReceive, ReceiveToFileHttp404Fails) {
     esp.pushResponse(ipd);
     EXPECT_FALSE(OtaServiceTestAccess::receiveToFile(ota(), 100));
 }
+
+// ── receiveToFile: more uncov branches ──────────────────────────────────────
+
+TEST(OtaReceive, ReceiveToFileSubsequentChunksAreBodyOnly) {
+    /* First +IPD has headers + 4-byte body, second +IPD has the rest (raw
+     * body bytes only). Exercises the lines 252-256 branch. */
+    resetEnvironment();
+    auto& esp = Esp8266::getInstance();
+    esp.pushResponse("+IPD,50:HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\nDATA");
+    esp.pushResponse("+IPD,4:MORE");
+    for (int i = 0; i < 5; ++i) esp.pushResponse("");
+    EXPECT_TRUE(OtaServiceTestAccess::receiveToFile(ota(), 8));
+}
+
+TEST(OtaReceive, ReceiveToFileWaitForFoundButBufHasNoIpdPrefix) {
+    /* waitFor("+IPD,") matches because the response contains the literal,
+     * but our parser looks for "+IPD," at any offset and falls through to
+     * "no ipd → clearRx → continue" if it can't lock onto a full prefix.
+     * Actually the parser scans the whole buf, so we need to send a buf
+     * where waitFor sees "+IPD," but the parser's memcmp loop ends without
+     * finding it (e.g. truncated). Easier: stage a "garbage with +IPD"
+     * that can't be parsed because no ':' after the digits → lines 199-201. */
+    resetEnvironment();
+    auto& esp = Esp8266::getInstance();
+    /* "+IPD,123" — has a number but no ':' terminator → bail to clearRx */
+    esp.pushResponse("+IPD,123");
+    /* Then drain noDataCount with empty responses */
+    for (int i = 0; i < 5; ++i) esp.pushResponse("");
+    EXPECT_FALSE(OtaServiceTestAccess::receiveToFile(ota(), 100));
+}
+
+TEST(OtaReceive, ReceiveToFileIpdLenZeroBails) {
+    /* "+IPD,0:" — len=0 → also takes the clearRx/continue branch */
+    resetEnvironment();
+    auto& esp = Esp8266::getInstance();
+    esp.pushResponse("+IPD,0:");
+    for (int i = 0; i < 5; ++i) esp.pushResponse("");
+    EXPECT_FALSE(OtaServiceTestAccess::receiveToFile(ota(), 100));
+}
+
+TEST(OtaReceive, ReceiveToFileHeaderTooLargeBails) {
+    /* HTTP response with no \r\n\r\n in the first +IPD chunk → bodyStart is
+     * never found → OTA_HDR_TOO_LARGE return false (lines 223-225). */
+    resetEnvironment();
+    auto& esp = Esp8266::getInstance();
+    esp.pushResponse("+IPD,30:HTTP/1.1 200 OK no terminat");
+    EXPECT_FALSE(OtaServiceTestAccess::receiveToFile(ota(), 100));
+}
+
+// ── startUpdate: cover the post-httpGet failure + success branches ──────────
+
+TEST(OtaStartUpdate, ReceiveFailureRollsBackEsp) {
+    /* httpGet succeeds, receiveToFile fails (no +IPD ever) → cleanup branch
+     * (lines 60-65: AT+CIPCLOSE, setIpdPassthrough false, mActive false). */
+    resetEnvironment();
+    auto& esp = Esp8266::getInstance();
+    /* httpGet sequence */
+    esp.pushResponse("OK");        // CIPCLOSE
+    esp.pushResponse("OK");        // CIPSTART
+    esp.pushResponse(">");         // CIPSEND
+    esp.pushResponse("");          // sendData
+    esp.pushResponse("SEND OK");
+    /* receive: 4 empty waitFors → noDataCount > 3 → bail */
+    for (int i = 0; i < 5; ++i) esp.pushResponse("");
+    /* Cleanup CIPCLOSE */
+    esp.pushResponse("OK");
+
+    EXPECT_FALSE(ota().startUpdate("h", 443, "/f", 1000, 0));
+    EXPECT_FALSE(ota().isActive());
+}
+
+TEST(OtaStartUpdate, VerifyFailureLeavesActiveFalse) {
+    /* httpGet OK, receive a 4-byte body that lands on disk, then verifyCrc
+     * fails because we lie about the expected CRC. */
+    resetEnvironment();
+    auto& esp = Esp8266::getInstance();
+    /* httpGet */
+    esp.pushResponse("OK");
+    esp.pushResponse("OK");
+    esp.pushResponse(">");
+    esp.pushResponse("");
+    esp.pushResponse("SEND OK");
+    /* receive: one +IPD with 4 body bytes */
+    esp.pushResponse("+IPD,50:HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nDATA");
+
+    EXPECT_FALSE(ota().startUpdate("h", 443, "/f", 4, /*wrong crc*/ 0xDEADBEEF));
+    EXPECT_FALSE(ota().isActive());
+}
+
+TEST(OtaStartUpdate, FullSuccessHitsResetPath) {
+    /* End-to-end: httpGet OK, receiveToFile populates firmware.bin with
+     * known bytes, verifyCrc matches, writeOtaMeta succeeds, setOtaFlag +
+     * NVIC_SystemReset (no-op stub). startUpdate's "return true" line is
+     * marked "Never reached" in production but on host we DO fall through. */
+    resetEnvironment();
+    auto& esp = Esp8266::getInstance();
+    /* httpGet */
+    esp.pushResponse("OK");
+    esp.pushResponse("OK");
+    esp.pushResponse(">");
+    esp.pushResponse("");
+    esp.pushResponse("SEND OK");
+
+    /* receive: a single +IPD with body "ABCD" — we'll use the matching CRC */
+    const char* body = "ABCD";
+    uint32_t crc = ~crc32_calc(0xFFFFFFFF,
+                               reinterpret_cast<const uint8_t*>(body), 4);
+    esp.pushResponse("+IPD,50:HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nABCD");
+
+    /* The handler calls vTaskDelay(100) before NVIC_SystemReset; both are
+     * no-ops on host. The function returns true after the (no-op) reset. */
+    EXPECT_TRUE(ota().startUpdate("h", 443, "/f", 4, crc));
+}

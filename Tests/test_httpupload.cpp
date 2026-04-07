@@ -44,6 +44,17 @@ struct AtsStorageTestAccess {
 };
 }}
 
+namespace arcana {
+struct HttpUploadServiceTestAccess {
+    static bool sendHttpHeader(Esp8266& esp, const char* filename,
+                                const char* deviceId, uint32_t bodySize,
+                                uint32_t rangeStart, uint32_t totalSize) {
+        return HttpUploadServiceImpl::sendHttpHeader(
+            esp, filename, deviceId, bodySize, rangeStart, totalSize);
+    }
+};
+}
+
 using arcana::HttpUploadServiceImpl;
 using arcana::Esp8266;
 using arcana::SystemClock;
@@ -467,4 +478,41 @@ TEST(HttpUploadFile, ResumeFromServerOffset) {
 
     EXPECT_TRUE(HttpUploadServiceImpl::uploadFile(esp, "resume.ats", "DEADBEEF"));
     EXPECT_EQ(arcana::g_uploadProgress.resumeOffset, 500u);
+}
+
+// ── sendHttpHeader (legacy non-transparent path) ────────────────────────────
+//
+// sendHttpHeader is declared in the header but only its inline twin is used
+// from uploadFile. We exercise the static helper directly to claim coverage
+// for the dead-but-shipped code path.
+
+TEST(HttpUploadHeader, SendHttpHeaderHappyPath) {
+    resetEnvironment();
+    auto& esp = Esp8266::getInstance();
+    esp.pushResponse(">");        // CIPSEND prompt
+    esp.pushResponse("");         // sendData
+    esp.pushResponse("SEND OK");  // waitFor
+
+    EXPECT_TRUE(arcana::HttpUploadServiceTestAccess::sendHttpHeader(
+        esp, "20260101.ats", "DEADBEEF", /*body*/ 100, /*range*/ 0, /*total*/ 100));
+}
+
+TEST(HttpUploadHeader, SendHttpHeaderCipsendFails) {
+    resetEnvironment();
+    auto& esp = Esp8266::getInstance();
+    esp.pushResponse("ERROR");    // CIPSEND prompt fails
+
+    EXPECT_FALSE(arcana::HttpUploadServiceTestAccess::sendHttpHeader(
+        esp, "20260101.ats", "DEADBEEF", 100, 0, 100));
+}
+
+TEST(HttpUploadHeader, SendHttpHeaderSendOkFails) {
+    resetEnvironment();
+    auto& esp = Esp8266::getInstance();
+    esp.pushResponse(">");        // CIPSEND prompt
+    esp.pushResponse("");         // sendData
+    esp.pushResponse("ERROR");    // waitFor SEND OK → fail
+
+    EXPECT_FALSE(arcana::HttpUploadServiceTestAccess::sendHttpHeader(
+        esp, "20260101.ats", "DEADBEEF", 100, 0, 100));
 }

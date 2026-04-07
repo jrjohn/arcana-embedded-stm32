@@ -235,3 +235,59 @@ TEST(WifiTimezone, DetectTimezoneNoOffsetInResponse) {
     int16_t off = 99;
     EXPECT_FALSE(wifi().detectTimezone(off));
 }
+
+// ── applyNtpEpoch real success path (covers lines 202-208) ──────────────────
+
+TEST(WifiNtp, SyncNtpEpochInSecondsAppliesToSystemClock) {
+    /* Push a 10-digit SYSTIMESTAMP — interpreted as seconds, large enough
+     * (> 1700000000) to satisfy applyNtpEpoch and call SystemClock::sync. */
+    resetEnvironment();
+    auto& esp = Esp8266::getInstance();
+    esp.pushResponse("OK");
+    esp.pushResponse("+CIPSNTPTIME:Mon Mar 23 12:34:56 2026\r\nOK");
+    esp.pushResponse("+SYSTIMESTAMP:1742300000\r\nOK");
+
+    EXPECT_TRUE(wifi().syncNtp());
+    EXPECT_TRUE(SystemClock::getInstance().isSynced());
+}
+
+TEST(WifiNtp, SyncNtpFallbackWhenSysTimestampMissing) {
+    /* CIPSNTPTIME succeeds with valid year, SYSTIMESTAMP succeeds but the
+     * response has no "+SYSTIMESTAMP:" prefix → ts is null → falls through
+     * to the fallback `return true` (covers lines 181-183). */
+    resetEnvironment();
+    auto& esp = Esp8266::getInstance();
+    esp.pushResponse("OK");
+    esp.pushResponse("+CIPSNTPTIME:Mon Mar 23 12:34:56 2026\r\nOK");
+    esp.pushResponse("garbage no timestamp prefix\r\nOK");
+
+    EXPECT_TRUE(wifi().syncNtp());
+}
+
+TEST(WifiNtp, SyncNtpFallbackWhenSysTimestampCommandFails) {
+    /* SYSTIMESTAMP command itself fails → outer if false → fallback true */
+    resetEnvironment();
+    auto& esp = Esp8266::getInstance();
+    esp.pushResponse("OK");
+    esp.pushResponse("+CIPSNTPTIME:Mon Mar 23 12:34:56 2026\r\nOK");
+    esp.pushResponse("ERROR");
+
+    EXPECT_TRUE(wifi().syncNtp());
+}
+
+TEST(WifiNtp, ApplyNtpEpochZeroIsRejected) {
+    /* Push CIPSNTPTIME valid + SYSTIMESTAMP=0 → epoch ≤ 1700000000 →
+     * applyNtpEpoch returns false. The "if (epoch != 0)" inner skip
+     * branch isn't hit because epoch IS 0 — exercise the early return. */
+    resetEnvironment();
+    auto& esp = Esp8266::getInstance();
+    esp.pushResponse("OK");
+    esp.pushResponse("+CIPSNTPTIME:Mon Mar 23 12:34:56 2026\r\nOK");
+    esp.pushResponse("+SYSTIMESTAMP:0\r\nOK");
+    /* applyNtpEpoch returns false → loop continues to next iteration.
+     * Stage 5 more no-good responses to make the polling loop give up. */
+    for (int i = 0; i < 5; ++i) {
+        esp.pushResponse("+CIPSNTPTIME:Thu Jan 1 00:00:00 1970\r\nOK");
+    }
+    EXPECT_FALSE(wifi().syncNtp());
+}

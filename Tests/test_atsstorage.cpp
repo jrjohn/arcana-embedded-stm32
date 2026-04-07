@@ -51,7 +51,14 @@ struct AtsStorageTestAccess {
                           const SensorDataModel* m, uint8_t* buf) {
         s.serializeRecord(m, buf);
     }
+    static void appendRecord(AtsStorageServiceImpl& s, const SensorDataModel* m) {
+        s.appendRecord(m);
+    }
     static void publish(AtsStorageServiceImpl& s) { s.publishStats(); }
+    static uint32_t totalRecords(AtsStorageServiceImpl& s) { return s.mTotalRecords; }
+    static void setTotalRecords(AtsStorageServiceImpl& s, uint32_t n) {
+        s.mTotalRecords = n;
+    }
 
     static bool& dbReady(AtsStorageServiceImpl& s)        { return s.mDbReady; }
     static bool& deviceDbReady(AtsStorageServiceImpl& s)  { return s.mDeviceDbReady; }
@@ -568,4 +575,20 @@ TEST(AtsStorageQuery, QueryByDateRespectsMaxCount) {
     SensorDataModel out[2];
     uint16_t n = s.queryByDate(SystemClock::dateYYYYMMDD(1700000000u), out, 2);
     EXPECT_LE(n, 2u);
+}
+
+// ── appendRecord ────────────────────────────────────────────────────────────
+//
+// appendRecord touches the Cortex-M DWT cycle counter via a hardcoded raw
+// pointer (0xE0001004) for its 1-second rate window. On host that address
+// segfaults, so we can only exercise the early-return-when-not-ready branch.
+
+TEST(AtsStorageAppend, AppendRecordSkippedWhenDbNotReady) {
+    resetEnvironment();
+    /* mDbReady is false → appendRecord early-returns. mTotalRecords stays 0. */
+    AtsStorageTestAccess::setTotalRecords(storage(), 0);
+
+    SensorDataModel m{};
+    AtsStorageTestAccess::appendRecord(storage(), &m);
+    EXPECT_EQ(AtsStorageTestAccess::totalRecords(storage()), 0u);
 }

@@ -42,6 +42,10 @@ public:
     }
 
 private:
+    /* Test access — host gtest fixtures populate mCreds for "registered"
+     * branches in MqttServiceImpl + HttpUploadServiceImpl. */
+    friend struct RegistrationServiceTestAccess;
+
     RegistrationServiceImpl();
 
     bool httpRegister(Esp8266& esp);

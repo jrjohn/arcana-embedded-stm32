@@ -46,6 +46,9 @@ public:
     static bool uploadFile(Esp8266& esp, const char* filename, const char* deviceId);
 
 private:
+    /* Test access — host gtest fixture exercises private static helpers. */
+    friend struct HttpUploadServiceTestAccess;
+
     static bool sslConnect(Esp8266& esp);
     static void sslClose(Esp8266& esp);
     static uint32_t queryServerOffset(Esp8266& esp, const char* filename,
