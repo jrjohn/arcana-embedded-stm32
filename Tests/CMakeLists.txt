@@ -427,6 +427,26 @@ target_include_directories(test_command_bridge PRIVATE
     ${COMMON_INCS} ${F103_COMMON} ${F103_SVC_INC} ${F103_CMD_INC})
 target_link_libraries(test_command_bridge PRIVATE GTest::gtest_main)
 
+# ── test_ble (BleServiceImpl + Hc08Ble mock + CommandBridge) ─────────────────
+# BleServiceImpl pulls in CommandBridgeImpl (real, with uECC) and a stub
+# RegistrationServiceImpl (we only need getCommKey() returning a fake key —
+# the real registration handshake is far too heavy for a focused BLE test).
+add_executable(test_ble
+    test_ble.cpp
+    ${F103_SVC_IMPL}/BleServiceImpl.cpp
+    ${F103_SVC_IMPL}/CommandBridgeImpl.cpp
+    ${SHARED_SRC}/uECC.c
+    ${SHARED_SRC}/Observable.cpp
+    ${MOCKS_DIR}/test_hal_stub.cpp
+    ${MOCKS_DIR}/Hc08Ble_stub.cpp
+    ${MOCKS_DIR}/RegistrationServiceImpl_stub.cpp
+    ${FREERTOS_STUBS}
+)
+target_include_directories(test_ble PRIVATE
+    ${COMMON_INCS} ${F103_COMMON} ${F103_SVC_INC} ${F103_SVC_IMPL}
+    ${F103_CMD_INC} ${F103_DRV} ${F103_MODEL})
+target_link_libraries(test_ble PRIVATE GTest::gtest_main)
+
 # ── test_arcanats_db (ArcanaTS v2 core engine + schema) ──────────────────────
 add_executable(test_arcanats_db
     test_arcanats_db.cpp
@@ -469,3 +489,4 @@ add_test(NAME test_lcd_viewmodel     COMMAND test_lcd_viewmodel)
 add_test(NAME test_wifi              COMMAND test_wifi)
 add_test(NAME test_mqtt              COMMAND test_mqtt)
 add_test(NAME test_main_view         COMMAND test_main_view)
+add_test(NAME test_ble               COMMAND test_ble)

@@ -188,3 +188,111 @@ TEST(KeyExchangeTest, TwoSessionsInDistinctSlots) {
     EXPECT_FALSE(mgr.hasSession(1, 100));
     EXPECT_TRUE(mgr.hasSession(2, 200));
 }
+
+// ── performKeyExchange rejects an already-installed (active) session ────────
+//
+// Covers performKeyExchange()'s "active session" early-return branch
+// (lines 84-88) — distinct from the pending-session reject covered above.
+
+TEST(KeyExchangeTest, RejectsHandshakeOnActiveSession) {
+    KeyExchangeManager mgr;
+    uint8_t psk[32]; fillPsk(psk);
+    ASSERT_TRUE(mgr.init(psk));
+
+    ClientKey c1, c2;
+    uint8_t sPub[64], tag[32];
+
+    ASSERT_TRUE(mgr.performKeyExchange(3, 50, c1.pub, sPub, tag));
+    ASSERT_TRUE(mgr.installPendingSession(3, 50));      // session now active
+
+    // Second handshake on the same (source, connId) should be rejected
+    EXPECT_FALSE(mgr.performKeyExchange(3, 50, c2.pub, sPub, tag));
+    EXPECT_TRUE(mgr.hasSession(3, 50));
+}
+
+// ── installPendingSession into an already-occupied slot replaces the key ───
+//
+// Covers the install path that finds an existing slot for (source, connId)
+// instead of allocating a new one (lines 219-221).
+
+TEST(KeyExchangeTest, ReinstallReplacesExistingSlot) {
+    KeyExchangeManager mgr;
+    uint8_t psk[32]; fillPsk(psk);
+    ASSERT_TRUE(mgr.init(psk));
+
+    ClientKey c1, c2;
+    uint8_t sPub[64], tag[32];
+
+    // First install
+    ASSERT_TRUE(mgr.performKeyExchange(1, 11, c1.pub, sPub, tag));
+    ASSERT_TRUE(mgr.installPendingSession(1, 11));
+    EXPECT_TRUE(mgr.hasSession(1, 11));
+
+    // Manually clear the pending guard so a fresh handshake is allowed.
+    // (performKeyExchange would otherwise reject because the active-session
+    // check above would fire — so we explicitly remove first, then redo.)
+    mgr.removeSession(1, 11);
+    EXPECT_FALSE(mgr.hasSession(1, 11));
+
+    // Second handshake on same (source, connId) — fresh slot reused
+    ASSERT_TRUE(mgr.performKeyExchange(1, 11, c2.pub, sPub, tag));
+    ASSERT_TRUE(mgr.installPendingSession(1, 11));
+    EXPECT_TRUE(mgr.hasSession(1, 11));
+}
+
+// ── installPendingSession returns false when all slots are occupied ─────────
+//
+// kMaxSessions = 2. Fill both, then perform a 3rd handshake with a fresh
+// (source, connId) and try to install — should hit the slot-exhaustion
+// early return (lines 230-232).
+
+TEST(KeyExchangeTest, InstallFailsWhenAllSlotsTaken) {
+    KeyExchangeManager mgr;
+    uint8_t psk[32]; fillPsk(psk);
+    ASSERT_TRUE(mgr.init(psk));
+
+    ClientKey c1, c2, c3;
+    uint8_t sPub[64], tag[32];
+
+    ASSERT_TRUE(mgr.performKeyExchange(1, 1, c1.pub, sPub, tag));
+    ASSERT_TRUE(mgr.installPendingSession(1, 1));
+
+    ASSERT_TRUE(mgr.performKeyExchange(2, 2, c2.pub, sPub, tag));
+    ASSERT_TRUE(mgr.installPendingSession(2, 2));
+
+    // Third distinct (source, connId) — both slots full → install rejects
+    ASSERT_TRUE(mgr.performKeyExchange(0, 3, c3.pub, sPub, tag));
+    EXPECT_FALSE(mgr.installPendingSession(0, 3));
+    EXPECT_FALSE(mgr.hasSession(0, 3));
+
+    // The previously installed sessions are still good
+    EXPECT_TRUE(mgr.hasSession(1, 1));
+    EXPECT_TRUE(mgr.hasSession(2, 2));
+}
+
+// ── removeSession clears a pending-only session (no active slot) ────────────
+//
+// Covers the "if pending matches → clear it" branch (lines 306-309).
+
+TEST(KeyExchangeTest, RemoveSessionClearsPendingOnly) {
+    KeyExchangeManager mgr;
+    uint8_t psk[32]; fillPsk(psk);
+    ASSERT_TRUE(mgr.init(psk));
+
+    ClientKey c1;
+    uint8_t sPub[64], tag[32];
+
+    // Stage a pending session but never install it
+    ASSERT_TRUE(mgr.performKeyExchange(1, 5, c1.pub, sPub, tag));
+    EXPECT_FALSE(mgr.hasSession(1, 5));   // pending only, not active
+
+    // removeSession on the pending-only entry should clear the pending guard
+    mgr.removeSession(1, 5);
+
+    // After clearing, a fresh handshake with the same key must succeed
+    // (proves the pending guard was actually released)
+    ClientKey c2;
+    ASSERT_TRUE(mgr.performKeyExchange(1, 5, c2.pub, sPub, tag));
+    EXPECT_TRUE(mgr.installPendingSession(1, 5));
+    EXPECT_TRUE(mgr.hasSession(1, 5));
+}

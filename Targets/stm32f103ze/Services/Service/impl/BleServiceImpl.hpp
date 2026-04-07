@@ -27,6 +27,9 @@ public:
     static bool bleSendFn(const uint8_t* data, uint16_t len, void* ctx);
 
 private:
+    /* Test access — host gtest fixture exercises private helpers + state. */
+    friend struct BleServiceTestAccess;
+
     BleServiceImpl();
     ~BleServiceImpl();
     BleServiceImpl(const BleServiceImpl&);
