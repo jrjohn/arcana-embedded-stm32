@@ -326,6 +326,12 @@ target_include_directories(test_ota PRIVATE
     ${F103_DRV})
 target_link_libraries(test_ota PRIVATE GTest::gtest_main)
 
+# ── test_widgets (FormWidgets + DialogWidgets + Widget + WidgetGroup) ────────
+add_executable(test_widgets test_widgets.cpp)
+target_include_directories(test_widgets PRIVATE
+    ${COMMON_INCS} ${SHARED_INC}/display)
+target_link_libraries(test_widgets PRIVATE GTest::gtest_main)
+
 # ── test_mqtt_packet (MqttPacket header-only build/parse) ────────────────────
 add_executable(test_mqtt_packet
     test_mqtt_packet.cpp
@@ -384,3 +390,4 @@ add_test(NAME test_atsstorage        COMMAND test_atsstorage)
 add_test(NAME test_httpupload        COMMAND test_httpupload)
 add_test(NAME test_mqtt_packet       COMMAND test_mqtt_packet)
 add_test(NAME test_ota               COMMAND test_ota)
+add_test(NAME test_widgets           COMMAND test_widgets)
