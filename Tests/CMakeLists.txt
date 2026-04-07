@@ -252,6 +252,34 @@ target_include_directories(test_registration PRIVATE
     ${F103_DRV} ${F103_MODEL})
 target_link_libraries(test_registration PRIVATE GTest::gtest_main)
 
+# ── test_atsstorage (real AtsStorageServiceImpl business logic) ──────────────
+# Compiles the production AtsStorageServiceImpl.cpp against host stubs of
+# IoServiceImpl, SdBenchmarkServiceImpl, SystemClock, DisplayStatus,
+# DeviceKey, FreeRTOS task/queue/sem, FATFS, HAL. The mocks/ -I path
+# overrides production headers where the same-directory rule allows it.
+# storageTask + taskLoop are infinite HW polling loops and remain uncov;
+# this target focuses on the testable business-logic functions
+# (loadCredentials/saveCredentials, loadTzConfig/saveTzConfig, queryByDate,
+# listPendingUploads/isDateUploaded/markUploaded, writeLifecycleEvent,
+# writeRecoveryEvents, openDailyDb, openDeviceDb, restoreTimeFromDeviceDb,
+# initDeviceDbChannels).
+add_executable(test_atsstorage
+    test_atsstorage.cpp
+    ${F103_SVC_IMPL}/AtsStorageServiceImpl.cpp
+    ${F103_DRV}/FatFsFilePort.cpp
+    ${ATS_SRC}/ArcanaTsDb.cpp
+    ${SHARED_SRC}/Observable.cpp
+    ${MOCKS_DIR}/test_hal_stub.cpp
+    ${MOCKS_DIR}/ff_host_stub.cpp
+    ${MOCKS_DIR}/atsstorage_host_stubs.cpp
+    ${FREERTOS_STUBS}
+)
+target_include_directories(test_atsstorage PRIVATE
+    ${COMMON_INCS} ${ATS_INC} ${SHARED_INC}/display
+    ${F103_COMMON} ${F103_SVC_INC} ${F103_SVC_IMPL} ${F103_CMD_INC}
+    ${F103_DRV} ${F103_MODEL})
+target_link_libraries(test_atsstorage PRIVATE GTest::gtest_main)
+
 # ── test_command_bridge (CommandBridgeImpl crypto + dispatch) ────────────────
 add_executable(test_command_bridge
     test_command_bridge.cpp
@@ -298,3 +326,4 @@ add_test(NAME test_crypto_engine     COMMAND test_crypto_engine)
 add_test(NAME test_key_exchange      COMMAND test_key_exchange)
 add_test(NAME test_command_bridge    COMMAND test_command_bridge)
 add_test(NAME test_registration      COMMAND test_registration)
+add_test(NAME test_atsstorage        COMMAND test_atsstorage)

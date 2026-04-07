@@ -77,6 +77,9 @@ public:
     static FIL sSharedFil;
 
 private:
+    /* Test access — host gtest fixture exercises private methods. */
+    friend struct AtsStorageTestAccess;
+
     AtsStorageServiceImpl();
     ~AtsStorageServiceImpl();
     AtsStorageServiceImpl(const AtsStorageServiceImpl&);

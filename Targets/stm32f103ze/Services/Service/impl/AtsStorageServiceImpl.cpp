@@ -809,12 +809,23 @@ void AtsStorageServiceImpl::markUploaded(uint32_t dateYYYYMMDD) {
 bool AtsStorageServiceImpl::loadTzConfig(int16_t& offsetMin, uint8_t& autoCheck) {
     // Try device.ats ch1 (CONFIG) first
     if (mDeviceDbReady && mDeviceDb.getChannelCount() > 1) {
-        // CONFIG record: 17 bytes — tzOff at offset 14 (I16), tzAuto at offset 16 (U8)
-        uint8_t buf[17];
+        // CONFIG record: 19 bytes (matches ats::ArcanaTsSchema::config())
+        // Field layout (offsets):
+        //   ts U32       0..3
+        //   pressTg U16  4..5
+        //   flowRt  U16  6..7
+        //   tmrSec  U16  8..9
+        //   thrHi   I16 10..11
+        //   thrLo   I16 12..13
+        //   mode    U8  14
+        //   flags   U8  15
+        //   tzOff   I16 16..17
+        //   tzAuto  U8  18
+        uint8_t buf[19];
         uint16_t n = mDeviceDb.queryLatest(1, buf, 1);
         if (n > 0) {
-            memcpy(&offsetMin, buf + 14, 2);
-            autoCheck = buf[16];
+            memcpy(&offsetMin, buf + 16, 2);
+            autoCheck = buf[18];
             return true;
         }
     }
@@ -826,13 +837,13 @@ bool AtsStorageServiceImpl::loadTzConfig(int16_t& offsetMin, uint8_t& autoCheck)
 bool AtsStorageServiceImpl::saveTzConfig(int16_t offsetMin, uint8_t autoCheck) {
     // Write to device.ats ch1 (CONFIG) if available
     if (mDeviceDbReady && mDeviceDb.getChannelCount() > 1) {
-        uint8_t rec[17];
+        // 19-byte CONFIG record — see loadTzConfig() for field layout.
+        uint8_t rec[19];
         memset(rec, 0, sizeof(rec));
         uint32_t ts = atsGetTime();
         memcpy(rec, &ts, 4);
-        // tzOff at offset 14, tzAuto at offset 16
-        memcpy(rec + 14, &offsetMin, 2);
-        rec[16] = autoCheck;
+        memcpy(rec + 16, &offsetMin, 2);
+        rec[18] = autoCheck;
         mDeviceDb.append(1, rec);
         mDeviceDb.flush();
         return true;

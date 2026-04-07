@@ -42,6 +42,10 @@ extern "C" TaskHandle_t xTaskCreateStatic(TaskFunction_t, const char*, uint32_t,
     return (TaskHandle_t)t;
 }
 extern "C" void vTaskDelay(TickType_t) {}
+extern "C" void vTaskDelete(TaskHandle_t) {}
+extern "C" void vTaskDelayUntil(TickType_t* prev, TickType_t inc) {
+    if (prev) *prev += inc;
+}
 
 /* ── Timer stubs (store callback so tests can invoke it) ────────────────── */
 static TimerCallbackFunction_t s_timer_cb = nullptr;
@@ -77,6 +81,9 @@ extern "C" osStatus_t osDelay(uint32_t) { return 0; }
 static int s_lock_balance = 0;
 
 extern "C" SemaphoreHandle_t xSemaphoreCreateMutexStatic(StaticSemaphore_t* p) {
+    return (SemaphoreHandle_t)p;
+}
+extern "C" SemaphoreHandle_t xSemaphoreCreateBinaryStatic(StaticSemaphore_t* p) {
     return (SemaphoreHandle_t)p;
 }
 extern "C" SemaphoreHandle_t xSemaphoreCreateMutex(void) {
