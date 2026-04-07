@@ -122,6 +122,21 @@ FRESULT test_ff_read(const char* path, uint8_t* buf, UINT bufSize, UINT* out_len
 /** Returns 1 if file exists, 0 otherwise. */
 int test_ff_exists(const char* path);
 
+/** Make the next N read calls fail with FR_DISK_ERR (counter decrements). */
+void test_ff_fail_read(int count);
+
+/** Make the next N write calls fail with FR_DISK_ERR. */
+void test_ff_fail_write(int count);
+
+/** Make the next N lseek calls fail with FR_INT_ERR. */
+void test_ff_fail_lseek(int count);
+
+/** Make the next N sync calls fail with FR_DISK_ERR. */
+void test_ff_fail_sync(int count);
+
+/** Override the FATFS n_fats field used by FIL.obj.fs (default 2). */
+void test_ff_set_n_fats(int n);
+
 #ifdef __cplusplus
 }
 #endif

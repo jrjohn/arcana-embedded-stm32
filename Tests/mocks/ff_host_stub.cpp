@@ -37,12 +37,32 @@ struct DirSnapshot {
     size_t                 index;
 };
 
+/* ── Fault injection — counters set by test helpers, decremented per call ── */
+int g_failRead  = 0;
+int g_failWrite = 0;
+int g_failLseek = 0;
+int g_failSync  = 0;
+
 } // anonymous namespace
+
+
+/* Singleton stub FATFS — fs->n_fats=2 picks the truncate-safe production
+ * path (matches deployed config since 2026-03-19). Tests can flip via
+ * test_ff_set_n_fats(). Definition moved above test_ff_reset so the reset
+ * helper can touch it. */
+static FATFS sStubFatFs = { /*n_fats*/ 2, /*dummy*/ 0 };
 
 extern "C" {
 
+void test_ff_set_n_fats(int n) { sStubFatFs.n_fats = n; }
+
 void test_ff_reset(void) {
     g_files.clear();
+    g_failRead  = 0;
+    g_failWrite = 0;
+    g_failLseek = 0;
+    g_failSync  = 0;
+    sStubFatFs.n_fats = 2;
 }
 
 void test_ff_create(const char* path, const uint8_t* data, UINT len) {
@@ -70,11 +90,12 @@ int test_ff_exists(const char* path) {
     return findEntry(path) ? 1 : 0;
 }
 
-/* ── FatFs API ───────────────────────────────────────────────────────────── */
+void test_ff_fail_read(int count)  { g_failRead  = count; }
+void test_ff_fail_write(int count) { g_failWrite = count; }
+void test_ff_fail_lseek(int count) { g_failLseek = count; }
+void test_ff_fail_sync(int count)  { g_failSync  = count; }
 
-/* Singleton stub FATFS — fs->n_fats=2 picks the truncate-safe production
- * path (matches deployed config since 2026-03-19). */
-static FATFS sStubFatFs = { /*n_fats*/ 2, /*dummy*/ 0 };
+/* ── FatFs API ───────────────────────────────────────────────────────────── */
 
 FRESULT f_open(FIL* fp, const char* path, BYTE mode) {
     if (!fp || !path) return FR_INVALID_PARAMETER;
@@ -107,6 +128,12 @@ FRESULT f_close(FIL* fp) {
 }
 
 FRESULT f_read(FIL* fp, void* buff, UINT btr, UINT* br) {
+    if (g_failRead > 0) {
+        --g_failRead;
+        if (br) *br = 0;
+        if (fp) fp->err = 1;
+        return FR_DISK_ERR;
+    }
     if (!fp || !fp->_entry) { if (br) *br = 0; return FR_INVALID_OBJECT; }
     auto* e = static_cast<FileEntry*>(fp->_entry);
     UINT remaining = (fp->fptr < e->bytes.size())
@@ -119,6 +146,12 @@ FRESULT f_read(FIL* fp, void* buff, UINT btr, UINT* br) {
 }
 
 FRESULT f_write(FIL* fp, const void* buff, UINT btw, UINT* bw) {
+    if (g_failWrite > 0) {
+        --g_failWrite;
+        if (bw) *bw = 0;
+        if (fp) fp->err = 1;
+        return FR_DISK_ERR;
+    }
     if (!fp || !fp->_entry) { if (bw) *bw = 0; return FR_INVALID_OBJECT; }
     auto* e = static_cast<FileEntry*>(fp->_entry);
     if (fp->fptr + btw > e->bytes.size()) {
@@ -133,6 +166,11 @@ FRESULT f_write(FIL* fp, const void* buff, UINT btw, UINT* bw) {
 }
 
 FRESULT f_lseek(FIL* fp, FSIZE_t ofs) {
+    if (g_failLseek > 0) {
+        --g_failLseek;
+        if (fp) fp->err = 1;
+        return FR_INT_ERR;
+    }
     if (!fp || !fp->_entry) return FR_INVALID_OBJECT;
     auto* e = static_cast<FileEntry*>(fp->_entry);
     if (ofs > e->bytes.size()) {
@@ -143,7 +181,14 @@ FRESULT f_lseek(FIL* fp, FSIZE_t ofs) {
     return FR_OK;
 }
 
-FRESULT f_sync(FIL* /*fp*/) { return FR_OK; }
+FRESULT f_sync(FIL* fp) {
+    if (g_failSync > 0) {
+        --g_failSync;
+        if (fp) fp->err = 1;
+        return FR_DISK_ERR;
+    }
+    return FR_OK;
+}
 
 FRESULT f_truncate(FIL* fp) {
     if (!fp || !fp->_entry) return FR_INVALID_OBJECT;
