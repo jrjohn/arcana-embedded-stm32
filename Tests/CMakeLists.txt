@@ -312,6 +312,14 @@ target_include_directories(test_httpupload PRIVATE
     ${F103_DRV} ${F103_MODEL})
 target_link_libraries(test_httpupload PRIVATE GTest::gtest_main)
 
+# ── test_mqtt_packet (MqttPacket header-only build/parse) ────────────────────
+add_executable(test_mqtt_packet
+    test_mqtt_packet.cpp
+)
+target_include_directories(test_mqtt_packet PRIVATE
+    ${COMMON_INCS} ${F103_COMMON})
+target_link_libraries(test_mqtt_packet PRIVATE GTest::gtest_main)
+
 # ── test_command_bridge (CommandBridgeImpl crypto + dispatch) ────────────────
 add_executable(test_command_bridge
     test_command_bridge.cpp
@@ -360,3 +368,4 @@ add_test(NAME test_command_bridge    COMMAND test_command_bridge)
 add_test(NAME test_registration      COMMAND test_registration)
 add_test(NAME test_atsstorage        COMMAND test_atsstorage)
 add_test(NAME test_httpupload        COMMAND test_httpupload)
+add_test(NAME test_mqtt_packet       COMMAND test_mqtt_packet)
