@@ -330,6 +330,118 @@ TEST(HttpUploadFile, WaitHttpResponseCompleteFallback) {
     EXPECT_TRUE(HttpUploadServiceImpl::uploadFile(esp, "rsp2.ats", "DEADBEEF"));
 }
 
+TEST(HttpUploadPending, FullSuccessTriggersMarkUploadedAndDeviceAts) {
+    /* End-to-end uploadPendingFiles success path: queues responses for
+     * 1 daily file (full happy path) + the device.ats follow-up.
+     * Covers lines 93-110 (markUploaded → uploaded++ → device.ats upload). */
+    resetEnvironment();
+    ASSERT_TRUE(bootStorage());
+    createFakeDailyFile("20260301.ats", 200);
+
+    auto& esp = Esp8266::getInstance();
+
+    /* Helper lambda: push the 14-response sequence for one full uploadFile */
+    auto pushOneUploadFileSequence = [&]() {
+        esp.pushResponse("OK");                  // CIPSTART query
+        esp.pushResponse(">");                   // CIPSEND query
+        esp.pushResponse("");                    // sendData query
+        esp.pushResponse("SEND OK");
+        esp.pushResponse("\"size\":0");
+        esp.pushResponse("OK");                  // CIPCLOSE query
+        esp.pushResponse("OK");                  // CIPSTART upload
+        esp.pushResponse("OK");                  // CIPMODE=1
+        esp.pushResponse(">");                   // CIPSEND
+        esp.pushResponse("");                    // sendData header
+        esp.pushResponse("");                    // sendData body
+        esp.pushResponse("");                    // sendData +++
+        esp.pushResponse("OK");                  // CIPMODE=0
+        esp.pushResponse("+IPD:HTTP/1.1 200 OK");
+        esp.pushResponse("OK");                  // CIPCLOSE
+    };
+
+    pushOneUploadFileSequence();   // for 20260301.ats
+    pushOneUploadFileSequence();   // for device.ats follow-up
+
+    uint8_t n = HttpUploadServiceImpl::uploadPendingFiles(esp);
+    EXPECT_EQ(n, 1u);
+}
+
+TEST(HttpUploadFile, AlreadyConnectedRecoveryPath) {
+    /* sslConnect: CIPSTART returns ALREADY CONNECTED → responseContains
+     * branch returns true, sslConnect succeeds. Covers line 295. */
+    resetEnvironment();
+    createFakeDailyFile("ac.ats", 100);
+    auto& esp = Esp8266::getInstance();
+
+    /* queryServerOffset uses sslConnect — feed ALREADY CONNECTED there */
+    esp.pushResponse("ALREADY CONNECTED");       // CIPSTART query (no OK)
+    esp.pushResponse(">");                       // CIPSEND
+    esp.pushResponse("");                        // sendData
+    esp.pushResponse("SEND OK");
+    esp.pushResponse("\"size\":100");            // already done → fast path
+    esp.pushResponse("OK");                      // CIPCLOSE
+
+    EXPECT_TRUE(HttpUploadServiceImpl::uploadFile(esp, "ac.ats", "DEADBEEF"));
+}
+
+TEST(HttpUploadFile, QueryServerOffsetCipSendFailReturnsZero) {
+    /* queryServerOffset: CIPSEND > fails → bails with offset=0 → uploadFile
+     * proceeds to actual upload with offset 0. We make subsequent CIPSTART
+     * also fail to short-circuit the test. */
+    resetEnvironment();
+    createFakeDailyFile("nq.ats", 50);
+    auto& esp = Esp8266::getInstance();
+
+    /* Fail CIPSEND in queryServerOffset, then fail every retry */
+    for (int i = 0; i < 30; ++i) {
+        esp.pushResponse("OK");                  // CIPSTART query
+        esp.pushResponse("ERROR");               // CIPSEND query → no >
+        esp.pushResponse("OK");                  // CIPCLOSE
+        esp.pushResponse("ERROR");               // CIPSTART upload → fail
+        /* retry loop continues */
+    }
+
+    bool ok = HttpUploadServiceImpl::uploadFile(esp, "nq.ats", "DEADBEEF");
+    EXPECT_FALSE(ok);
+}
+
+TEST(HttpUploadFile, QueryServerOffsetSendOkFailReturnsZero) {
+    resetEnvironment();
+    createFakeDailyFile("nso.ats", 50);
+    auto& esp = Esp8266::getInstance();
+
+    for (int i = 0; i < 30; ++i) {
+        esp.pushResponse("OK");                  // CIPSTART query
+        esp.pushResponse(">");                   // CIPSEND query
+        esp.pushResponse("");                    // sendData query
+        esp.pushResponse("ERROR");               // waitFor SEND OK → fail
+        esp.pushResponse("OK");                  // CIPCLOSE query
+        esp.pushResponse("ERROR");               // CIPSTART upload → fail
+    }
+
+    bool ok = HttpUploadServiceImpl::uploadFile(esp, "nso.ats", "DEADBEEF");
+    EXPECT_FALSE(ok);
+}
+
+TEST(HttpUploadFile, QueryServerOffsetNoSizeFieldReturnsZero) {
+    resetEnvironment();
+    createFakeDailyFile("nosize.ats", 50);
+    auto& esp = Esp8266::getInstance();
+
+    for (int i = 0; i < 30; ++i) {
+        esp.pushResponse("OK");                  // CIPSTART query
+        esp.pushResponse(">");                   // CIPSEND query
+        esp.pushResponse("");                    // sendData query
+        esp.pushResponse("SEND OK");
+        esp.pushResponse("garbage");             // waitFor "size" → fail
+        esp.pushResponse("OK");                  // CIPCLOSE query
+        esp.pushResponse("ERROR");               // CIPSTART upload → fail
+    }
+
+    bool ok = HttpUploadServiceImpl::uploadFile(esp, "nosize.ats", "DEADBEEF");
+    EXPECT_FALSE(ok);
+}
+
 TEST(HttpUploadFile, ResumeFromServerOffset) {
     /* Server reports partial offset → uploadFile resumes from there.
      * Exercises the f_lseek path + Content-Range header. */
