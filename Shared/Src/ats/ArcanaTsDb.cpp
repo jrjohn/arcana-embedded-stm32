@@ -85,13 +85,23 @@ bool ArcanaTsDb::open(const char* path, const AtsConfig& cfg) {
 
     // Try to open existing file first
     if (cfg.file->open(path, ATS_MODE_RW)) {
-        // Existing file — attempt recovery/resume
-        if (cfg.file->size() >= BLOCK_SIZE && recoverFromExisting()) {
-            mOpen = true;
-            mStarted = true;  // channels already registered from file header
-            return true;
+        const uint64_t existingSize = cfg.file->size();
+        if (existingSize >= BLOCK_SIZE) {
+            // Non-empty file: attempt recovery/resume.
+            if (recoverFromExisting()) {
+                mOpen = true;
+                mStarted = true;  // channels already registered from file header
+                return true;
+            }
+            // FAIL-CLOSED: a non-empty file that we cannot decrypt or whose
+            // header is corrupt MUST NOT be silently overwritten. Refuse to
+            // open and let the caller (or operator) decide whether to format.
+            // This protects medical/defense data against wrong-key access
+            // and against accidental data loss after corruption.
+            cfg.file->close();
+            return false;
         }
-        // Recovery failed or empty file — close and recreate
+        // Empty existing file (size < one block) — fall through to create.
         cfg.file->close();
     }
 
@@ -930,16 +940,22 @@ bool ArcanaTsDb::updateFileHeader() {
 }
 
 bool ArcanaTsDb::writeShadowHeader() {
-    // Read primary header area (0x0000-0x09FF = 2560 bytes)
+    // Shadow lives at offset 0x0A00 inside the SAME 4KB header block, so it
+    // can hold at most (BLOCK_SIZE - SHADOW_OFFSET) = 1536 bytes. Earlier
+    // versions wrote SHADOW_OFFSET (2560) bytes here and silently corrupted
+    // the first 1024 bytes of data block #1 — including its blockSeqNo,
+    // making the file unrecoverable on the read-only path. Clamp to fit.
+    static_assert(BLOCK_SIZE > SHADOW_OFFSET, "shadow offset must fit in block");
+    const uint16_t shadowLen = static_cast<uint16_t>(BLOCK_SIZE - SHADOW_OFFSET);
+
     uint8_t* cache = getReadCache();
     if (!cache) return false;
 
     if (!mCfg.file->seek(0)) return false;
-    if (mCfg.file->read(cache, SHADOW_OFFSET) != static_cast<int32_t>(SHADOW_OFFSET)) return false;
+    if (mCfg.file->read(cache, shadowLen) != static_cast<int32_t>(shadowLen)) return false;
 
-    // Write shadow at 0x0A00
     if (!mCfg.file->seek(SHADOW_OFFSET)) return false;
-    return mCfg.file->write(cache, SHADOW_OFFSET) == static_cast<int32_t>(SHADOW_OFFSET);
+    return mCfg.file->write(cache, shadowLen) == static_cast<int32_t>(shadowLen);
 }
 
 // ---------------------------------------------------------------------------

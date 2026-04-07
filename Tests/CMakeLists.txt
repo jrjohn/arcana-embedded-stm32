@@ -20,6 +20,8 @@ FetchContent_MakeAvailable(googletest)
 # ── Paths ─────────────────────────────────────────────────────────────────────
 set(SHARED_INC    ${CMAKE_SOURCE_DIR}/../Shared/Inc)
 set(SHARED_SRC    ${CMAKE_SOURCE_DIR}/../Shared/Src)
+set(ATS_INC       ${SHARED_INC}/ats)
+set(ATS_SRC       ${SHARED_SRC}/ats)
 set(F051_CMD      ${CMAKE_SOURCE_DIR}/../Targets/stm32f051c8/Services/command)
 set(F051_SVC      ${CMAKE_SOURCE_DIR}/../Targets/stm32f051c8/Services/service)
 set(MOCKS_DIR     ${CMAKE_SOURCE_DIR}/mocks)
@@ -157,6 +159,15 @@ add_executable(test_sha256 test_sha256.cpp)
 target_include_directories(test_sha256 PRIVATE ${COMMON_INCS})
 target_link_libraries(test_sha256 PRIVATE GTest::gtest_main)
 
+# ── test_arcanats_db (ArcanaTS v2 core engine + schema) ──────────────────────
+add_executable(test_arcanats_db
+    test_arcanats_db.cpp
+    ${ATS_SRC}/ArcanaTsDb.cpp
+)
+target_include_directories(test_arcanats_db PRIVATE
+    ${COMMON_INCS} ${ATS_INC})
+target_link_libraries(test_arcanats_db PRIVATE GTest::gtest_main)
+
 # ── CTest registration ────────────────────────────────────────────────────────
 enable_testing()
 add_test(NAME test_crc16             COMMAND test_crc16)
@@ -175,3 +186,4 @@ add_test(NAME test_ota_header        COMMAND test_ota_header)
 add_test(NAME test_observable        COMMAND test_observable)
 add_test(NAME test_observable_errors COMMAND test_observable_errors)
 add_test(NAME test_sha256            COMMAND test_sha256)
+add_test(NAME test_arcanats_db       COMMAND test_arcanats_db)
