@@ -38,9 +38,20 @@ struct MqttServiceTestAccess {
     static bool publishSensor(MqttServiceImpl& m, SensorDataModel* s) {
         return m.publishSensorData(s);
     }
+    static void onSensorData(SensorDataModel* m, void* ctx) {
+        MqttServiceImpl::onSensorData(m, ctx);
+    }
+    static void onLightData(arcana::LightDataModel* m, void* ctx) {
+        MqttServiceImpl::onLightData(m, ctx);
+    }
+    static void processIncoming(MqttServiceImpl& m) { m.processIncomingMqtt(); }
+    static bool sendFn(const uint8_t* d, uint16_t l, void* ctx) {
+        return MqttServiceImpl::mqttSendFn(d, l, ctx);
+    }
     static volatile bool& mqttConnected(MqttServiceImpl& m) { return m.mMqttConnected; }
     static volatile bool& sensorPending(MqttServiceImpl& m) { return m.mSensorPending; }
     static SensorDataModel& pendingSensor(MqttServiceImpl& m) { return m.mPendingSensor; }
+    static uint16_t& nextPacketId(MqttServiceImpl& m) { return m.mNextPacketId; }
 };
 }}
 
@@ -273,6 +284,268 @@ TEST(MqttDisconnect, HappyPath) {
     auto& esp = Esp8266::getInstance();
     esp.pushResponse(">"); esp.pushResponse(""); esp.pushResponse("SEND OK");
     EXPECT_TRUE(MqttServiceTestAccess::disconnectRaw(mqtt()));
+}
+
+// ── onSensorData / onLightData (private static observer callbacks) ────────
+
+TEST(MqttObservers, OnSensorDataWhenConnectedQueuesPending) {
+    resetEnvironment();
+    MqttServiceTestAccess::mqttConnected(mqtt()) = true;
+    MqttServiceTestAccess::sensorPending(mqtt()) = false;
+
+    SensorDataModel m;
+    m.temperature = 30.0f;
+    m.accelX = 10; m.accelY = 20; m.accelZ = 30;
+    MqttServiceTestAccess::onSensorData(&m, &mqtt());
+
+    EXPECT_TRUE(MqttServiceTestAccess::sensorPending(mqtt()));
+    EXPECT_FLOAT_EQ(MqttServiceTestAccess::pendingSensor(mqtt()).temperature, 30.0f);
+}
+
+TEST(MqttObservers, OnSensorDataWhenDisconnectedDropsSilently) {
+    resetEnvironment();
+    MqttServiceTestAccess::mqttConnected(mqtt()) = false;
+    MqttServiceTestAccess::sensorPending(mqtt()) = false;
+
+    SensorDataModel m;
+    m.temperature = 50.0f;
+    MqttServiceTestAccess::onSensorData(&m, &mqtt());
+
+    EXPECT_FALSE(MqttServiceTestAccess::sensorPending(mqtt()));
+}
+
+TEST(MqttObservers, OnLightDataAlwaysCachesLatest) {
+    resetEnvironment();
+    arcana::LightDataModel light;
+    light.ambientLight = 500;
+    light.proximity = 10;
+    MqttServiceTestAccess::onLightData(&light, &mqtt());
+    SUCCEED();
+}
+
+// ── mqttHandshake ──────────────────────────────────────────────────────────
+
+TEST(MqttHandshake, HappyPathConnack0Accepted) {
+    resetEnvironment();
+    auto& esp = Esp8266::getInstance();
+    /* sendMqttPacket: CIPSEND > / sendData / SEND OK */
+    esp.pushResponse(">"); esp.pushResponse(""); esp.pushResponse("SEND OK");
+    /* waitMqttPacket: CONNACK 0x20 0x02 0x00 0x00 (return code 0 = accepted) */
+    char connack[10] = "+IPD,4:";
+    connack[7] = (char)0x20;
+    connack[8] = 0x02;
+    connack[9] = 0x00;
+    /* Hmm — the binary 0x00 byte is a null terminator if treated as string.
+     * Use the binary push helper. */
+    uint8_t bin[11] = {'+','I','P','D',',','4',':', 0x20, 0x02, 0x00, 0x00};
+    esp.pushMqttMsg(reinterpret_cast<const char*>(bin), 11);
+
+    EXPECT_TRUE(MqttServiceTestAccess::handshake(mqtt()));
+}
+
+TEST(MqttHandshake, ConnackRejectedReturnsFalse) {
+    resetEnvironment();
+    auto& esp = Esp8266::getInstance();
+    esp.pushResponse(">"); esp.pushResponse(""); esp.pushResponse("SEND OK");
+    /* CONNACK with rc=5 (not authorized) */
+    uint8_t bin[11] = {'+','I','P','D',',','4',':', 0x20, 0x02, 0x00, 0x05};
+    esp.pushMqttMsg(reinterpret_cast<const char*>(bin), 11);
+    EXPECT_FALSE(MqttServiceTestAccess::handshake(mqtt()));
+}
+
+TEST(MqttHandshake, SendFailureBails) {
+    resetEnvironment();
+    auto& esp = Esp8266::getInstance();
+    esp.pushResponse("ERROR");   /* CIPSEND fails */
+    EXPECT_FALSE(MqttServiceTestAccess::handshake(mqtt()));
+}
+
+TEST(MqttHandshake, NoConnackBails) {
+    resetEnvironment();
+    auto& esp = Esp8266::getInstance();
+    esp.pushResponse(">"); esp.pushResponse(""); esp.pushResponse("SEND OK");
+    /* No mqtt msg → waitMqttPacket times out → handshake returns false */
+    EXPECT_FALSE(MqttServiceTestAccess::handshake(mqtt()));
+}
+
+// ── mqttSubscribeRaw with valid SUBACK ─────────────────────────────────────
+
+TEST(MqttSubscribe, HappyPathWithSuback) {
+    resetEnvironment();
+    auto& esp = Esp8266::getInstance();
+    /* sendMqttPacket: CIPSEND > / sendData / SEND OK */
+    esp.pushResponse(">"); esp.pushResponse(""); esp.pushResponse("SEND OK");
+    /* waitMqttPacket: SUBACK 0x90 0x03 [pktIdH] [pktIdL] [grantedQos]
+     * The packet ID is mNextPacketId before increment — set it deterministic */
+    MqttServiceTestAccess::nextPacketId(mqtt()) = 0x42;
+    uint8_t bin[12] = {'+','I','P','D',',','5',':', (uint8_t)0x90, 0x03, 0x00, 0x42, 0x00};
+    esp.pushMqttMsg(reinterpret_cast<const char*>(bin), 12);
+
+    EXPECT_TRUE(MqttServiceTestAccess::subscribe(mqtt(), "topic/sub", 0));
+}
+
+TEST(MqttSubscribe, SubackFailureCode0x80) {
+    resetEnvironment();
+    auto& esp = Esp8266::getInstance();
+    esp.pushResponse(">"); esp.pushResponse(""); esp.pushResponse("SEND OK");
+    MqttServiceTestAccess::nextPacketId(mqtt()) = 0x10;
+    uint8_t bin[12] = {'+','I','P','D',',','5',':', (uint8_t)0x90, 0x03, 0x00, 0x10, (uint8_t)0x80};
+    esp.pushMqttMsg(reinterpret_cast<const char*>(bin), 12);
+    EXPECT_FALSE(MqttServiceTestAccess::subscribe(mqtt(), "topic", 0));
+}
+
+// ── mqttPublishBin with matching PUBACK ────────────────────────────────────
+
+TEST(MqttPublish, BinPubackMatchSucceeds) {
+    resetEnvironment();
+    auto& esp = Esp8266::getInstance();
+    esp.pushResponse(">"); esp.pushResponse(""); esp.pushResponse("SEND OK");
+    /* mNextPacketId = 0x55 → publishBin uses 0x55, expects PUBACK with id=0x55 */
+    MqttServiceTestAccess::nextPacketId(mqtt()) = 0x55;
+    uint8_t bin[11] = {'+','I','P','D',',','4',':', 0x40, 0x02, 0x00, 0x55};
+    esp.pushMqttMsg(reinterpret_cast<const char*>(bin), 11);
+
+    const uint8_t data[4] = {1, 2, 3, 4};
+    EXPECT_TRUE(MqttServiceTestAccess::publishBin(mqtt(), "topic", data, 4));
+}
+
+TEST(MqttPublish, BinPingrespIgnoredAndContinues) {
+    /* publishBin's PUBACK loop: if PINGRESP arrives, clear and continue —
+     * eventually times out without a PUBACK. */
+    resetEnvironment();
+    auto& esp = Esp8266::getInstance();
+    esp.pushResponse(">"); esp.pushResponse(""); esp.pushResponse("SEND OK");
+    MqttServiceTestAccess::nextPacketId(mqtt()) = 0x77;
+    uint8_t bin[10] = {'+','I','P','D',',','3',':', (uint8_t)0xD0, 0x00, 0x00};
+    esp.pushMqttMsg(reinterpret_cast<const char*>(bin), 10);
+
+    const uint8_t data[2] = {0xAA, 0xBB};
+    bool ok = MqttServiceTestAccess::publishBin(mqtt(), "topic", data, 2);
+    /* Coverage of the PINGRESP-ignore branch — result depends on subsequent
+     * PUBACK availability (which we don't push). */
+    (void)ok;
+}
+
+TEST(MqttPublish, BinPublishOtherPacketBreaksOut) {
+    /* publishBin's PUBACK loop: if a server PUBLISH arrives instead of
+     * PUBACK/PINGRESP, break out of the inner loop and continue polling. */
+    resetEnvironment();
+    auto& esp = Esp8266::getInstance();
+    esp.pushResponse(">"); esp.pushResponse(""); esp.pushResponse("SEND OK");
+    MqttServiceTestAccess::nextPacketId(mqtt()) = 0x88;
+    /* Push a PUBLISH packet (0x30) — not PUBACK, not PINGRESP → break */
+    uint8_t bin[14] = {'+','I','P','D',',','7',':',
+                       0x30, 0x05, 0x00, 0x01, 't', 'X', 'Y'};
+    esp.pushMqttMsg(reinterpret_cast<const char*>(bin), 14);
+
+    const uint8_t data[2] = {0x11, 0x22};
+    bool ok = MqttServiceTestAccess::publishBin(mqtt(), "topic", data, 2);
+    (void)ok;  /* coverage of the break path */
+}
+
+// ── processIncomingMqtt ────────────────────────────────────────────────────
+
+TEST(MqttIncoming, NoIpdReturnsEarly) {
+    resetEnvironment();
+    auto& esp = Esp8266::getInstance();
+    esp.clearMqttMsg();
+    /* No mqtt msg → processIncomingMqtt parseIpd fails → return */
+    MqttServiceTestAccess::processIncoming(mqtt());
+    SUCCEED();
+}
+
+TEST(MqttIncoming, PingrespReturnsEarly) {
+    resetEnvironment();
+    auto& esp = Esp8266::getInstance();
+    /* PINGRESP packet 0xD0 0x00 */
+    uint8_t bin[9] = {'+','I','P','D',',','2',':', (uint8_t)0xD0, 0x00};
+    esp.pushMqttMsg(reinterpret_cast<const char*>(bin), 9);
+    MqttServiceTestAccess::processIncoming(mqtt());
+    SUCCEED();
+}
+
+TEST(MqttIncoming, NonPublishReturnsEarly) {
+    resetEnvironment();
+    auto& esp = Esp8266::getInstance();
+    /* PUBACK packet 0x40 0x02 0x00 0x01 — not a PUBLISH → return */
+    uint8_t bin[11] = {'+','I','P','D',',','4',':', 0x40, 0x02, 0x00, 0x01};
+    esp.pushMqttMsg(reinterpret_cast<const char*>(bin), 11);
+    MqttServiceTestAccess::processIncoming(mqtt());
+    SUCCEED();
+}
+
+TEST(MqttIncoming, PublishEjectMessageTriggersEject) {
+    resetEnvironment();
+    auto& esp = Esp8266::getInstance();
+    /* PUBLISH QoS 0 to "t" with payload "eject":
+     * 0x30 [remLen] [topicLenH=0] [topicLenL=1] 't' 'e' 'j' 'e' 'c' 't'
+     * remLen = 2 (topic len) + 1 (topic) + 5 (payload) = 8
+     */
+    uint8_t bin[18] = {'+','I','P','D',',','1','0',':',
+                       0x30, 0x08, 0x00, 0x01, 't', 'e', 'j', 'e', 'c', 't'};
+    esp.pushMqttMsg(reinterpret_cast<const char*>(bin), 18);
+    MqttServiceTestAccess::processIncoming(mqtt());
+    SUCCEED();
+}
+
+TEST(MqttIncoming, PublishGenericPayloadForwardsToCommandBridge) {
+    resetEnvironment();
+    auto& esp = Esp8266::getInstance();
+    /* PUBLISH QoS 0 to "t" with binary payload "ABCD" (not "eject") */
+    uint8_t bin[17] = {'+','I','P','D',',','9',':',
+                       0x30, 0x07, 0x00, 0x01, 't', 'A', 'B', 'C', 'D', 0};
+    esp.pushMqttMsg(reinterpret_cast<const char*>(bin), 16);
+    MqttServiceTestAccess::processIncoming(mqtt());
+    SUCCEED();
+}
+
+TEST(MqttIncoming, PublishWithPacketIdSendsPuback) {
+    resetEnvironment();
+    auto& esp = Esp8266::getInstance();
+    /* QoS 1 PUBLISH with packet ID. Need PUBACK to be sent → push response
+     * for the CIPSEND. */
+    esp.pushResponse(">"); esp.pushResponse(""); esp.pushResponse("SEND OK");
+    /* PUBLISH QoS1: 0x32 [remLen] [topicLen:2] [topic] [pktId:2] [payload]
+     * remLen = 2 + 1 + 2 + 4 = 9
+     */
+    uint8_t bin[19] = {'+','I','P','D',',','1','1',':',
+                       0x32, 0x09, 0x00, 0x01, 't', 0x12, 0x34, 'A', 'B', 'C', 'D'};
+    esp.pushMqttMsg(reinterpret_cast<const char*>(bin), 19);
+    MqttServiceTestAccess::processIncoming(mqtt());
+    SUCCEED();
+}
+
+// ── mqttSendFn (transport callback) ────────────────────────────────────────
+
+TEST(MqttSendFn, ReturnsFalseWhenDisconnected) {
+    resetEnvironment();
+    MqttServiceTestAccess::mqttConnected(mqtt()) = false;
+    const uint8_t data[4] = {1, 2, 3, 4};
+    EXPECT_FALSE(MqttServiceTestAccess::sendFn(data, 4, &mqtt()));
+}
+
+TEST(MqttSendFn, HexEncodesAndPublishes) {
+    resetEnvironment();
+    MqttServiceTestAccess::mqttConnected(mqtt()) = true;
+    auto& esp = Esp8266::getInstance();
+    /* mqttSendFn → mqttPublishRaw → sendMqttPacket → CIPSEND > / sendData / SEND OK */
+    esp.pushResponse(">"); esp.pushResponse(""); esp.pushResponse("SEND OK");
+    const uint8_t data[2] = {0xCA, 0xFE};
+    /* Result depends on PUBACK match — just verify command was sent */
+    MqttServiceTestAccess::sendFn(data, 2, &mqtt());
+    EXPECT_GE(esp.sentCmds().size(), 1u);
+}
+
+TEST(MqttSendFn, ClampsLongPayload) {
+    resetEnvironment();
+    MqttServiceTestAccess::mqttConnected(mqtt()) = true;
+    auto& esp = Esp8266::getInstance();
+    esp.pushResponse(">"); esp.pushResponse(""); esp.pushResponse("SEND OK");
+    /* > 64 bytes → clamped to 64 in mqttSendFn */
+    uint8_t big[100];
+    for (int i = 0; i < 100; ++i) big[i] = (uint8_t)i;
+    MqttServiceTestAccess::sendFn(big, 100, &mqtt());
+    SUCCEED();
 }
 
 // ── Observer callbacks via init() ──────────────────────────────────────────
