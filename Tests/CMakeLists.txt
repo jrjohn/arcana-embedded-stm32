@@ -447,6 +447,16 @@ target_include_directories(test_ble PRIVATE
     ${F103_CMD_INC} ${F103_DRV} ${F103_MODEL})
 target_link_libraries(test_ble PRIVATE GTest::gtest_main)
 
+# ── test_commands_f103 (header-only ICommand impls in Commands.hpp) ──────────
+add_executable(test_commands_f103
+    test_commands_f103.cpp
+    ${MOCKS_DIR}/test_hal_stub.cpp
+    ${FREERTOS_STUBS}
+)
+target_include_directories(test_commands_f103 PRIVATE
+    ${COMMON_INCS} ${F103_COMMON} ${F103_CMD_INC})
+target_link_libraries(test_commands_f103 PRIVATE GTest::gtest_main)
+
 # ── test_arcanats_db (ArcanaTS v2 core engine + schema) ──────────────────────
 add_executable(test_arcanats_db
     test_arcanats_db.cpp
@@ -490,3 +500,4 @@ add_test(NAME test_wifi              COMMAND test_wifi)
 add_test(NAME test_mqtt              COMMAND test_mqtt)
 add_test(NAME test_main_view         COMMAND test_main_view)
 add_test(NAME test_ble               COMMAND test_ble)
+add_test(NAME test_commands_f103     COMMAND test_commands_f103)

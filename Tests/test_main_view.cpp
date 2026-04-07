@@ -242,3 +242,54 @@ TEST(MainViewEcg, RenderEcgColumnAtTopAndBottomEdges) {
     v.renderEcgColumn(d, 50, 50, 50);
     SUCCEED();
 }
+
+// ── processRender via friend access ─────────────────────────────────────────
+//
+// processRender is the body of renderTaskEntry's infinite loop. We expose it
+// via a friend struct so the host test can drive one render pass without
+// running the FreeRTOS task. Covers the dirty-flag dispatch + ECG queue drain
+// + toast expiry + onEnter redraw branches.
+
+namespace arcana { namespace lcd {
+struct MainViewTestAccess {
+    static void processRender(MainView& v) { v.processRender(); }
+};
+}}
+
+using arcana::lcd::MainViewTestAccess;
+
+TEST(MainViewProcess, ProcessRenderEarlyReturnsWhenInputsMissing) {
+    MainView v;
+    v.init();
+    /* viewModel and lcd both null → first guard returns immediately. */
+    MainViewTestAccess::processRender(v);
+    SUCCEED();
+}
+
+TEST(MainViewProcess, ProcessRenderDispatchesDirtyAndDrainsEcg) {
+    MainView v;
+    StubDisplay d;
+    LcdViewModel vm;
+    /* No observables wired — vm.output() returns the default zero state */
+    vm.init(nullptr);
+
+    v.init();
+    v.input.lcd       = &d;
+    v.input.viewModel = &vm;
+
+    /* Push a few ECG samples; the queue should drain in processRender */
+    v.pushEcgSample(40);
+    v.pushEcgSample(60);
+    v.pushEcgSample(80);
+
+    /* Mark the LcdOutput as dirty so the render branch fires too. */
+    LcdInput in;
+    in.type = LcdInput::SensorData;
+    in.sensor.temperature = 21.5f;
+    vm.onEvent(in);
+
+    MainViewTestAccess::processRender(v);
+
+    /* The mock display should have been touched at least once */
+    EXPECT_GT(d.fillRectCalls + d.drawStringCalls + d.drawHLineCalls, 0u);
+}

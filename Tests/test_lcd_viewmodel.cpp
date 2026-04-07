@@ -169,3 +169,65 @@ TEST(LcdViewModelInit, SubscribesAndForwardsViaObservables) {
      * actually delivers. We don't strictly test that here. */
     SUCCEED();
 }
+
+// ── Static observer callbacks via Observable::notify (synchronous) ──────────
+//
+// Observable::notify is the synchronous fan-out helper — calling it after
+// init() exercises each of the static onSensorData / onStorageStats /
+// onSdBenchmark / onBaseTimer / onMqttConn / onLightData callbacks (which
+// are otherwise dead code on host because the queue dispatcher task isn't
+// running).
+
+TEST(LcdViewModelObservers, NotifyDrivesAllStaticCallbacks) {
+    LcdViewModel vm;
+    Observable<SensorDataModel>    sensors("s");
+    Observable<arcana::LightDataModel> light("l");
+    Observable<StorageStatsModel>  stats("st");
+    Observable<SdBenchmarkModel>   bench("b");
+    Observable<TimerModel>         timer("ti");
+    Observable<MqttConnectionModel> mqtt("m");
+
+    vm.input.SensorData   = &sensors;
+    vm.input.LightData    = &light;
+    vm.input.StorageStats = &stats;
+    vm.input.SdBenchmark  = &bench;
+    vm.input.BaseTimer    = &timer;
+    vm.input.MqttConn     = &mqtt;
+    vm.init(nullptr);
+
+    /* SensorData → onSensorData → onEvent(SensorData) → temperature dirty */
+    SensorDataModel s; s.temperature = 24.0f;
+    sensors.notify(&s);
+    EXPECT_FLOAT_EQ(vm.output().temperature, 24.0f);
+    EXPECT_TRUE(vm.output().dirty & LcdOutput::DIRTY_TEMP);
+
+    /* LightData → onLightData (no-op, just ensures it's called) */
+    arcana::LightDataModel l; l.ambientLight = 100; l.proximity = 5;
+    light.notify(&l);  /* must not crash */
+
+    /* StorageStats → records/rate update */
+    StorageStatsModel ss;
+    ss.recordCount = 100; ss.writesPerSec = 10;
+    ss.totalKB = 4; ss.kbPerSec = 1;
+    stats.notify(&ss);
+    EXPECT_EQ(vm.output().recordCount, 100u);
+    EXPECT_EQ(vm.output().writesPerSec, 10);
+
+    /* SdBenchmark → SdInfo update */
+    SdBenchmarkModel sb;
+    sb.totalKB = 500; sb.totalRecords = 1024;
+    bench.notify(&sb);
+    EXPECT_EQ(vm.output().sdFreeMB,  500u);
+    EXPECT_EQ(vm.output().sdTotalMB, 1024u);
+
+    /* BaseTimer → TimerTick dispatch (uses SystemClock for epoch) */
+    TimerModel t;
+    timer.notify(&t);
+    EXPECT_TRUE(vm.output().dirty & LcdOutput::DIRTY_TIME);
+
+    /* MqttConn → MqttStatus update */
+    MqttConnectionModel mc; mc.connected = true;
+    mqtt.notify(&mc);
+    EXPECT_TRUE(vm.output().mqttConnected);
+    EXPECT_TRUE(vm.output().mqttKnown);
+}

@@ -41,6 +41,9 @@ public:
     void renderEcgColumn(display::IDisplay& lcd, uint8_t x, uint8_t y, uint8_t prevY) override;
 
 private:
+    /* Test access — host gtest fixture exercises the private render task. */
+    friend struct MainViewTestAccess;
+
     void renderTemp(display::IDisplay& lcd, const LcdOutput& out, LcdOutput& rendered);
     void renderSdInfo(display::IDisplay& lcd, const LcdOutput& out, LcdOutput& rendered);
     void renderStorage(display::IDisplay& lcd, const LcdOutput& out, LcdOutput& rendered);
