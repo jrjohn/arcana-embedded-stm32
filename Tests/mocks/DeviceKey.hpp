@@ -17,6 +17,10 @@
  */
 #pragma once
 
+/* Pull in the host stm32 stub so UID_BASE is always defined when this mock
+ * is included from any translation unit. */
+#include "stm32f1xx_hal.h"
+
 #include "ChaCha20.hpp"
 #include <cstdint>
 #include <cstring>

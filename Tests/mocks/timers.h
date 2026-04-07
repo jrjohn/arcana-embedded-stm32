@@ -6,7 +6,7 @@ typedef void* TimerHandle_t;
 typedef struct tmrTimerControl {} StaticTimer_t;
 typedef void (*TimerCallbackFunction_t)(TimerHandle_t xTimer);
 
-#define pdMS_TO_TICKS(ms) ((TickType_t)(ms))
+/* pdMS_TO_TICKS now lives in projdefs.h (shared with task/queue/semphr) */
 
 #ifdef __cplusplus
 extern "C" {

@@ -28,6 +28,10 @@ set(F051_SVC      ${CMAKE_SOURCE_DIR}/../Targets/stm32f051c8/Services/service)
 set(F103_SVC_IMPL ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/Service/impl)
 set(F103_SVC_INC  ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/Service)
 set(F103_CMD_INC  ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/Command)
+set(F103_DRV      ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/Driver)
+set(F103_MODEL    ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/Model)
+set(NANOPB_INC    ${SHARED_INC}/nanopb)
+set(NANOPB_SRC    ${SHARED_SRC}/nanopb)
 set(MOCKS_DIR     ${CMAKE_SOURCE_DIR}/mocks)
 set(MBEDTLS_INC   ${SHARED_INC})            # mbedtls headers live at Shared/Inc/mbedtls/*
 set(MBEDTLS_INC2  ${SHARED_INC}/mbedtls)    # bare `#include "common.h"` etc.
@@ -219,6 +223,35 @@ add_executable(test_key_exchange
 target_include_directories(test_key_exchange PRIVATE ${COMMON_INCS} ${MBEDTLS_INC} ${MBEDTLS_INC2})
 target_link_libraries(test_key_exchange PRIVATE GTest::gtest_main)
 
+# ── test_registration (RegistrationServiceImpl crypto + storage + protobuf) ──
+# Note: FatFsFilePort.cpp is linked despite no test calling its methods —
+# the AtsStorageServiceImpl stub ctor instantiates mFilePort/mDeviceFilePort,
+# which need the FatFsFilePort vtable, which is emitted in FatFsFilePort.cpp.
+add_executable(test_registration
+    test_registration.cpp
+    ${F103_SVC_IMPL}/RegistrationServiceImpl.cpp
+    ${F103_DRV}/FatFsFilePort.cpp
+    ${ATS_SRC}/ArcanaTsDb.cpp
+    ${SHARED_SRC}/Observable.cpp
+    ${SHARED_SRC}/uECC.c
+    ${SHARED_SRC}/registration.pb.c
+    ${NANOPB_SRC}/pb_encode.c
+    ${NANOPB_SRC}/pb_decode.c
+    ${NANOPB_SRC}/pb_common.c
+    ${MBEDTLS_SOURCES}
+    ${MOCKS_DIR}/test_hal_stub.cpp
+    ${MOCKS_DIR}/ff_host_stub.cpp
+    ${MOCKS_DIR}/AtsStorageServiceImpl_stub.cpp
+    ${MOCKS_DIR}/Esp8266_stub.cpp
+    ${FREERTOS_STUBS}
+)
+target_include_directories(test_registration PRIVATE
+    ${COMMON_INCS} ${ATS_INC} ${MBEDTLS_INC} ${MBEDTLS_INC2}
+    ${NANOPB_INC}
+    ${F103_COMMON} ${F103_SVC_INC} ${F103_SVC_IMPL} ${F103_CMD_INC}
+    ${F103_DRV} ${F103_MODEL})
+target_link_libraries(test_registration PRIVATE GTest::gtest_main)
+
 # ── test_command_bridge (CommandBridgeImpl crypto + dispatch) ────────────────
 add_executable(test_command_bridge
     test_command_bridge.cpp
@@ -264,3 +297,4 @@ add_test(NAME test_chacha20          COMMAND test_chacha20)
 add_test(NAME test_crypto_engine     COMMAND test_crypto_engine)
 add_test(NAME test_key_exchange      COMMAND test_key_exchange)
 add_test(NAME test_command_bridge    COMMAND test_command_bridge)
+add_test(NAME test_registration      COMMAND test_registration)

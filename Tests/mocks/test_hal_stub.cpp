@@ -29,6 +29,10 @@ DWT_Type*     const DWT     = &sDwtStorage;
 static GPIO_TypeDef sGpiocStorage = {0};
 GPIO_TypeDef* const GPIOC = &sGpiocStorage;
 
+/* ADC1 stub — DR field reads as 0; only used as entropy source mix-in. */
+static ADC_TypeDef sAdc1Storage = {};
+ADC_TypeDef* const ADC1 = &sAdc1Storage;
+
 GPIO_PinState HAL_GPIO_ReadPin(GPIO_TypeDef* /*port*/, uint16_t /*pin*/) {
     return GPIO_PIN_SET;  /* "released" — KEY2 high = idle */
 }
