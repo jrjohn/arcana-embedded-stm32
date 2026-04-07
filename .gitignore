@@ -9,8 +9,9 @@ Release/
 # macOS
 .DS_Store
 
-# Credentials (local only, not committed)
-Credentials.hpp
+# Credentials (local only, not committed) — scope to production tree only,
+# allow Tests/mocks/Credentials.hpp (host test stub with placeholder values).
+Targets/**/Credentials.hpp
 
 # Backup files
 *.bak
