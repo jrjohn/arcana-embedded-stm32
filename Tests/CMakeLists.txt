@@ -372,6 +372,22 @@ target_include_directories(test_wifi PRIVATE
     ${F103_DRV} ${F103_MODEL})
 target_link_libraries(test_wifi PRIVATE GTest::gtest_main)
 
+# ── test_main_view (MainView render functions against StubDisplay) ───────────
+add_executable(test_main_view
+    test_main_view.cpp
+    ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/View/MainView.cpp
+    ${SHARED_SRC}/Observable.cpp
+    ${MOCKS_DIR}/test_hal_stub.cpp
+    ${MOCKS_DIR}/display_stubs.cpp
+    ${FREERTOS_STUBS}
+)
+target_include_directories(test_main_view PRIVATE
+    ${COMMON_INCS} ${SHARED_INC}/display
+    ${F103_COMMON} ${F103_MODEL}
+    ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/View
+    ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/ViewModel)
+target_link_libraries(test_main_view PRIVATE GTest::gtest_main)
+
 # ── test_lcd_viewmodel (LcdViewModel observable wiring + dirty flags) ────────
 add_executable(test_lcd_viewmodel
     test_lcd_viewmodel.cpp
@@ -452,3 +468,4 @@ add_test(NAME test_widgets           COMMAND test_widgets)
 add_test(NAME test_lcd_viewmodel     COMMAND test_lcd_viewmodel)
 add_test(NAME test_wifi              COMMAND test_wifi)
 add_test(NAME test_mqtt              COMMAND test_mqtt)
+add_test(NAME test_main_view         COMMAND test_main_view)
