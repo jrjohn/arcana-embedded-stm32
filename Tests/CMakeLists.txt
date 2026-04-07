@@ -152,6 +152,11 @@ add_executable(test_observable_errors
 target_include_directories(test_observable_errors PRIVATE ${COMMON_INCS})
 target_link_libraries(test_observable_errors PRIVATE GTest::gtest_main)
 
+# ── test_sha256 (header-only Sha256 + HMAC + HKDF) ────────────────────────────
+add_executable(test_sha256 test_sha256.cpp)
+target_include_directories(test_sha256 PRIVATE ${COMMON_INCS})
+target_link_libraries(test_sha256 PRIVATE GTest::gtest_main)
+
 # ── CTest registration ────────────────────────────────────────────────────────
 enable_testing()
 add_test(NAME test_crc16             COMMAND test_crc16)
@@ -169,3 +174,4 @@ add_test(NAME test_log               COMMAND test_log)
 add_test(NAME test_ota_header        COMMAND test_ota_header)
 add_test(NAME test_observable        COMMAND test_observable)
 add_test(NAME test_observable_errors COMMAND test_observable_errors)
+add_test(NAME test_sha256            COMMAND test_sha256)
