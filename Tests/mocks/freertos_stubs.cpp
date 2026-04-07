@@ -13,11 +13,26 @@ extern "C" TickType_t xTaskGetTickCount(void) { return 0; }
 extern "C" QueueHandle_t xQueueCreateStatic(UBaseType_t, UBaseType_t, uint8_t*, StaticQueue_t* q) {
     return (QueueHandle_t)q;
 }
-extern "C" BaseType_t xQueueSendToBack(QueueHandle_t, const void*, TickType_t) { return pdTRUE; }
+/* Test override hooks: tests that need to inject queue items (e.g.
+ * test_command_bridge driving CommandBridge::bridgeTask) install a function
+ * pointer here. Default behavior preserves the legacy stub semantics
+ * (Send always succeeds, Receive always fails) so existing tests are unaffected. */
+typedef BaseType_t (*XQueueSendFn)(QueueHandle_t, const void*, TickType_t);
+typedef BaseType_t (*XQueueReceiveFn)(QueueHandle_t, void*, TickType_t);
+XQueueSendFn    g_xQueueSendOverride    = nullptr;
+XQueueReceiveFn g_xQueueReceiveOverride = nullptr;
+
+extern "C" BaseType_t xQueueSendToBack(QueueHandle_t q, const void* item, TickType_t t) {
+    if (g_xQueueSendOverride) return g_xQueueSendOverride(q, item, t);
+    return pdTRUE;
+}
 extern "C" BaseType_t xQueueSendToBackFromISR(QueueHandle_t, const void*, BaseType_t* p) {
     if (p) *p = pdFALSE; return pdTRUE;
 }
-extern "C" BaseType_t xQueueReceive(QueueHandle_t, void*, TickType_t) { return pdFALSE; }
+extern "C" BaseType_t xQueueReceive(QueueHandle_t q, void* buf, TickType_t t) {
+    if (g_xQueueReceiveOverride) return g_xQueueReceiveOverride(q, buf, t);
+    return pdFALSE;
+}
 extern "C" UBaseType_t uxQueueSpacesAvailable(QueueHandle_t) { return 4; }
 extern "C" UBaseType_t uxQueueMessagesWaiting(QueueHandle_t) { return 0; }
 

@@ -25,6 +25,9 @@ set(ATS_SRC       ${SHARED_SRC}/ats)
 set(F103_COMMON   ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/Common)
 set(F051_CMD      ${CMAKE_SOURCE_DIR}/../Targets/stm32f051c8/Services/command)
 set(F051_SVC      ${CMAKE_SOURCE_DIR}/../Targets/stm32f051c8/Services/service)
+set(F103_SVC_IMPL ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/Service/impl)
+set(F103_SVC_INC  ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/Service)
+set(F103_CMD_INC  ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/Command)
 set(MOCKS_DIR     ${CMAKE_SOURCE_DIR}/mocks)
 set(MBEDTLS_INC   ${SHARED_INC})            # mbedtls headers live at Shared/Inc/mbedtls/*
 set(MBEDTLS_INC2  ${SHARED_INC}/mbedtls)    # bare `#include "common.h"` etc.
@@ -216,6 +219,19 @@ add_executable(test_key_exchange
 target_include_directories(test_key_exchange PRIVATE ${COMMON_INCS} ${MBEDTLS_INC} ${MBEDTLS_INC2})
 target_link_libraries(test_key_exchange PRIVATE GTest::gtest_main)
 
+# ── test_command_bridge (CommandBridgeImpl crypto + dispatch) ────────────────
+add_executable(test_command_bridge
+    test_command_bridge.cpp
+    ${F103_SVC_IMPL}/CommandBridgeImpl.cpp
+    ${SHARED_SRC}/uECC.c
+    ${SHARED_SRC}/Observable.cpp
+    ${MOCKS_DIR}/test_hal_stub.cpp
+    ${FREERTOS_STUBS}
+)
+target_include_directories(test_command_bridge PRIVATE
+    ${COMMON_INCS} ${F103_COMMON} ${F103_SVC_INC} ${F103_CMD_INC})
+target_link_libraries(test_command_bridge PRIVATE GTest::gtest_main)
+
 # ── test_arcanats_db (ArcanaTS v2 core engine + schema) ──────────────────────
 add_executable(test_arcanats_db
     test_arcanats_db.cpp
@@ -247,3 +263,4 @@ add_test(NAME test_arcanats_db       COMMAND test_arcanats_db)
 add_test(NAME test_chacha20          COMMAND test_chacha20)
 add_test(NAME test_crypto_engine     COMMAND test_crypto_engine)
 add_test(NAME test_key_exchange      COMMAND test_key_exchange)
+add_test(NAME test_command_bridge    COMMAND test_command_bridge)

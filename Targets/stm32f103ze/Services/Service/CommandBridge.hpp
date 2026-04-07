@@ -87,6 +87,9 @@ public:
     bool hasSession(uint8_t source) const { return mSessions[source & 1].active; }
 
 private:
+    /* Test access — host-side gtest fixture exercises private crypto/registry. */
+    friend struct CommandBridgeTestAccess;
+
     CommandBridge();
 
     static void bridgeTask(void* param);

@@ -6,6 +6,8 @@ typedef struct tskTaskControlBlock {} StaticTask_t;
 
 typedef void (*TaskFunction_t)(void*);
 
+#define tskIDLE_PRIORITY ((UBaseType_t)0)
+
 #ifdef __cplusplus
 extern "C" {
 #endif
