@@ -457,6 +457,28 @@ target_include_directories(test_commands_f103 PRIVATE
     ${COMMON_INCS} ${F103_COMMON} ${F103_CMD_INC})
 target_link_libraries(test_commands_f103 PRIVATE GTest::gtest_main)
 
+# ── test_app_entry (F051 App.cpp entry points) ──────────────────────────────
+# F051 App.cpp's extern "C" symbols are renamed to F051_* via macro rewrite
+# in test_app_f051_wrap.cpp so the test target can link them without
+# colliding with any other App.cpp version. F103 App.cpp is intentionally
+# not covered — its App_Init cascades into Controller::run() (entire HAL).
+add_executable(test_app_entry
+    test_app_entry.cpp
+    test_app_f051_wrap.cpp
+    ${F051_CMD}/CommandService.cpp
+    ${F051_CMD}/CommandRegistry.cpp
+    ${F051_CMD}/CommandDispatcher.cpp
+    ${F051_CMD}/CommandCodec.cpp
+    ${F051_SVC}/CounterService.cpp
+    ${F051_SVC}/TimeDisplayService.cpp
+    ${F051_SVC}/TimerService.cpp
+    ${SHARED_SRC}/Observable.cpp
+    ${FREERTOS_STUBS}
+)
+target_include_directories(test_app_entry PRIVATE
+    ${COMMON_INCS} ${F051_CMD} ${F051_CMD}/impl ${F051_SVC})
+target_link_libraries(test_app_entry PRIVATE GTest::gtest_main)
+
 # ── test_services_f103 (TimerServiceImpl + LedServiceImpl + IoServiceImpl) ──
 add_executable(test_services_f103
     test_services_f103.cpp
@@ -566,3 +588,4 @@ add_test(NAME test_appenders         COMMAND test_appenders)
 add_test(NAME test_fatfs_file_port   COMMAND test_fatfs_file_port)
 add_test(NAME test_display_clock     COMMAND test_display_clock)
 add_test(NAME test_services_f103     COMMAND test_services_f103)
+add_test(NAME test_app_entry         COMMAND test_app_entry)
