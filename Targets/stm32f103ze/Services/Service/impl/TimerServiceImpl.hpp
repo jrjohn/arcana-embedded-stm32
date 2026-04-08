@@ -17,6 +17,9 @@ public:
     void stop() override;
 
 private:
+    /* Test access — host gtest fixture drives the private timerCallback. */
+    friend struct TimerServiceTestAccess;
+
     TimerServiceImpl();
     ~TimerServiceImpl();
     TimerServiceImpl(const TimerServiceImpl&);

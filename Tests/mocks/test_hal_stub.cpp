@@ -24,10 +24,19 @@ static DWT_Type     sDwtStorage     = {0, 0};
 SysTick_Type* const SysTick = &sSysTickStorage;
 DWT_Type*     const DWT     = &sDwtStorage;
 
-/* GPIOC stub — reads return "not pressed" (RESET = 0). The CommandBridge
- * doesn't poll GPIO, but linking AtsStorageServiceImpl later will need it. */
+/* GPIO port stubs — reads return "not pressed" (RESET = 0). */
+static GPIO_TypeDef sGpioaStorage = {0};
+static GPIO_TypeDef sGpiobStorage = {0};
 static GPIO_TypeDef sGpiocStorage = {0};
+static GPIO_TypeDef sGpiogStorage = {0};
+GPIO_TypeDef* const GPIOA = &sGpioaStorage;
+GPIO_TypeDef* const GPIOB = &sGpiobStorage;
 GPIO_TypeDef* const GPIOC = &sGpiocStorage;
+GPIO_TypeDef* const GPIOG = &sGpiogStorage;
+
+void HAL_GPIO_WritePin(GPIO_TypeDef* /*port*/, uint16_t /*pin*/, GPIO_PinState /*state*/) {
+    /* no-op — Led + other services call this; tests don't inspect GPIO state */
+}
 
 /* ADC1 stub — DR field reads as 0; only used as entropy source mix-in. */
 static ADC_TypeDef sAdc1Storage = {};
@@ -42,6 +51,19 @@ SDIO_TypeDef* const SDIO = &sSdioStorage;
  * + setjmp that the test can inspect. */
 static BKP_TypeDef sBkpStorage = {};
 BKP_TypeDef* const BKP = &sBkpStorage;
+
+/* RTC peripheral stub — production SystemClock.hpp R/Ws CNTH/CNTL via the
+ * register-aliasing pattern. Initialise CRL with the "always-ready" bits
+ * set so the rtcEnterConfig/rtcExitConfig spin loops never block. */
+static RTC_TypeDef sRtcStorage = {
+    /*CRL*/   RTC_CRL_RTOFF | RTC_CRL_RSF, 0,
+    /*CRH*/   0, 0,
+    /*PRLH*/  0, 0, /*PRLL*/ 0, 0,
+    /*DIVH*/  0, 0, /*DIVL*/ 0, 0,
+    /*CNTH*/  0, 0, /*CNTL*/ 0, 0,
+    /*ALRH*/  0, 0, /*ALRL*/ 0, 0,
+};
+RTC_TypeDef* const RTC = &sRtcStorage;
 
 void HAL_PWR_EnableBkUpAccess(void) {}
 

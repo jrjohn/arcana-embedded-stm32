@@ -45,11 +45,30 @@ typedef struct {
     volatile uint32_t IDR;
 } GPIO_TypeDef;
 extern GPIO_TypeDef* const GPIOC;
+extern GPIO_TypeDef* const GPIOB;
+extern GPIO_TypeDef* const GPIOA;
+extern GPIO_TypeDef* const GPIOG;
+#define GPIO_PIN_0       ((uint16_t)0x0001)
+#define GPIO_PIN_1       ((uint16_t)0x0002)
+#define GPIO_PIN_2       ((uint16_t)0x0004)
+#define GPIO_PIN_3       ((uint16_t)0x0008)
+#define GPIO_PIN_4       ((uint16_t)0x0010)
+#define GPIO_PIN_5       ((uint16_t)0x0020)
+#define GPIO_PIN_6       ((uint16_t)0x0040)
+#define GPIO_PIN_7       ((uint16_t)0x0080)
+#define GPIO_PIN_8       ((uint16_t)0x0100)
+#define GPIO_PIN_9       ((uint16_t)0x0200)
+#define GPIO_PIN_10      ((uint16_t)0x0400)
+#define GPIO_PIN_11      ((uint16_t)0x0800)
+#define GPIO_PIN_12      ((uint16_t)0x1000)
 #define GPIO_PIN_13      ((uint16_t)0x2000)
+#define GPIO_PIN_14      ((uint16_t)0x4000)
+#define GPIO_PIN_15      ((uint16_t)0x8000)
 #define GPIO_PIN_RESET   0
 #define GPIO_PIN_SET     1
 typedef int GPIO_PinState;
 GPIO_PinState HAL_GPIO_ReadPin(GPIO_TypeDef* port, uint16_t pin);
+void HAL_GPIO_WritePin(GPIO_TypeDef* port, uint16_t pin, GPIO_PinState state);
 
 /* BKP (backup register) — OtaServiceImpl::setOtaFlag writes DR2/DR3
  * to signal the bootloader on next reset. */
@@ -98,6 +117,37 @@ typedef struct {
     volatile uint32_t FIFO;
 } SDIO_TypeDef;
 extern SDIO_TypeDef* const SDIO;
+
+/* RTC surface — production SystemClock.hpp reads/writes RTC->CNTH/CNTL +
+ * uses RTC->CRL config bits. The host stub backs this with a single uint32_t
+ * "counter" stored in test_hal_stub.cpp; CNTH/CNTL projections of that
+ * counter let the production register-aliasing code work unchanged. */
+typedef struct {
+    volatile uint16_t CRL;
+    uint16_t _pad_crl;
+    volatile uint16_t CRH;
+    uint16_t _pad_crh;
+    volatile uint16_t PRLH;
+    uint16_t _pad_prlh;
+    volatile uint16_t PRLL;
+    uint16_t _pad_prll;
+    volatile uint16_t DIVH;
+    uint16_t _pad_divh;
+    volatile uint16_t DIVL;
+    uint16_t _pad_divl;
+    volatile uint16_t CNTH;
+    uint16_t _pad_cnth;
+    volatile uint16_t CNTL;
+    uint16_t _pad_cntl;
+    volatile uint16_t ALRH;
+    uint16_t _pad_alrh;
+    volatile uint16_t ALRL;
+    uint16_t _pad_alrl;
+} RTC_TypeDef;
+extern RTC_TypeDef* const RTC;
+#define RTC_CRL_RTOFF   ((uint16_t)0x0020)
+#define RTC_CRL_CNF     ((uint16_t)0x0010)
+#define RTC_CRL_RSF     ((uint16_t)0x0008)
 
 /* ADC surface — RegistrationServiceImpl::ueccRng() XORs ADC1->DR for entropy */
 typedef struct {

@@ -457,6 +457,39 @@ target_include_directories(test_commands_f103 PRIVATE
     ${COMMON_INCS} ${F103_COMMON} ${F103_CMD_INC})
 target_link_libraries(test_commands_f103 PRIVATE GTest::gtest_main)
 
+# ── test_services_f103 (TimerServiceImpl + LedServiceImpl + IoServiceImpl) ──
+add_executable(test_services_f103
+    test_services_f103.cpp
+    ${F103_SVC_IMPL}/TimerServiceImpl.cpp
+    ${F103_SVC_IMPL}/LedServiceImpl.cpp
+    ${F103_SVC_IMPL}/IoServiceImpl.cpp
+    ${SHARED_SRC}/Observable.cpp
+    ${MOCKS_DIR}/test_hal_stub.cpp
+    ${MOCKS_DIR}/Esp8266_stub.cpp
+    ${MOCKS_DIR}/display_stubs.cpp
+    ${FREERTOS_STUBS}
+)
+target_include_directories(test_services_f103 PRIVATE
+    ${COMMON_INCS} ${SHARED_INC}/display
+    ${F103_COMMON} ${F103_SVC_INC} ${F103_SVC_IMPL} ${F103_MODEL})
+target_link_libraries(test_services_f103 PRIVATE GTest::gtest_main)
+
+# ── test_display_clock (production SystemClock + DisplayStatus + BitmapButton)
+# Drives the REAL F103 SystemClock.hpp by putting F103_COMMON BEFORE MOCKS_DIR
+# in the include order so its quoted include resolves to the production header
+# instead of the host stub. RTC register stubs in stm32f1xx_hal.h back the
+# CNTH/CNTL accesses; CRL is initialised with RTOFF|RSF set so the spin
+# loops never block.
+add_executable(test_display_clock
+    test_display_clock.cpp
+    ${MOCKS_DIR}/test_hal_stub.cpp
+    ${MOCKS_DIR}/display_stubs.cpp
+    ${FREERTOS_STUBS}
+)
+target_include_directories(test_display_clock PRIVATE
+    ${F103_COMMON} ${MOCKS_DIR} ${SHARED_INC} ${SHARED_INC}/display)
+target_link_libraries(test_display_clock PRIVATE GTest::gtest_main)
+
 # ── test_fatfs_file_port (FatFsFilePort retry + zero-fill recovery) ─────────
 add_executable(test_fatfs_file_port
     test_fatfs_file_port.cpp
@@ -531,3 +564,5 @@ add_test(NAME test_ble               COMMAND test_ble)
 add_test(NAME test_commands_f103     COMMAND test_commands_f103)
 add_test(NAME test_appenders         COMMAND test_appenders)
 add_test(NAME test_fatfs_file_port   COMMAND test_fatfs_file_port)
+add_test(NAME test_display_clock     COMMAND test_display_clock)
+add_test(NAME test_services_f103     COMMAND test_services_f103)
