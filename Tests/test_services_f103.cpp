@@ -50,6 +50,7 @@ using arcana::timer::TimerServiceTestAccess;
 namespace arcana { namespace io {
 struct IoServiceTestAccess {
     static void taskLoop(IoServiceImpl& s) { s.taskLoop(); }
+    static void invokeTaskFunc(IoServiceImpl& s) { IoServiceImpl::taskFunc(&s); }
 };
 }}
 using arcana::io::IoServiceTestAccess;
@@ -307,6 +308,21 @@ TEST(LightServiceTaskBody, OneIterationViaVTaskDelayAbort) {
     try {
         LightServiceTestAccess::invokeTask(s);
         FAIL() << "expected abort";
+    } catch (int) {}
+    g_vTaskDelay_abort_after = 0;
+}
+
+// ── IoServiceImpl::taskFunc (static FreeRTOS task entry) ──────────────────
+
+TEST(IoServiceTaskLoop, InvokeTaskFuncCallsTaskLoopAndAborts) {
+    /* taskFunc = vTaskDelay(2000ms init) + taskLoop. abort_after=5 fires
+     * on the first vTaskDelay (the 2-second boot settle), so taskLoop is
+     * never reached but lines 54-58 are covered. */
+    auto& s = IoServiceImpl::getInstance();
+    g_vTaskDelay_call_count  = 0;
+    g_vTaskDelay_abort_after = 1;
+    try {
+        IoServiceTestAccess::invokeTaskFunc(s);
     } catch (int) {}
     g_vTaskDelay_abort_after = 0;
 }

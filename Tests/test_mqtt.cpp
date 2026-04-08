@@ -54,6 +54,7 @@ struct MqttServiceTestAccess {
     static uint16_t& nextPacketId(MqttServiceImpl& m) { return m.mNextPacketId; }
     static volatile bool& running(MqttServiceImpl& m) { return m.mRunning; }
     static void runTask(MqttServiceImpl& m) { m.runTask(); }
+    static void invokeMqttTask(MqttServiceImpl& m) { MqttServiceImpl::mqttTask(&m); }
 };
 }}
 
@@ -767,4 +768,24 @@ TEST(MqttRunTask, HappyPathReachesMainLoopThenAborts) {
     g_vTaskDelay_abort_after = 0;
     MqttServiceTestAccess::running(m) = false;
     MqttServiceTestAccess::mqttConnected(m) = false;
+}
+
+extern "C" volatile uint8_t g_exfat_ready;
+
+TEST(MqttRunTask, MqttTaskWaitsForExfatThenInvokesRunTask) {
+    /* mqttTask: while (!g_exfat_ready) vTaskDelay; runTask(); vTaskDelete */
+    resetEnvironment();
+    auto& m = mqtt();
+    g_exfat_ready = 1;   /* skip wait loop */
+    MqttServiceTestAccess::running(m) = true;
+    /* All AT cmds fail → runTask Phase 1 retries → vTaskDelay abort fires */
+    auto& esp = Esp8266::getInstance();
+    for (int i = 0; i < 100; ++i) esp.pushResponse("ERROR");
+    g_vTaskDelay_call_count  = 0;
+    g_vTaskDelay_abort_after = 5;
+    try {
+        MqttServiceTestAccess::invokeMqttTask(m);
+    } catch (int) {}
+    g_vTaskDelay_abort_after = 0;
+    MqttServiceTestAccess::running(m) = false;
 }
