@@ -36,6 +36,9 @@ public:
     void disarmCancel() override;
 
 private:
+    /* Test access — host gtest fixture drives the private taskLoop body. */
+    friend struct IoServiceTestAccess;
+
     IoServiceImpl();
 
     static void taskFunc(void* param);

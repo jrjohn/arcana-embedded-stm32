@@ -21,6 +21,9 @@
 #include "SensorServiceImpl.hpp"
 #include "LightServiceImpl.hpp"
 
+extern int g_hal_gpio_read_abort_after;
+extern int g_hal_gpio_read_call_count;
+
 using arcana::ServiceStatus;
 using arcana::TimerModel;
 using arcana::Observable;
@@ -41,6 +44,13 @@ struct TimerServiceTestAccess {
 };
 }}
 using arcana::timer::TimerServiceTestAccess;
+
+namespace arcana { namespace io {
+struct IoServiceTestAccess {
+    static void taskLoop(IoServiceImpl& s) { s.taskLoop(); }
+};
+}}
+using arcana::io::IoServiceTestAccess;
 
 // ── TimerServiceImpl ────────────────────────────────────────────────────────
 
@@ -212,4 +222,37 @@ TEST(LightServiceTest, LifecycleInitHalInitStartStop) {
     EXPECT_EQ(s.start(),   ServiceStatus::OK);
     s.stop();
     EXPECT_NE(s.output.DataEvents, nullptr);
+}
+
+// ── IoServiceImpl::taskLoop body via abort hook ─────────────────────────────
+//
+// taskLoop is a for(;;) infinite loop that polls KEY1/KEY2 every 100ms.
+// We can't intercept its outer loop without modifying production, so we
+// install an abort counter on HAL_GPIO_ReadPin (test_hal_stub) that throws
+// after N reads. The test catches the exception and inspects post-loop
+// state. Each iteration calls HAL_GPIO_ReadPin twice (KEY2 then KEY1), so
+// abort=10 = 5 iterations.
+
+TEST(IoServiceTaskLoop, ManyIterationsHitsKey1HoldThresholds) {
+    /* HAL stub returns GPIO_PIN_SET on every read:
+     *   - KEY2 (active-LOW)  → released → mKey2Seen=true, no edge action
+     *   - KEY1 (active-HIGH) → pressed  → mKey1Hold increments each pass
+     * After 20 polling iterations mKey1Hold reaches 20 → format trigger.
+     * Each iteration calls HAL_GPIO_ReadPin twice → abort=50 gives ~25 iters,
+     * which exercises the hold==3 / 10 / 15 / >=20 toast branches and the
+     * format-fired path. */
+    auto& s = static_cast<IoServiceImpl&>(IoServiceImpl::getInstance());
+    s.clearFormatRequest();
+    g_hal_gpio_read_call_count  = 0;
+    g_hal_gpio_read_abort_after = 50;
+    try {
+        IoServiceTestAccess::taskLoop(s);
+        FAIL() << "expected abort exception";
+    } catch (int) {
+        SUCCEED();
+    }
+    g_hal_gpio_read_abort_after = 0;
+    /* After 20 iterations the hold counter triggered the format request */
+    EXPECT_TRUE(s.isFormatRequested());
+    s.clearFormatRequest();
 }

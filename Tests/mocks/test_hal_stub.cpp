@@ -74,7 +74,21 @@ void HAL_PWR_EnableBkUpAccess(void) {}
  * production startUpdate). */
 void NVIC_SystemReset(void) {}
 
-GPIO_PinState HAL_GPIO_ReadPin(GPIO_TypeDef* /*port*/, uint16_t /*pin*/) {
+/* HAL_GPIO_ReadPin abort hook — tests can install a counter that throws
+ * a sentinel int after N calls so they can break out of taskLoop's
+ * infinite for(;;). Default: 0 (disabled) → never throws. Pin override
+ * vector lets a test return GPIO_PIN_RESET ("pressed") for specific
+ * (port, pin) tuples to drive KEY1/KEY2 branches. */
+int      g_hal_gpio_read_abort_after = 0;
+int      g_hal_gpio_read_call_count  = 0;
+GPIO_PinState (*g_hal_gpio_read_override)(GPIO_TypeDef*, uint16_t) = nullptr;
+
+GPIO_PinState HAL_GPIO_ReadPin(GPIO_TypeDef* port, uint16_t pin) {
+    if (g_hal_gpio_read_abort_after > 0 &&
+        ++g_hal_gpio_read_call_count >= g_hal_gpio_read_abort_after) {
+        throw 1;
+    }
+    if (g_hal_gpio_read_override) return g_hal_gpio_read_override(port, pin);
     return GPIO_PIN_SET;  /* "released" — KEY2 high = idle */
 }
 
