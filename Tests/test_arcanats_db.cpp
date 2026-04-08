@@ -989,3 +989,50 @@ TEST(ArcanaTsSchemaTest, SchemaIdIsStableAndDistinct) {
     auto a2 = ArcanaTsSchema::dht11();
     EXPECT_EQ(a.schemaId(), a2.schemaId());
 }
+
+// ── openReadOnly: index rebuild from block headers (line 173-182 path) ──────
+//
+// When openReadOnly opens a file whose header has no ATS_FLAG_HAS_INDEX
+// (e.g. because the writer crashed before close() flushed the index),
+// readIndex() returns false and the engine scans block headers from
+// DATA_START_OFFSET, validating each one and adding entries to the
+// in-memory index.
+
+TEST(ArcanaTsDbEdgeTest, OpenReadOnlyRebuildsIndexFromBlockHeaders) {
+    DbCtx d;
+    TestClock::reset(60000, 1);
+
+    /* Stage 1: write data blocks WITHOUT calling close(). The file header
+     * is written by start() but lacks ATS_FLAG_HAS_INDEX because no index
+     * trailer was persisted. */
+    {
+        ArcanaTsDb db;
+        ASSERT_TRUE(db.open("rebuild.ats", d.makeCfg(/*primary*/0)));
+        ASSERT_TRUE(db.addChannel(0, makeAdcSchema()));
+        ASSERT_TRUE(db.start());
+        uint8_t rec[8];
+        for (uint32_t i = 0; i < 600; ++i) {
+            mkRec(rec, 60000 + i, i);
+            ASSERT_TRUE(db.append(0, rec));
+        }
+        ASSERT_TRUE(db.flush());
+        /* Intentionally NOT calling db.close() — file header keeps the
+         * "no index" flag from start(). The destructor on db doesn't
+         * write the index either. */
+    }
+
+    /* Stage 2: openReadOnly the same in-memory file. readIndex() bails on
+     * the flag check, falling into the rebuild scan loop. */
+    ArcanaTsDb db2;
+    ASSERT_TRUE(db2.openReadOnly("rebuild.ats", d.makeCfg(/*primary*/0)));
+    EXPECT_TRUE(db2.isReadOnly());
+    /* The rebuild path should have populated mIndex with at least one entry */
+    EXPECT_GE(db2.getIndexCount(), 1u);
+
+    /* Verify a queryByTime against the rebuilt index returns rows */
+    CollectCtx ctx;
+    EXPECT_TRUE(db2.queryByTime(0, 60100, 60200, &collectCb, &ctx));
+    EXPECT_GE(ctx.rows.size(), 1u);
+
+    db2.close();
+}
