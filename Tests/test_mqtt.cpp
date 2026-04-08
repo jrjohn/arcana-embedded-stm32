@@ -701,3 +701,70 @@ TEST(MqttRunTask, AbortInWifiPhaseAfterAFewRetries) {
     g_vTaskDelay_abort_after = 0;
     MqttServiceTestAccess::running(m) = false;
 }
+
+TEST(MqttRunTask, HappyPathReachesMainLoopThenAborts) {
+    /* Full happy-path script: wifi connect → ntp → tz fail → registration
+     * already done → sslConnect → mqttHandshake → subscribe → main loop.
+     * vTaskDelay abort fires deep in Phase 5. Each AT command's response
+     * is pushed in order. */
+    resetEnvironment();
+    auto& m = mqtt();
+    MqttServiceTestAccess::running(m) = true;
+
+    /* Mark registration as done so Phase 2.7 skips */
+    auto& reg = arcana::reg::RegistrationServiceImpl::getInstance();
+    RegistrationServiceTestAccess::populate(reg, "broker", 8883, "u", "p");
+
+    auto& esp = Esp8266::getInstance();
+
+    /* Phase 1: wifi->resetAndConnect — happy AT path */
+    esp.pushResponse("OK");        // AT (first try at 460800)
+    esp.pushResponse("OK");        // AT+GMR (version)
+    esp.pushResponse("OK");        // CWDHCP=1,1
+    esp.pushResponse("WIFI CONNECTED\r\nWIFI GOT IP\r\nOK");  // CWMODE 1
+    esp.pushResponse("OK");        // CWJAP
+
+    /* Phase 2: syncNtp */
+    esp.pushResponse("OK");        // CIPSNTPCFG
+    esp.pushResponse("+CIPSNTPTIME:Mon Mar 23 12:34:56 2026\r\nOK");
+    esp.pushResponse("+SYSTIMESTAMP:1742300000\r\nOK");
+
+    /* Phase 2.5: detectTimezone — fail (CIPSTART error → bail) */
+    esp.pushResponse("ERROR");
+
+    /* Phase 3: sslConnect */
+    esp.pushResponse("CONNECT");
+    /* mqttHandshake: CIPSEND prompt + sendData + SEND OK + CONNACK */
+    esp.pushResponse(">");
+    esp.pushResponse("");
+    esp.pushResponse("SEND OK");
+    {
+        char connack[12] = "+IPD,4:";
+        connack[7] = (char)0x20; connack[8] = 0x02;
+        connack[9] = 0x00;       connack[10] = 0x00;
+        esp.pushMqttMsg(connack, 11);
+    }
+
+    /* Phase 4: mqttSubscribeRaw */
+    esp.pushResponse(">");
+    esp.pushResponse("");
+    esp.pushResponse("SEND OK");
+    /* SUBACK type 0x90 len 3 [pid lo][pid hi][status 0x00] */
+    {
+        char suback[13] = "+IPD,5:";
+        suback[7]  = (char)0x90; suback[8]  = 0x03;
+        suback[9]  = 0x00;       suback[10] = 0x01;
+        suback[11] = 0x00;
+        esp.pushMqttMsg(suback, 12);
+    }
+
+    /* Phase 5: main loop — vTaskDelay abort fires somewhere inside */
+    g_vTaskDelay_call_count  = 0;
+    g_vTaskDelay_abort_after = 50;
+    try {
+        MqttServiceTestAccess::runTask(m);
+    } catch (int) {}
+    g_vTaskDelay_abort_after = 0;
+    MqttServiceTestAccess::running(m) = false;
+    MqttServiceTestAccess::mqttConnected(m) = false;
+}
