@@ -52,6 +52,29 @@ SDIO_TypeDef* const SDIO = &sSdioStorage;
 static BKP_TypeDef sBkpStorage = {};
 BKP_TypeDef* const BKP = &sBkpStorage;
 
+/* USART peripheral stubs — Hc08Ble + Esp8266 drivers reference USART1/2/3
+ * directly. Provide register storage so SR/DR access doesn't segfault. */
+static USART_TypeDef sUsart1Storage = {};
+static USART_TypeDef sUsart2Storage = {};
+static USART_TypeDef sUsart3Storage = {};
+USART_TypeDef* const USART1 = &sUsart1Storage;
+USART_TypeDef* const USART2 = &sUsart2Storage;
+USART_TypeDef* const USART3 = &sUsart3Storage;
+
+HAL_StatusTypeDef HAL_UART_Init(UART_HandleTypeDef* /*huart*/) { return HAL_OK; }
+HAL_StatusTypeDef HAL_UART_DeInit(UART_HandleTypeDef* /*huart*/) { return HAL_OK; }
+HAL_StatusTypeDef HAL_UART_Transmit(UART_HandleTypeDef* /*huart*/,
+                                    uint8_t* /*data*/, uint16_t /*len*/,
+                                    uint32_t /*timeout*/) { return HAL_OK; }
+HAL_StatusTypeDef HAL_UART_Receive(UART_HandleTypeDef* /*huart*/,
+                                   uint8_t* /*data*/, uint16_t /*len*/,
+                                   uint32_t /*timeout*/) { return HAL_OK; }
+
+void HAL_GPIO_Init(GPIO_TypeDef* /*port*/, GPIO_InitTypeDef* /*init*/) {}
+void HAL_NVIC_SetPriority(IRQn_Type /*irq*/, uint32_t /*pri*/, uint32_t /*sub*/) {}
+void HAL_NVIC_EnableIRQ(IRQn_Type /*irq*/) {}
+void HAL_NVIC_DisableIRQ(IRQn_Type /*irq*/) {}
+
 /* RTC peripheral stub — production SystemClock.hpp R/Ws CNTH/CNTL via the
  * register-aliasing pattern. Initialise CRL with the "always-ready" bits
  * set so the rtcEnterConfig/rtcExitConfig spin loops never block. */

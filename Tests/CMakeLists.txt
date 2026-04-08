@@ -457,6 +457,20 @@ target_include_directories(test_commands_f103 PRIVATE
     ${COMMON_INCS} ${F103_COMMON} ${F103_CMD_INC})
 target_link_libraries(test_commands_f103 PRIVATE GTest::gtest_main)
 
+# ── test_hc08ble_driver (production Hc08Ble UART driver) ────────────────────
+# Pulls in the REAL Hc08Ble.cpp by putting F103_DRV BEFORE MOCKS_DIR in the
+# include order so quoted include resolves to the production header instead
+# of the host stub. UART HAL stubs in test_hal_stub return HAL_OK.
+add_executable(test_hc08ble_driver
+    test_hc08ble_driver.cpp
+    ${F103_DRV}/Hc08Ble.cpp
+    ${MOCKS_DIR}/test_hal_stub.cpp
+    ${FREERTOS_STUBS}
+)
+target_include_directories(test_hc08ble_driver PRIVATE
+    ${F103_DRV} ${MOCKS_DIR} ${SHARED_INC} ${F103_COMMON})
+target_link_libraries(test_hc08ble_driver PRIVATE GTest::gtest_main)
+
 # ── test_app_entry (F051 App.cpp entry points) ──────────────────────────────
 # F051 App.cpp's extern "C" symbols are renamed to F051_* via macro rewrite
 # in test_app_f051_wrap.cpp so the test target can link them without
@@ -596,3 +610,4 @@ add_test(NAME test_fatfs_file_port   COMMAND test_fatfs_file_port)
 add_test(NAME test_display_clock     COMMAND test_display_clock)
 add_test(NAME test_services_f103     COMMAND test_services_f103)
 add_test(NAME test_app_entry         COMMAND test_app_entry)
+add_test(NAME test_hc08ble_driver    COMMAND test_hc08ble_driver)

@@ -116,4 +116,9 @@ extern "C" BaseType_t xSemaphoreGive(SemaphoreHandle_t) {
     --s_lock_balance;
     return pdTRUE;
 }
+extern "C" BaseType_t xSemaphoreGiveFromISR(SemaphoreHandle_t,
+                                            BaseType_t* pxWoken) {
+    if (pxWoken) *pxWoken = pdFALSE;
+    return pdTRUE;
+}
 extern "C" void vSemaphoreDelete(SemaphoreHandle_t) {}

@@ -94,6 +94,103 @@ extern BKP_TypeDef* const BKP;
 void HAL_PWR_EnableBkUpAccess(void);
 void NVIC_SystemReset(void);
 
+/* USART surface — Hc08Ble + Esp8266 drivers use HAL_UART for transmit
+ * and read raw SR/DR for ISR-driven receive. Stub provides minimal
+ * type-compatible registers. */
+typedef struct {
+    volatile uint32_t SR;
+    volatile uint32_t DR;
+    volatile uint32_t BRR;
+    volatile uint32_t CR1;
+    volatile uint32_t CR2;
+    volatile uint32_t CR3;
+    volatile uint32_t GTPR;
+} USART_TypeDef;
+extern USART_TypeDef* const USART1;
+extern USART_TypeDef* const USART2;
+extern USART_TypeDef* const USART3;
+#define USART_SR_RXNE  ((uint32_t)0x0020)
+#define USART_SR_IDLE  ((uint32_t)0x0010)
+#define USART_SR_TC    ((uint32_t)0x0040)
+#define USART_SR_TXE   ((uint32_t)0x0080)
+#define USART_SR_ORE   ((uint32_t)0x0008)
+
+typedef struct UART_InitType {
+    uint32_t BaudRate;
+    uint32_t WordLength;
+    uint32_t StopBits;
+    uint32_t Parity;
+    uint32_t Mode;
+    uint32_t HwFlowCtl;
+    uint32_t OverSampling;
+} UART_InitTypeDef;
+
+typedef struct {
+    USART_TypeDef* Instance;
+    UART_InitTypeDef Init;
+} UART_HandleTypeDef;
+
+#define UART_WORDLENGTH_8B   0x0000U
+#define UART_STOPBITS_1      0x0000U
+#define UART_PARITY_NONE     0x0000U
+#define UART_MODE_TX_RX      0x000CU
+#define UART_HWCONTROL_NONE  0x0000U
+#define UART_OVERSAMPLING_16 0x0000U
+#define UART_IT_RXNE         ((uint32_t)1)
+#define UART_IT_IDLE         ((uint32_t)2)
+
+typedef int HAL_StatusTypeDef;
+#define HAL_OK     0
+#define HAL_ERROR  1
+#define HAL_BUSY   2
+#define HAL_TIMEOUT 3
+
+HAL_StatusTypeDef HAL_UART_Init(UART_HandleTypeDef* huart);
+HAL_StatusTypeDef HAL_UART_DeInit(UART_HandleTypeDef* huart);
+HAL_StatusTypeDef HAL_UART_Transmit(UART_HandleTypeDef* huart, uint8_t* data, uint16_t len, uint32_t timeout);
+HAL_StatusTypeDef HAL_UART_Receive(UART_HandleTypeDef* huart, uint8_t* data, uint16_t len, uint32_t timeout);
+
+#define __HAL_UART_ENABLE_IT(...) ((void)0)
+#define __HAL_UART_DISABLE_IT(...) ((void)0)
+#define __HAL_UART_GET_FLAG(...) (0)
+#define __HAL_UART_CLEAR_FLAG(...) ((void)0)
+
+/* GPIO init / NVIC stubs */
+typedef struct {
+    uint16_t Pin;
+    uint32_t Mode;
+    uint32_t Pull;
+    uint32_t Speed;
+    uint32_t Alternate;
+} GPIO_InitTypeDef;
+#define GPIO_MODE_OUTPUT_PP ((uint32_t)0x01)
+#define GPIO_MODE_AF_PP     ((uint32_t)0x02)
+#define GPIO_MODE_INPUT     ((uint32_t)0x00)
+#define GPIO_NOPULL         ((uint32_t)0x00)
+#define GPIO_PULLUP         ((uint32_t)0x01)
+#define GPIO_SPEED_FREQ_HIGH ((uint32_t)0x03)
+#define GPIO_SPEED_HIGH      GPIO_SPEED_FREQ_HIGH
+void HAL_GPIO_Init(GPIO_TypeDef* port, GPIO_InitTypeDef* init);
+
+#define __HAL_RCC_GPIOA_CLK_ENABLE()  ((void)0)
+#define __HAL_RCC_GPIOB_CLK_ENABLE()  ((void)0)
+#define __HAL_RCC_GPIOC_CLK_ENABLE()  ((void)0)
+#define __HAL_RCC_GPIOG_CLK_ENABLE()  ((void)0)
+#define __HAL_RCC_USART1_CLK_ENABLE() ((void)0)
+#define __HAL_RCC_USART2_CLK_ENABLE() ((void)0)
+#define __HAL_RCC_USART3_CLK_ENABLE() ((void)0)
+
+typedef int IRQn_Type;
+#define USART1_IRQn 37
+#define USART2_IRQn 38
+#define USART3_IRQn 39
+void HAL_NVIC_SetPriority(IRQn_Type irq, uint32_t pri, uint32_t sub);
+void HAL_NVIC_EnableIRQ(IRQn_Type irq);
+void HAL_NVIC_DisableIRQ(IRQn_Type irq);
+
+/* portYIELD_FROM_ISR — host no-op */
+#define portYIELD_FROM_ISR(woken) ((void)(woken))
+
 /* SDIO surface — HttpUploadServiceImpl::streamFileBody pokes DCTRL/ICR
  * directly between f_read calls (DMA reset). Stub fields = 0. */
 typedef struct {
