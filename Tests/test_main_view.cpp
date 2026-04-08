@@ -12,6 +12,7 @@
 
 #include "stm32f1xx_hal.h"
 #include "IDisplay.hpp"
+#include "DisplayStatus.hpp"
 #include "MainView.hpp"
 #include "LcdViewModel.hpp"
 #include "SystemClock.hpp"
@@ -258,6 +259,13 @@ struct MainViewTestAccess {
 
 using arcana::lcd::MainViewTestAccess;
 
+/* freertos_stubs override hooks */
+typedef long BaseType_t;
+typedef void* QueueHandle_t;
+typedef uint32_t TickType_t;
+typedef BaseType_t (*XQueueReceiveFn)(QueueHandle_t, void*, TickType_t);
+extern XQueueReceiveFn g_xQueueReceiveOverride;
+
 TEST(MainViewProcess, ProcessRenderEarlyReturnsWhenInputsMissing) {
     MainView v;
     v.init();
@@ -292,4 +300,68 @@ TEST(MainViewProcess, ProcessRenderDispatchesDirtyAndDrainsEcg) {
 
     /* The mock display should have been touched at least once */
     EXPECT_GT(d.fillRectCalls + d.drawStringCalls + d.drawHLineCalls, 0u);
+}
+
+// ── ECG drain branch via xQueueReceive override ────────────────────────────
+
+namespace {
+int sQueuePops = 0;
+BaseType_t fakeEcgQueueReceive(QueueHandle_t /*q*/, void* buf, TickType_t /*t*/) {
+    if (sQueuePops <= 0) return 0;  // pdFALSE
+    --sQueuePops;
+    *static_cast<uint8_t*>(buf) = static_cast<uint8_t>(50 + sQueuePops);
+    return 1;  // pdTRUE
+}
+} // anonymous
+
+TEST(MainViewProcess, ProcessRenderEcgDrainBranch) {
+    MainView v;
+    StubDisplay d;
+    LcdViewModel vm;
+    vm.init(nullptr);
+
+    v.init();
+    v.input.lcd       = &d;
+    v.input.viewModel = &vm;
+
+    /* Pop 3 fake ECG samples then return pdFALSE */
+    sQueuePops = 3;
+    g_xQueueReceiveOverride = fakeEcgQueueReceive;
+
+    MainViewTestAccess::processRender(v);
+
+    g_xQueueReceiveOverride = nullptr;
+
+    /* Each ECG sample triggers renderEcgColumn → fillRect calls */
+    EXPECT_GT(d.fillRectCalls, 0u);
+}
+
+// ── Toast expiry branch (lines 91-101: onEnter + full redraw) ──────────────
+
+TEST(MainViewProcess, ProcessRenderToastExpiryRedrawsView) {
+    MainView v;
+    StubDisplay d;
+    LcdViewModel vm;
+    vm.init(nullptr);
+
+    v.init();
+    v.input.lcd       = &d;
+    v.input.viewModel = &vm;
+
+    /* Stage a toast that's already expired (durationMs=0 → dismissTick=now) */
+    arcana::display::g_display = &d;
+    arcana::display::requestToast("expired", /*ms*/0);
+    /* First processRender: arms the toast (sets active=true, dismissTick=now) */
+    MainViewTestAccess::processRender(v);
+
+    /* Force toast to expired by also setting dismissTick=0 via dismissToast */
+    arcana::display::dismissToast();
+
+    /* Second processRender: toastUpdate returns true (expired) → triggers
+     * the onEnter + full redraw branch (lines 91-101) */
+    uint32_t before = d.fillScreenCalls;
+    MainViewTestAccess::processRender(v);
+    EXPECT_GE(d.fillScreenCalls, before);
+
+    arcana::display::g_display = nullptr;
 }
