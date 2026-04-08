@@ -457,6 +457,24 @@ target_include_directories(test_commands_f103 PRIVATE
     ${COMMON_INCS} ${F103_COMMON} ${F103_CMD_INC})
 target_link_libraries(test_commands_f103 PRIVATE GTest::gtest_main)
 
+# ── test_i2c_drivers (production I2cBus + Mpu6050 + Ap3216c + DhtSensor) ────
+# Software bit-bang drivers — link real .cpp files via include order
+# (F103_DRV before MOCKS_DIR). delayUs spins on DWT->CYCCNT which never
+# advances on host; tests set SystemCoreClock=0 to make `cycles = us * 0 = 0`
+# so the wait loop terminates immediately.
+add_executable(test_i2c_drivers
+    test_i2c_drivers.cpp
+    ${F103_DRV}/I2cBus.cpp
+    ${F103_DRV}/Mpu6050Sensor.cpp
+    ${F103_DRV}/Ap3216cSensor.cpp
+    ${F103_DRV}/DhtSensor.cpp
+    ${MOCKS_DIR}/test_hal_stub.cpp
+    ${FREERTOS_STUBS}
+)
+target_include_directories(test_i2c_drivers PRIVATE
+    ${F103_DRV} ${MOCKS_DIR} ${SHARED_INC} ${F103_COMMON})
+target_link_libraries(test_i2c_drivers PRIVATE GTest::gtest_main)
+
 # ── test_esp_flasher (production EspFlasher SLIP bootloader driver) ─────────
 add_executable(test_esp_flasher
     test_esp_flasher.cpp
@@ -639,3 +657,4 @@ add_test(NAME test_app_entry         COMMAND test_app_entry)
 add_test(NAME test_hc08ble_driver    COMMAND test_hc08ble_driver)
 add_test(NAME test_esp8266_driver    COMMAND test_esp8266_driver)
 add_test(NAME test_esp_flasher       COMMAND test_esp_flasher)
+add_test(NAME test_i2c_drivers       COMMAND test_i2c_drivers)

@@ -24,14 +24,24 @@ static DWT_Type     sDwtStorage     = {0, 0};
 SysTick_Type* const SysTick = &sSysTickStorage;
 DWT_Type*     const DWT     = &sDwtStorage;
 
+/* CoreDebug — I2cBus enables DWT cycle counter via DEMCR.TRCENA */
+static CoreDebug_Type sCoreDebugStorage = {};
+CoreDebug_Type* const CoreDebug = &sCoreDebugStorage;
+
 /* GPIO port stubs — reads return "not pressed" (RESET = 0). */
 static GPIO_TypeDef sGpioaStorage = {0};
 static GPIO_TypeDef sGpiobStorage = {0};
 static GPIO_TypeDef sGpiocStorage = {0};
+static GPIO_TypeDef sGpiodStorage = {0};
+static GPIO_TypeDef sGpioeStorage = {0};
+static GPIO_TypeDef sGpiofStorage = {0};
 static GPIO_TypeDef sGpiogStorage = {0};
 GPIO_TypeDef* const GPIOA = &sGpioaStorage;
 GPIO_TypeDef* const GPIOB = &sGpiobStorage;
 GPIO_TypeDef* const GPIOC = &sGpiocStorage;
+GPIO_TypeDef* const GPIOD = &sGpiodStorage;
+GPIO_TypeDef* const GPIOE = &sGpioeStorage;
+GPIO_TypeDef* const GPIOF = &sGpiofStorage;
 GPIO_TypeDef* const GPIOG = &sGpiogStorage;
 
 void HAL_GPIO_WritePin(GPIO_TypeDef* /*port*/, uint16_t /*pin*/, GPIO_PinState /*state*/) {

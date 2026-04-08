@@ -44,9 +44,12 @@ uint32_t HAL_GetTick(void);
 typedef struct {
     volatile uint32_t IDR;
 } GPIO_TypeDef;
-extern GPIO_TypeDef* const GPIOC;
-extern GPIO_TypeDef* const GPIOB;
 extern GPIO_TypeDef* const GPIOA;
+extern GPIO_TypeDef* const GPIOB;
+extern GPIO_TypeDef* const GPIOC;
+extern GPIO_TypeDef* const GPIOD;
+extern GPIO_TypeDef* const GPIOE;
+extern GPIO_TypeDef* const GPIOF;
 extern GPIO_TypeDef* const GPIOG;
 #define GPIO_PIN_0       ((uint16_t)0x0001)
 #define GPIO_PIN_1       ((uint16_t)0x0002)
@@ -118,6 +121,20 @@ extern USART_TypeDef* const USART3;
 #define USART_FLAG_RXNE USART_SR_RXNE
 #define USART_FLAG_IDLE USART_SR_IDLE
 
+/* CoreDebug — I2cBus enables DWT cycle counter for delayUs */
+typedef struct {
+    volatile uint32_t DHCSR;
+    volatile uint32_t DCRSR;
+    volatile uint32_t DCRDR;
+    volatile uint32_t DEMCR;
+} CoreDebug_Type;
+extern CoreDebug_Type* const CoreDebug;
+#define CoreDebug_DEMCR_TRCENA_Msk ((uint32_t)0x01000000)
+#define DWT_CTRL_CYCCNTENA_Msk     ((uint32_t)1)
+
+/* GPIO_MODE_OUTPUT_OD — open-drain mode used by I2cBus */
+#define GPIO_MODE_OUTPUT_OD ((uint32_t)0x11)
+
 typedef struct UART_InitType {
     uint32_t BaudRate;
     uint32_t WordLength;
@@ -178,6 +195,9 @@ void HAL_GPIO_Init(GPIO_TypeDef* port, GPIO_InitTypeDef* init);
 #define __HAL_RCC_GPIOA_CLK_ENABLE()  ((void)0)
 #define __HAL_RCC_GPIOB_CLK_ENABLE()  ((void)0)
 #define __HAL_RCC_GPIOC_CLK_ENABLE()  ((void)0)
+#define __HAL_RCC_GPIOD_CLK_ENABLE()  ((void)0)
+#define __HAL_RCC_GPIOE_CLK_ENABLE()  ((void)0)
+#define __HAL_RCC_GPIOF_CLK_ENABLE()  ((void)0)
 #define __HAL_RCC_GPIOG_CLK_ENABLE()  ((void)0)
 #define __HAL_RCC_USART1_CLK_ENABLE() ((void)0)
 #define __HAL_RCC_USART2_CLK_ENABLE() ((void)0)
