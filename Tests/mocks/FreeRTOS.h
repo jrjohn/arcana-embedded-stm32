@@ -13,6 +13,7 @@
 extern "C" {
 #endif
 TickType_t xTaskGetTickCount(void);
+void       vTaskDelay(TickType_t xTicksToDelay);
 #ifdef __cplusplus
 }
 #endif

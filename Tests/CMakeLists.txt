@@ -457,6 +457,19 @@ target_include_directories(test_commands_f103 PRIVATE
     ${COMMON_INCS} ${F103_COMMON} ${F103_CMD_INC})
 target_link_libraries(test_commands_f103 PRIVATE GTest::gtest_main)
 
+# ── test_esp8266_driver (production Esp8266 UART driver) ────────────────────
+# Same pattern as test_hc08ble_driver: link real Esp8266.cpp via include
+# order (F103_DRV before MOCKS_DIR).
+add_executable(test_esp8266_driver
+    test_esp8266_driver.cpp
+    ${F103_DRV}/Esp8266.cpp
+    ${MOCKS_DIR}/test_hal_stub.cpp
+    ${FREERTOS_STUBS}
+)
+target_include_directories(test_esp8266_driver PRIVATE
+    ${F103_DRV} ${MOCKS_DIR} ${SHARED_INC} ${F103_COMMON})
+target_link_libraries(test_esp8266_driver PRIVATE GTest::gtest_main)
+
 # ── test_hc08ble_driver (production Hc08Ble UART driver) ────────────────────
 # Pulls in the REAL Hc08Ble.cpp by putting F103_DRV BEFORE MOCKS_DIR in the
 # include order so quoted include resolves to the production header instead
@@ -611,3 +624,4 @@ add_test(NAME test_display_clock     COMMAND test_display_clock)
 add_test(NAME test_services_f103     COMMAND test_services_f103)
 add_test(NAME test_app_entry         COMMAND test_app_entry)
 add_test(NAME test_hc08ble_driver    COMMAND test_hc08ble_driver)
+add_test(NAME test_esp8266_driver    COMMAND test_esp8266_driver)
