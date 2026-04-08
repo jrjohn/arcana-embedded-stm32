@@ -53,10 +53,12 @@ static BKP_TypeDef sBkpStorage = {};
 BKP_TypeDef* const BKP = &sBkpStorage;
 
 /* USART peripheral stubs — Hc08Ble + Esp8266 drivers reference USART1/2/3
- * directly. Provide register storage so SR/DR access doesn't segfault. */
-static USART_TypeDef sUsart1Storage = {};
-static USART_TypeDef sUsart2Storage = {};
-static USART_TypeDef sUsart3Storage = {};
+ * directly. Provide register storage so SR/DR access doesn't segfault.
+ * Initialise SR with TXE | TC set so EspFlasher's busy-wait spin loops
+ * (`while (!(SR & TXE)) {}`) terminate immediately. */
+static USART_TypeDef sUsart1Storage = { USART_SR_TXE | USART_SR_TC, 0, 0, 0, 0, 0, 0 };
+static USART_TypeDef sUsart2Storage = { USART_SR_TXE | USART_SR_TC, 0, 0, 0, 0, 0, 0 };
+static USART_TypeDef sUsart3Storage = { USART_SR_TXE | USART_SR_TC, 0, 0, 0, 0, 0, 0 };
 USART_TypeDef* const USART1 = &sUsart1Storage;
 USART_TypeDef* const USART2 = &sUsart2Storage;
 USART_TypeDef* const USART3 = &sUsart3Storage;

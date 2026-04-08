@@ -114,6 +114,9 @@ extern USART_TypeDef* const USART3;
 #define USART_SR_TC    ((uint32_t)0x0040)
 #define USART_SR_TXE   ((uint32_t)0x0080)
 #define USART_SR_ORE   ((uint32_t)0x0008)
+#define USART_CR1_UE   ((uint32_t)0x2000)
+#define USART_FLAG_RXNE USART_SR_RXNE
+#define USART_FLAG_IDLE USART_SR_IDLE
 
 typedef struct UART_InitType {
     uint32_t BaudRate;

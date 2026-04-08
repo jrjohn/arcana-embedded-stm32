@@ -266,6 +266,18 @@ FRESULT f_mount(FATFS* /*fs*/, const char* /*path*/, BYTE /*opt*/) {
     return FR_OK;
 }
 
+FRESULT f_stat(const char* path, FILINFO* fno) {
+    FileEntry* e = findEntry(path);
+    if (!e) return FR_NO_FILE;
+    if (fno) {
+        std::strncpy(fno->fname, path, sizeof(fno->fname) - 1);
+        fno->fname[sizeof(fno->fname) - 1] = '\0';
+        fno->fsize = e->bytes.size();
+        fno->fattrib = 0;
+    }
+    return FR_OK;
+}
+
 FSIZE_t f_size(FIL* fp) {
     if (!fp || !fp->_entry) return 0;
     return static_cast<FileEntry*>(fp->_entry)->bytes.size();

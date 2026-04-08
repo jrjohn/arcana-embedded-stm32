@@ -102,6 +102,7 @@ FRESULT f_expand(FIL* fp, FSIZE_t fsz, BYTE opt);
 FRESULT f_opendir(DIR* dp, const char* path);
 FRESULT f_closedir(DIR* dp);
 FRESULT f_readdir(DIR* dp, FILINFO* fno);
+FRESULT f_stat(const char* path, FILINFO* fno);
 
 FRESULT f_mount(FATFS* fs, const char* path, BYTE opt);
 
