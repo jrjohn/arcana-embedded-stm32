@@ -278,6 +278,18 @@ FRESULT f_stat(const char* path, FILINFO* fno) {
     return FR_OK;
 }
 
+FRESULT f_mkfs(const char* /*path*/, const MKFS_PARM* /*opt*/,
+               void* /*work*/, UINT /*len*/) {
+    g_files.clear();
+    return FR_OK;
+}
+
+FRESULT f_getfree(const char* /*path*/, DWORD* nclst, FATFS** fatfs) {
+    if (nclst) *nclst = 1024;
+    if (fatfs) *fatfs = &sStubFatFs;
+    return FR_OK;
+}
+
 FSIZE_t f_size(FIL* fp) {
     if (!fp || !fp->_entry) return 0;
     return static_cast<FileEntry*>(fp->_entry)->bytes.size();

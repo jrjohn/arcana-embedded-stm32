@@ -106,6 +106,20 @@ FRESULT f_stat(const char* path, FILINFO* fno);
 
 FRESULT f_mount(FATFS* fs, const char* path, BYTE opt);
 
+/* MKFS — used by SdBenchmarkServiceImpl::texfat_format() */
+typedef struct {
+    BYTE   fmt;
+    BYTE   n_fat;
+    UINT   align;
+    UINT   n_root;
+    DWORD  au_size;
+} MKFS_PARM;
+#define FM_EXFAT 0x04
+#define FM_FAT32 0x02
+#define FM_FAT   0x01
+FRESULT f_mkfs(const char* path, const MKFS_PARM* opt, void* work, UINT len);
+FRESULT f_getfree(const char* path, DWORD* nclst, FATFS** fatfs);
+
 FSIZE_t f_size(FIL* fp);
 DWORD   f_tell(FIL* fp);
 
