@@ -61,6 +61,12 @@ extern "C" void vTaskDelay(TickType_t) {
 extern "C" void vTaskDelete(TaskHandle_t) {}
 extern "C" void vTaskDelayUntil(TickType_t* prev, TickType_t inc) {
     if (prev) *prev += inc;
+    /* Share the same abort counter as vTaskDelay so taskLoops that pace
+     * themselves with vTaskDelayUntil can be broken out of in tests. */
+    if (g_vTaskDelay_abort_after > 0 &&
+        ++g_vTaskDelay_call_count >= g_vTaskDelay_abort_after) {
+        throw 1;
+    }
 }
 extern "C" BaseType_t xTaskNotifyGive(TaskHandle_t) { return pdTRUE; }
 extern "C" uint32_t   ulTaskNotifyTake(BaseType_t, TickType_t) { return 0; }

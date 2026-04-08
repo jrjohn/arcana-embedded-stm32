@@ -59,6 +59,10 @@ struct AtsStorageTestAccess {
     static void setTotalRecords(AtsStorageServiceImpl& s, uint32_t n) {
         s.mTotalRecords = n;
     }
+    static void invokeStorageTask(AtsStorageServiceImpl& s) {
+        AtsStorageServiceImpl::storageTask(&s);
+    }
+    static void setRunning(AtsStorageServiceImpl& s, bool r) { s.mRunning = r; }
 
     static bool& dbReady(AtsStorageServiceImpl& s)        { return s.mDbReady; }
     static bool& deviceDbReady(AtsStorageServiceImpl& s)  { return s.mDeviceDbReady; }
@@ -591,4 +595,33 @@ TEST(AtsStorageAppend, AppendRecordSkippedWhenDbNotReady) {
     SensorDataModel m{};
     AtsStorageTestAccess::appendRecord(storage(), &m);
     EXPECT_EQ(AtsStorageTestAccess::totalRecords(storage()), 0u);
+}
+
+// ── storageTask one-pass via vTaskDelay abort hook ──────────────────────────
+//
+// storageTask is the production main task body — opens device.ats + sensor.ats,
+// runs a write test, then enters an infinite write/flush loop. The vTaskDelay
+// abort hook (g_vTaskDelay_abort_after = N) lets the test escape after N
+// vTaskDelay calls so we get coverage of setup + first few loop iterations.
+
+extern int g_vTaskDelay_call_count;
+extern int g_vTaskDelay_abort_after;
+extern "C" volatile uint8_t g_exfat_ready;
+
+TEST(AtsStorageTaskTest, StorageTaskOnePassExitsViaVTaskDelayAbort) {
+    resetEnvironment();
+    auto& s = storage();
+
+    AtsStorageTestAccess::setRunning(s, true);
+    g_exfat_ready = 1;   /* skip the wait-exfat loop */
+
+    g_vTaskDelay_call_count  = 0;
+    g_vTaskDelay_abort_after = 50;
+    try {
+        AtsStorageTestAccess::invokeStorageTask(s);
+    } catch (int) {
+        SUCCEED();
+    }
+    g_vTaskDelay_abort_after = 0;
+    AtsStorageTestAccess::setRunning(s, false);
 }
