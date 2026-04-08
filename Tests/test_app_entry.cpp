@@ -32,6 +32,14 @@ uint32_t F051_App_GetHighPublishCount(void);
 uint32_t F051_App_GetHighDispatchCount(void);
 }
 
+/* freertos_stubs override hooks — drive queue full to trigger the error
+ * callback in App.cpp's onObservableError. */
+typedef long BaseType_t;
+typedef void* QueueHandle_t;
+typedef uint32_t TickType_t;
+typedef BaseType_t (*XQueueSendFn)(QueueHandle_t, const void*, TickType_t);
+extern XQueueSendFn g_xQueueSendOverride;
+
 /* The F051 App.cpp's `extern "C" void App_Init(void)` is renamed to
  * F051_App_Init via test_app_f051_wrap.cpp's macro-#define-#include trick,
  * so we can link it into a test target without symbol collisions. F103
@@ -67,3 +75,36 @@ TEST(F051AppEntry, GetterAccessors) {
 
 /* F103 App.cpp intentionally not covered: App_Init cascades into
  * Controller::run() which would require linking every service singleton. */
+
+// ── onObservableError callback via xQueueSend override ─────────────────────
+//
+// App.cpp's static onObservableError is wired into ObservableDispatcher
+// via setErrorCallback during App_Init. To trigger it on host we install
+// an xQueueSendToBack override that returns pdFALSE so dispatcher publish
+// fails with QueueFull, which fires the callback chain.
+
+namespace {
+BaseType_t alwaysFailQueueSend(QueueHandle_t /*q*/, const void* /*item*/, TickType_t /*t*/) {
+    return 0;  // pdFALSE
+}
+} // anonymous
+
+#include "Observable.hpp"
+
+TEST(F051AppEntry, OnObservableErrorCallbackFiresOnQueueFull) {
+    /* Init wires the callback */
+    F051_App_Init();
+    uint32_t before = F051_App_GetOverflowCount();
+
+    /* Force every publish to fail by overriding xQueueSendToBack */
+    g_xQueueSendOverride = alwaysFailQueueSend;
+
+    /* Publish to the dispatcher → triggers errorCallback → onObservableError
+     * → queueOverflowCount++. We use any observable that goes through the
+     * dispatcher. The simplest is to call enqueue directly. */
+    arcana::ObservableDispatcher::DispatchItem item{};
+    arcana::ObservableDispatcher::enqueue(item);
+
+    g_xQueueSendOverride = nullptr;
+    EXPECT_GT(F051_App_GetOverflowCount(), before);
+}
