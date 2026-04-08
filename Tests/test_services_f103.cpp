@@ -18,6 +18,8 @@
 #include "TimerServiceImpl.hpp"
 #include "LedServiceImpl.hpp"
 #include "IoServiceImpl.hpp"
+#include "SensorServiceImpl.hpp"
+#include "LightServiceImpl.hpp"
 
 using arcana::ServiceStatus;
 using arcana::TimerModel;
@@ -173,4 +175,41 @@ TEST(IoServiceTest, StartCreatesTaskHandle) {
     auto& s = IoServiceImpl::getInstance();
     /* start() spins up the task; freertos_stub returns a non-null handle */
     EXPECT_EQ(s.start(), ServiceStatus::OK);
+}
+
+// ── SensorServiceImpl (with stubbed Mpu6050 + I2cBus drivers) ───────────────
+
+TEST(SensorServiceTest, GetInstanceReturnsSameSingleton) {
+    auto& a = arcana::sensor::SensorServiceImpl::getInstance();
+    auto& b = arcana::sensor::SensorServiceImpl::getInstance();
+    EXPECT_EQ(&a, &b);
+}
+
+TEST(SensorServiceTest, LifecycleInitHalInitStartStop) {
+    auto& s = static_cast<arcana::sensor::SensorServiceImpl&>(
+        arcana::sensor::SensorServiceImpl::getInstance());
+    EXPECT_EQ(s.initHAL(), ServiceStatus::OK);
+    EXPECT_EQ(s.init(),    ServiceStatus::OK);
+    EXPECT_EQ(s.start(),   ServiceStatus::OK);
+    s.stop();
+    /* Output observable wired */
+    EXPECT_NE(s.output.DataEvents, nullptr);
+}
+
+// ── LightServiceImpl (with stubbed Ap3216c + I2cBus drivers) ────────────────
+
+TEST(LightServiceTest, GetInstanceReturnsSameSingleton) {
+    auto& a = arcana::light::LightServiceImpl::getInstance();
+    auto& b = arcana::light::LightServiceImpl::getInstance();
+    EXPECT_EQ(&a, &b);
+}
+
+TEST(LightServiceTest, LifecycleInitHalInitStartStop) {
+    auto& s = static_cast<arcana::light::LightServiceImpl&>(
+        arcana::light::LightServiceImpl::getInstance());
+    EXPECT_EQ(s.initHAL(), ServiceStatus::OK);
+    EXPECT_EQ(s.init(),    ServiceStatus::OK);
+    EXPECT_EQ(s.start(),   ServiceStatus::OK);
+    s.stop();
+    EXPECT_NE(s.output.DataEvents, nullptr);
 }

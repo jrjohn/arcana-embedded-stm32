@@ -479,21 +479,28 @@ target_include_directories(test_app_entry PRIVATE
     ${COMMON_INCS} ${F051_CMD} ${F051_CMD}/impl ${F051_SVC})
 target_link_libraries(test_app_entry PRIVATE GTest::gtest_main)
 
-# ── test_services_f103 (TimerServiceImpl + LedServiceImpl + IoServiceImpl) ──
+# ── test_services_f103 (Timer + Led + Io + Sensor + Light services) ─────────
+# Sensor/Light pull in the I2cBus + Mpu6050 + Ap3216c drivers; the host stub
+# for those lives in mocks/sensor_drivers_stub.cpp. We include F103_DRV in
+# the -I path so the driver headers resolve, but link the stub .cpp instead
+# of the real .cpp files.
 add_executable(test_services_f103
     test_services_f103.cpp
     ${F103_SVC_IMPL}/TimerServiceImpl.cpp
     ${F103_SVC_IMPL}/LedServiceImpl.cpp
     ${F103_SVC_IMPL}/IoServiceImpl.cpp
+    ${F103_SVC_IMPL}/SensorServiceImpl.cpp
+    ${F103_SVC_IMPL}/LightServiceImpl.cpp
     ${SHARED_SRC}/Observable.cpp
     ${MOCKS_DIR}/test_hal_stub.cpp
     ${MOCKS_DIR}/Esp8266_stub.cpp
     ${MOCKS_DIR}/display_stubs.cpp
+    ${MOCKS_DIR}/sensor_drivers_stub.cpp
     ${FREERTOS_STUBS}
 )
 target_include_directories(test_services_f103 PRIVATE
     ${COMMON_INCS} ${SHARED_INC}/display
-    ${F103_COMMON} ${F103_SVC_INC} ${F103_SVC_IMPL} ${F103_MODEL})
+    ${F103_COMMON} ${F103_SVC_INC} ${F103_SVC_IMPL} ${F103_MODEL} ${F103_DRV})
 target_link_libraries(test_services_f103 PRIVATE GTest::gtest_main)
 
 # ── test_display_clock (production SystemClock + DisplayStatus + BitmapButton)
