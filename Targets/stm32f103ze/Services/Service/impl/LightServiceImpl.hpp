@@ -18,6 +18,9 @@ public:
     void stop() override;
 
 private:
+    /* Test access — host gtest fixture drives the static lightTask. */
+    friend struct LightServiceTestAccess;
+
     LightServiceImpl();
     ~LightServiceImpl();
     LightServiceImpl(const LightServiceImpl&);

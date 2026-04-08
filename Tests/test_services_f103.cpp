@@ -23,6 +23,8 @@
 
 extern int g_hal_gpio_read_abort_after;
 extern int g_hal_gpio_read_call_count;
+extern int g_vTaskDelay_call_count;
+extern int g_vTaskDelay_abort_after;
 
 using arcana::ServiceStatus;
 using arcana::TimerModel;
@@ -51,6 +53,22 @@ struct IoServiceTestAccess {
 };
 }}
 using arcana::io::IoServiceTestAccess;
+
+namespace arcana { namespace sensor {
+struct SensorServiceTestAccess {
+    static void invokeTask(SensorServiceImpl& s) { SensorServiceImpl::sensorTask(&s); }
+    static void setRunning(SensorServiceImpl& s, bool r) { s.mRunning = r; }
+};
+}}
+using arcana::sensor::SensorServiceTestAccess;
+
+namespace arcana { namespace light {
+struct LightServiceTestAccess {
+    static void invokeTask(LightServiceImpl& s) { LightServiceImpl::lightTask(&s); }
+    static void setRunning(LightServiceImpl& s, bool r) { s.mRunning = r; }
+};
+}}
+using arcana::light::LightServiceTestAccess;
 
 // ── TimerServiceImpl ────────────────────────────────────────────────────────
 
@@ -255,4 +273,40 @@ TEST(IoServiceTaskLoop, ManyIterationsHitsKey1HoldThresholds) {
     /* After 20 iterations the hold counter triggered the format request */
     EXPECT_TRUE(s.isFormatRequested());
     s.clearFormatRequest();
+}
+
+// ── SensorServiceImpl::sensorTask body via vTaskDelay abort ─────────────────
+
+TEST(SensorServiceTaskBody, OneIterationViaVTaskDelayAbort) {
+    auto& s = static_cast<arcana::sensor::SensorServiceImpl&>(
+        arcana::sensor::SensorServiceImpl::getInstance());
+    s.init();   // wires Mpu sensor
+    SensorServiceTestAccess::setRunning(s, true);
+
+    /* sensorTask: vTaskDelay(100ms init) + while(running) { read; vTaskDelay }
+     * abort=2 → init delay + first iter delay → throws */
+    g_vTaskDelay_call_count  = 0;
+    g_vTaskDelay_abort_after = 2;
+    try {
+        SensorServiceTestAccess::invokeTask(s);
+        FAIL() << "expected abort";
+    } catch (int) {}
+    g_vTaskDelay_abort_after = 0;
+}
+
+// ── LightServiceImpl::lightTask body via vTaskDelay abort ───────────────────
+
+TEST(LightServiceTaskBody, OneIterationViaVTaskDelayAbort) {
+    auto& s = static_cast<arcana::light::LightServiceImpl&>(
+        arcana::light::LightServiceImpl::getInstance());
+    s.init();
+    LightServiceTestAccess::setRunning(s, true);
+
+    g_vTaskDelay_call_count  = 0;
+    g_vTaskDelay_abort_after = 2;
+    try {
+        LightServiceTestAccess::invokeTask(s);
+        FAIL() << "expected abort";
+    } catch (int) {}
+    g_vTaskDelay_abort_after = 0;
 }

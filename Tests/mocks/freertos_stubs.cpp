@@ -47,7 +47,17 @@ extern "C" TaskHandle_t xTaskCreateStatic(TaskFunction_t, const char*, uint32_t,
                                            UBaseType_t, StackType_t*, StaticTask_t* t) {
     return (TaskHandle_t)t;
 }
-extern "C" void vTaskDelay(TickType_t) {}
+/* vTaskDelay abort hook — tests set g_vTaskDelay_abort_after to N to make
+ * the Nth call throw an int sentinel, breaking out of infinite task loops
+ * (sensorTask / lightTask / etc.) cleanly. */
+int g_vTaskDelay_call_count  = 0;
+int g_vTaskDelay_abort_after = 0;
+extern "C" void vTaskDelay(TickType_t) {
+    if (g_vTaskDelay_abort_after > 0 &&
+        ++g_vTaskDelay_call_count >= g_vTaskDelay_abort_after) {
+        throw 1;
+    }
+}
 extern "C" void vTaskDelete(TaskHandle_t) {}
 extern "C" void vTaskDelayUntil(TickType_t* prev, TickType_t inc) {
     if (prev) *prev += inc;

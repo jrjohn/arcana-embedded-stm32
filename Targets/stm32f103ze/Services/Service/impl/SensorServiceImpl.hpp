@@ -18,6 +18,9 @@ public:
     void stop() override;
 
 private:
+    /* Test access — host gtest fixture drives the static sensorTask. */
+    friend struct SensorServiceTestAccess;
+
     SensorServiceImpl();
     ~SensorServiceImpl();
     SensorServiceImpl(const SensorServiceImpl&);
