@@ -52,6 +52,8 @@ struct MqttServiceTestAccess {
     static volatile bool& sensorPending(MqttServiceImpl& m) { return m.mSensorPending; }
     static SensorDataModel& pendingSensor(MqttServiceImpl& m) { return m.mPendingSensor; }
     static uint16_t& nextPacketId(MqttServiceImpl& m) { return m.mNextPacketId; }
+    static volatile bool& running(MqttServiceImpl& m) { return m.mRunning; }
+    static void runTask(MqttServiceImpl& m) { m.runTask(); }
 };
 }}
 
@@ -663,4 +665,39 @@ TEST(MqttPublish, PublishBinClearsMalformedIpdAndTimesOut) {
 
     const uint8_t data[] = {0xAA, 0xBB};
     EXPECT_FALSE(MqttServiceTestAccess::publishBin(mqtt(), "topic", data, 2));
+}
+
+// ── runTask one-pass via vTaskDelay abort ──────────────────────────────────
+//
+// MqttServiceImpl::runTask is the main MQTT task body — an infinite while
+// loop with WiFi connect → NTP sync → registration → MQTT broker phases.
+// We can't refactor it for tests, so we install a vTaskDelay abort hook
+// (freertos_stubs g_vTaskDelay_abort_after = N → throws after N calls)
+// and let the test catch the exception. Different abort counts hit
+// different phases.
+
+extern int g_vTaskDelay_call_count;
+extern int g_vTaskDelay_abort_after;
+
+TEST(MqttRunTask, AbortInWifiPhaseAfterAFewRetries) {
+    /* All AT commands fail → wifi->resetAndConnect returns false → inner
+     * Phase 1 retry loop → vTaskDelay(10s) called once per retry → throw */
+    resetEnvironment();
+    auto& m = mqtt();
+    MqttServiceTestAccess::running(m) = true;
+    auto& esp = Esp8266::getInstance();
+    /* Stage failure responses for many AT commands so wifi->resetAndConnect
+     * fails consistently. */
+    for (int i = 0; i < 100; ++i) esp.pushResponse("ERROR");
+
+    g_vTaskDelay_call_count  = 0;
+    g_vTaskDelay_abort_after = 5;
+    try {
+        MqttServiceTestAccess::runTask(m);
+        FAIL() << "expected abort exception";
+    } catch (int) {
+        SUCCEED();
+    }
+    g_vTaskDelay_abort_after = 0;
+    MqttServiceTestAccess::running(m) = false;
 }
