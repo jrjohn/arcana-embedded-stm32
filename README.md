@@ -245,48 +245,84 @@ Ili9341Lcd ──► Ili9341Display ──► IDisplay* (g_display)
 
 ## Directory Structure
 
-### F103 Services (Role-Based MVVM)
+### Layered Architecture (aligned with arcana-embedded-esp32 + arcana-android `app/src/main/`)
+
+Restructured 2026-04-24 ([plan: cheerful-bubbling-moore.md](/Users/jrjohn/.claude/plans/cheerful-bubbling-moore.md)).
+Top-level `Main/` is PascalCase to match ST CubeMX siblings (`Core/`, `Drivers/`,
+`Middlewares/`); layered subdirs are lowercase per the ESP32/Android convention.
 
 ```
 Targets/stm32f103ze/
-├── Services/
-│   ├── Controller/     # Controller.hpp/.cpp, F103App.cpp
-│   ├── Service/        # Interfaces (contracts)
-│   │   ├── ITimerService.hpp, LcdService.hpp, SensorService.hpp
+├── Main/                               # Business code (was: Services/)
+│   ├── App.cpp                         # extern "C" App_Init/App_Run entry
+│   ├── AppContainer.{hpp,cpp}          # DI container, 5-phase lifecycle
+│   ├── service/                        # Service pattern: interfaces at root
+│   │   ├── ITimerService.hpp, LcdService.hpp, SensorService.hpp, ...
 │   │   ├── AtsStorageService.hpp, SdBenchmarkService.hpp
-│   │   ├── WifiService.hpp, MqttService.hpp, BleService.hpp, ...
-│   │   ├── CommandBridge.hpp         (shared command registry)
-│   │   └── impl/      # Implementations
-│   │       ├── TimerServiceImpl.hpp/.cpp
-│   │       ├── LcdServiceImpl.hpp/.cpp  (HW init only)
-│   │       ├── AtsStorageServiceImpl.hpp/.cpp (1kHz TSDB)
-│   │       ├── SdBenchmarkServiceImpl.hpp/.cpp (SD mount/format)
-│   │       ├── CommandBridge.cpp       (shared command processing)
-│   │       ├── BleServiceImpl.hpp/.cpp (HC-08 BLE transport)
-│   │       └── Wifi/Mqtt/Led/Light/Sensor/SdStorage ServiceImpl
-│   ├── Command/        # Command implementations
-│   │   └── Commands.hpp          (header-only: 8 ICommand classes)
-│   ├── Driver/         # Hardware abstraction
-│   │   ├── Ili9341Lcd.hpp/.cpp     (FSMC LCD)
-│   │   ├── SdCard.hpp/.cpp         (SDIO DMA)
-│   │   ├── Esp8266.hpp/.cpp        (UART AT)
-│   │   ├── Hc08Ble.hpp/.cpp        (BLE 4.0 USART2)
-│   │   ├── I2cBus, DhtSensor, Ap3216c, Mpu6050
-│   │   ├── SdFalAdapter.hpp/.cpp   (FlashDB FAL)
-│   │   └── FatFsFilePort.hpp/.cpp  (ArcanaTS file I/O)
-│   ├── Model/          # F103Models.hpp, ServiceTypes.hpp
-│   ├── View/           # LcdView.hpp, MainView.hpp/.cpp, ViewManager.hpp
-│   ├── ViewModel/      # LcdViewModel.hpp (Input/Output/dirty flags)
-│   └── Common/         # ChaCha20, SystemClock, DeviceKey, Font5x7
-├── Core/               # HAL init, FreeRTOS config, main.c
-├── Drivers/            # STM32F1xx HAL
-└── Middlewares/        # FreeRTOS, FatFs (exFAT), FlashDB
+│   │   ├── WifiService.hpp, MqttService.hpp, BleService.hpp
+│   │   ├── CommandBridge.hpp           (shared command registry)
+│   │   └── impl/                       # Implementations
+│   │       ├── TimerServiceImpl, LcdServiceImpl, SensorServiceImpl
+│   │       ├── AtsStorageServiceImpl (1kHz TSDB)
+│   │       ├── SdBenchmarkServiceImpl (SD mount/format)
+│   │       ├── CommandBridgeImpl, BleServiceImpl (HC-08)
+│   │       └── Wifi/Mqtt/Led/Light/SdStorage/IoServiceImpl
+│   ├── transport/                      # Network adapters (split from driver/)
+│   │   ├── ble/     Hc08Ble.{hpp,cpp}  (BLE 4.0 UART AT)
+│   │   └── wifi/    Esp8266, EspFlasher (Wi-Fi + firmware flasher)
+│   ├── driver/                         # Pure HAL drivers
+│   │   ├── Ili9341Lcd (FSMC), SdCard (SDIO DMA)
+│   │   ├── I2cBus, DhtSensor, Ap3216cSensor, Mpu6050Sensor
+│   │   ├── SdFalAdapter (FlashDB FAL)
+│   │   └── FatFsFilePort (ArcanaTS file I/O)
+│   ├── command/    Commands.hpp        # 8 ICommand classes, header-only
+│   ├── view/                           # MVVM UI
+│   │   ├── BaseLcdView.hpp             # base class (was: LcdView.hpp)
+│   │   ├── ViewManager.hpp             # stack-based view nav
+│   │   └── main/                       # Main screen feature folder
+│   │       ├── MainView.{hpp,cpp}
+│   │       └── MainViewModel.hpp       # was: LcdViewModel.hpp
+│   └── core/                           # Board-specific cross-cutting
+│       ├── model/  F103Models.hpp, ServiceTypes.hpp
+│       └── (Common/ contents: ChaCha20, SystemClock, DeviceKey, Font5x7,
+│               AtsAppender, DeviceAppender, KeyStore, EcgBuffer, ...)
+├── Core/                               # CubeMX-generated (main.c, FreeRTOS init)
+├── Drivers/                            # STM32F1xx HAL
+└── Middlewares/                        # FreeRTOS, FatFs (exFAT), FlashDB
 
-Shared/
-├── Inc/                # Observable, Models, Crc16, FrameCodec, FrameAssembler
-│   ├── ats/            # ArcanaTS headers (ArcanaTsDb, Schema, Types)
-│   └── display/        # IDisplay, Widget, FormWidgets, DialogWidgets, Toast
-└── Src/                # Observable.cpp, ArcanaTsDb.cpp
+Targets/stm32f051c8/Main/               # F051 parallel layout
+├── App.cpp                             # entry (was: controller/App.cpp)
+├── service/       CounterService, TimerService, TimeDisplayService
+└── command/
+    ├── CommandDispatcher, CommandRegistry, CommandService (framework)
+    ├── codec/     CommandCodec.{hpp,cpp}
+    └── commands/  PingCommand, GetCounterCommand (was: impl/)
+
+Shared/                                 # Cross-target library (.cpp auto-globbed)
+├── Inc/
+│   ├── App.hpp                         # entry-class header
+│   ├── core/                           # Cross-cutting infrastructure
+│   │   ├── event/      Observable.hpp, EventCodes.hpp
+│   │   ├── log/        Log.hpp (LOG_I/W/E/F macros)
+│   │   ├── model/      Models.hpp, ota_header.h
+│   │   ├── validation/ Crc16.hpp, Crc32.hpp
+│   │   └── types/      types.h
+│   ├── command/                        # Command pattern (cross-target)
+│   │   ├── ICommand.hpp, CommandTypes.hpp
+│   │   ├── codec/      FrameCodec, FrameAssembler, *.pb.h, .proto
+│   │   └── security/   CryptoEngine, KeyExchangeManager, Sha256
+│   ├── db/arcanats/ats/                # ArcanaTS DB engine
+│   │   └── ArcanaTsDb, Schema, Types, ICipher, IFilePort, IMutex
+│   ├── view/                           # Display widget framework
+│   │   └── IDisplay, Widget, FormWidgets, DialogWidgets, BitmapButton, ...
+│   ├── mbedtls/, nanopb/               # 3rd-party (untouched)
+│   └── uECC.h, uECC_vli.h              # 3rd-party P-256 ECDH
+└── Src/                                # .cpp mirror of Inc/ layered dirs
+    ├── core/event/Observable.cpp
+    ├── command/{codec,security}/*
+    ├── db/arcanats/ats/ArcanaTsDb.cpp
+    ├── mbedtls/, nanopb/               # 3rd-party
+    └── uECC.c + *.inc                  # 3rd-party
 ```
 
 ---
@@ -442,6 +478,38 @@ python3 read_serial.py    # /dev/tty.usbserial-1120 @ 115200
 
 ## Pros & Cons
 
+### Restructure Trade-offs (2026-04-24)
+
+Pros and cons of collapsing `Services/Controller + Service + Driver + View + ViewModel + Common`
+into `Main/{service, transport, driver, view, core, command}` — ranked by impact.
+
+**Pros** (most valuable first):
+
+| # | Pro | Why it matters |
+|---|-----|----------------|
+| 1 | **Cross-platform navigational parity** | ESP32 `main/` ↔ STM32 `Main/` ↔ Android `app/src/main/`. Devs switching repos find the same tree shape — services, transports, views, core all in the same relative positions. |
+| 2 | **Feature folders for views** | `view/main/{MainView, MainViewModel}` co-locates screen + its VM. Future `view/setting/`, `view/history/` slot in identically. Scales to N screens without renaming patterns. |
+| 3 | **Transport layer explicit** | `transport/{ble, wifi}` separates network adapters (HC-08, ESP8266 AT-command drivers) from pure HAL (`driver/`). Clearer when a change touches "how we talk to the network" vs "how we talk to silicon". |
+| 4 | **Interface vs implementation split** | `service/` holds contracts, `service/impl/` holds implementations. Review diff obviously touches one or the other — contract changes get more scrutiny. |
+| 5 | **`Shared/Inc` becomes scannable** | Previously ~15 files flat at `Shared/Inc/`. Now `core/{event,log,model,validation,types}` + `command/{codec,security}` + `db/arcanats/ats` + `view/`. Scoped `-I` paths; bare-leaf includes still work. |
+| 6 | **Role-descriptive names** | `F103App.cpp` → `App.cpp`; `Controller` → `AppContainer`; `LcdView` → `BaseLcdView`; `LcdViewModel` → `MainViewModel`. Names describe what things *are*, not what target or legacy layer they came from. |
+| 7 | **Easier service addition** | Drop `XxxService.hpp` in `service/`, `XxxServiceImpl.{hpp,cpp}` in `service/impl/`. CMake `GLOB_RECURSE` + `-I${ROOT}/service/impl` pick it up; no CMake edit. |
+| 8 | **Binary-stable refactor** | F051 text 23296 → 23300 (+4B alignment), F103 text 225348 → 225344 (−4B alignment). Zero behavior drift; purely organizational. |
+
+**Cons** (most annoying first):
+
+| # | Con | Mitigation |
+|---|-----|------------|
+| 1 | **Mixed case within one tree** | `Main/` PascalCase (ST convention) vs `main/view/main/` lowercase feature folder. Slightly confusing at first read. | Documented: top-level follows ST, layers follow Android/ESP32 convention. |
+| 2 | **CubeIDE needs manual Clean on sync** | `.cproject` `-I` paths updated, but CubeIDE caches `subdir.mk` under `Debug/`. One-time `Project > Clean` required after pulling this change. | Noted in commit message; `Debug/` is `.gitignore`'d and regenerates. |
+| 3 | **~20 `-I` paths per `.cproject` config** | Was ~10. Four build configs × two languages × two targets = many lines. | Bare-leaf `#include "X.hpp"` still works; no source churn. Python script in commit history rewrites blocks safely. |
+| 4 | **15+ path vars in `Tests/CMakeLists.txt`** | `F103_SVC_ROOT`, `F103_TRANSPORT_BLE`, `SHARED_CORE_EVENT`, etc. More moving parts per new test. | `COMMON_INCS` captures all Shared/Inc subdirs so most tests only need `${COMMON_INCS}` + one target-specific folder. |
+| 5 | **CubeMX `.ioc` regen risk** | Re-running CubeMX writes `Core/Src/main.c` which still calls `App_Init/App_Run` — those are now in `Main/App.cpp` (was `Services/Controller/F103App.cpp`). Link still works via `GLOB_RECURSE "Main/*.cpp"`. | If CubeMX ever renames the hooks, re-point `Main/App.cpp`. Covered by `test_app_entry` host-side. |
+| 6 | **Divergence from ESP32 exact casing** | ESP32 `main/`, STM32 `Main/`. Cross-repo `grep -r main/` won't match both literally. | Explicit trade accepted for STM32-local consistency (siblings are PascalCase). Semantics identical. |
+| 7 | **More config surface per rename** | A single tree rename now touches `CMakeLists.txt` + `Tests/CMakeLists.txt` + 2×`.cproject` (4 configs each) + `sonar-project.properties`. | Fewer renames expected now that the target shape is set. Python/perl one-liners handle bulk edits. |
+
+Firmware was rebuilt clean between every phase; all 42 host tests stayed green end-to-end.
+
 ### Architecture Strengths
 
 | Strength | Detail |
@@ -450,7 +518,7 @@ python3 read_serial.py    # /dev/tty.usbserial-1120 @ 115200
 | **Role-based directories** | Consistent with arcana-android / arcana-ios projects |
 | **Event-driven render** | Zero polling, xTaskNotify wakes render task on data change |
 | **Observable pub/sub** | Type-safe, dual priority, ISR-safe, async dispatch |
-| **Controller wiring** | Explicit wireServices() + wireViews() — all bindings visible |
+| **AppContainer wiring** | Explicit wireServices() + wireViews() in `Main/AppContainer.cpp` — all bindings visible |
 | **SD self-healing** | Auto-format corrupt FS, 3 retries with SDIO HAL reinit |
 | **SDIO proactive reinit** | Every 200 polling writes prevents bus degradation |
 | **1kHz zero-fail writes** | ArcanaTS + periodic flush + SDIO recovery = sustained throughput |
