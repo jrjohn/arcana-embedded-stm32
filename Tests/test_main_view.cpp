@@ -14,7 +14,7 @@
 #include "IDisplay.hpp"
 #include "DisplayStatus.hpp"
 #include "MainView.hpp"
-#include "LcdViewModel.hpp"
+#include "MainViewModel.hpp"
 #include "SystemClock.hpp"
 
 using arcana::display::IDisplay;
@@ -22,7 +22,7 @@ using arcana::display::Color;
 using arcana::lcd::MainView;
 using arcana::lcd::LcdOutput;
 using arcana::lcd::LcdInput;
-using arcana::lcd::LcdViewModel;
+using arcana::lcd::MainViewModel;
 using arcana::SystemClock;
 
 namespace {
@@ -277,7 +277,7 @@ TEST(MainViewProcess, ProcessRenderEarlyReturnsWhenInputsMissing) {
 TEST(MainViewProcess, ProcessRenderDispatchesDirtyAndDrainsEcg) {
     MainView v;
     StubDisplay d;
-    LcdViewModel vm;
+    MainViewModel vm;
     /* No observables wired — vm.output() returns the default zero state */
     vm.init(nullptr);
 
@@ -317,7 +317,7 @@ BaseType_t fakeEcgQueueReceive(QueueHandle_t /*q*/, void* buf, TickType_t /*t*/)
 TEST(MainViewProcess, ProcessRenderEcgDrainBranch) {
     MainView v;
     StubDisplay d;
-    LcdViewModel vm;
+    MainViewModel vm;
     vm.init(nullptr);
 
     v.init();
@@ -341,7 +341,7 @@ TEST(MainViewProcess, ProcessRenderEcgDrainBranch) {
 TEST(MainViewProcess, ProcessRenderToastExpiryRedrawsView) {
     MainView v;
     StubDisplay d;
-    LcdViewModel vm;
+    MainViewModel vm;
     vm.init(nullptr);
 
     v.init();

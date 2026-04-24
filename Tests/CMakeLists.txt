@@ -20,16 +20,26 @@ FetchContent_MakeAvailable(googletest)
 # ── Paths ─────────────────────────────────────────────────────────────────────
 set(SHARED_INC    ${CMAKE_SOURCE_DIR}/../Shared/Inc)
 set(SHARED_SRC    ${CMAKE_SOURCE_DIR}/../Shared/Src)
-set(ATS_INC       ${SHARED_INC}/ats)
-set(ATS_SRC       ${SHARED_SRC}/ats)
-set(F103_COMMON   ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/Common)
+set(SHARED_CORE_EVENT    ${SHARED_SRC}/core/event)
+set(SHARED_CMD_CODEC     ${SHARED_SRC}/command/codec)
+set(SHARED_CMD_SECURITY  ${SHARED_SRC}/command/security)
+set(ATS_INC       ${SHARED_INC}/db/arcanats/ats)
+set(ATS_INC_PFX   ${SHARED_INC}/db/arcanats)
+set(ATS_SRC       ${SHARED_SRC}/db/arcanats/ats)
+set(F103_COMMON   ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/core)
+set(F103_CORE     ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/core)
+set(F103_SVC_ROOT ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services)
 set(F051_CMD      ${CMAKE_SOURCE_DIR}/../Targets/stm32f051c8/Services/command)
+set(F051_CMD_CODEC ${F051_CMD}/codec)
+set(F051_CMD_CMDS ${F051_CMD}/commands)
 set(F051_SVC      ${CMAKE_SOURCE_DIR}/../Targets/stm32f051c8/Services/service)
-set(F103_SVC_IMPL ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/Service/impl)
-set(F103_SVC_INC  ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/Service)
-set(F103_CMD_INC  ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/Command)
-set(F103_DRV      ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/Driver)
-set(F103_MODEL    ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/Model)
+set(F103_SVC_IMPL ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/service/impl)
+set(F103_SVC_INC  ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/service)
+set(F103_CMD_INC  ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/command)
+set(F103_DRV      ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/driver)
+set(F103_TRANSPORT_BLE   ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/transport/ble)
+set(F103_TRANSPORT_WIFI  ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/transport/wifi)
+set(F103_MODEL    ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/core/model)
 set(NANOPB_INC    ${SHARED_INC}/nanopb)
 set(NANOPB_SRC    ${SHARED_SRC}/nanopb)
 set(MOCKS_DIR     ${CMAKE_SOURCE_DIR}/mocks)
@@ -69,7 +79,21 @@ set(MBEDTLS_SOURCES
 set(FREERTOS_STUBS ${MOCKS_DIR}/freertos_stubs.cpp)
 
 # Common include dirs (mocks FIRST to override any system FreeRTOS headers)
-set(COMMON_INCS ${MOCKS_DIR} ${SHARED_INC})
+set(COMMON_INCS
+    ${MOCKS_DIR}
+    ${SHARED_INC}
+    ${SHARED_INC}/core/event
+    ${SHARED_INC}/core/log
+    ${SHARED_INC}/core/model
+    ${SHARED_INC}/core/validation
+    ${SHARED_INC}/core/types
+    ${SHARED_INC}/command
+    ${SHARED_INC}/command/codec
+    ${SHARED_INC}/command/security
+    ${SHARED_INC}/db/arcanats
+    ${SHARED_INC}/db/arcanats/ats
+    ${SHARED_INC}/view
+)
 
 # ── test_crc16 ────────────────────────────────────────────────────────────────
 add_executable(test_crc16 test_crc16.cpp)
@@ -84,10 +108,10 @@ target_link_libraries(test_frame_codec PRIVATE GTest::gtest_main)
 # ── test_command_codec ────────────────────────────────────────────────────────
 add_executable(test_command_codec
     test_command_codec.cpp
-    ${F051_CMD}/CommandCodec.cpp
+    ${F051_CMD_CODEC}/CommandCodec.cpp
     ${FREERTOS_STUBS}
 )
-target_include_directories(test_command_codec PRIVATE ${COMMON_INCS} ${F051_CMD})
+target_include_directories(test_command_codec PRIVATE ${COMMON_INCS} ${F051_CMD} ${F051_CMD_CODEC})
 target_link_libraries(test_command_codec PRIVATE GTest::gtest_main)
 
 # ── test_registry ─────────────────────────────────────────────────────────────
@@ -96,7 +120,7 @@ add_executable(test_registry
     ${F051_CMD}/CommandRegistry.cpp
     ${FREERTOS_STUBS}
 )
-target_include_directories(test_registry PRIVATE ${COMMON_INCS} ${F051_CMD})
+target_include_directories(test_registry PRIVATE ${COMMON_INCS} ${F051_CMD} ${F051_CMD_CODEC})
 target_link_libraries(test_registry PRIVATE GTest::gtest_main)
 
 # ── test_models ───────────────────────────────────────────────────────────────
@@ -121,35 +145,35 @@ target_link_libraries(test_services PRIVATE GTest::gtest_main)
 # ── test_dispatcher (CommandDispatcher + CommandService) ──────────────────────
 add_executable(test_dispatcher
     test_dispatcher.cpp
-    ${F051_CMD}/CommandCodec.cpp
+    ${F051_CMD_CODEC}/CommandCodec.cpp
     ${F051_CMD}/CommandRegistry.cpp
     ${F051_CMD}/CommandDispatcher.cpp
     ${F051_CMD}/CommandService.cpp
     ${F051_SVC}/CounterService.cpp
-    ${SHARED_SRC}/Observable.cpp
+    ${SHARED_CORE_EVENT}/Observable.cpp
     ${FREERTOS_STUBS}
 )
 target_include_directories(test_dispatcher PRIVATE
-    ${COMMON_INCS} ${F051_CMD} ${F051_CMD}/impl ${F051_SVC})
+    ${COMMON_INCS} ${F051_CMD} ${F051_CMD_CODEC} ${F051_CMD_CMDS} ${F051_SVC})
 target_link_libraries(test_dispatcher PRIVATE GTest::gtest_main)
 
 # ── test_commands (PingCommand + GetCounterCommand) ───────────────────────────
 add_executable(test_commands
     test_commands.cpp
     ${F051_SVC}/CounterService.cpp
-    ${SHARED_SRC}/Observable.cpp
+    ${SHARED_CORE_EVENT}/Observable.cpp
     ${FREERTOS_STUBS}
 )
 target_include_directories(test_commands PRIVATE
     ${COMMON_INCS} ${F051_CMD} ${F051_SVC}
-    ${F051_CMD}/impl)
+    ${F051_CMD_CMDS})
 target_link_libraries(test_commands PRIVATE GTest::gtest_main)
 
 # ── test_timer_service ────────────────────────────────────────────────────────
 add_executable(test_timer_service
     test_timer_service.cpp
     ${F051_SVC}/TimerService.cpp
-    ${SHARED_SRC}/Observable.cpp
+    ${SHARED_CORE_EVENT}/Observable.cpp
     ${FREERTOS_STUBS}
 )
 target_include_directories(test_timer_service PRIVATE ${COMMON_INCS} ${F051_SVC})
@@ -178,7 +202,7 @@ target_link_libraries(test_ota_header PRIVATE GTest::gtest_main)
 # ── test_observable (extra coverage) ─────────────────────────────────────────
 add_executable(test_observable
     test_observable.cpp
-    ${SHARED_SRC}/Observable.cpp
+    ${SHARED_CORE_EVENT}/Observable.cpp
     ${FREERTOS_STUBS}
 )
 target_include_directories(test_observable PRIVATE ${COMMON_INCS})
@@ -188,7 +212,7 @@ target_link_libraries(test_observable PRIVATE GTest::gtest_main)
 # Uses its own FreeRTOS stubs (inline in .cpp) with controllable xQueueSend
 add_executable(test_observable_errors
     test_observable_errors.cpp
-    ${SHARED_SRC}/Observable.cpp
+    ${SHARED_CORE_EVENT}/Observable.cpp
 )
 target_include_directories(test_observable_errors PRIVATE ${COMMON_INCS})
 target_link_libraries(test_observable_errors PRIVATE GTest::gtest_main)
@@ -206,7 +230,7 @@ target_link_libraries(test_chacha20 PRIVATE GTest::gtest_main)
 # ── test_crypto_engine (CryptoEngine + real mbedtls CCM/SHA256) ───────────────
 add_executable(test_crypto_engine
     test_crypto_engine.cpp
-    ${SHARED_SRC}/CryptoEngine.cpp
+    ${SHARED_CMD_SECURITY}/CryptoEngine.cpp
     ${MBEDTLS_SOURCES}
 )
 target_include_directories(test_crypto_engine PRIVATE ${COMMON_INCS} ${MBEDTLS_INC} ${MBEDTLS_INC2})
@@ -215,8 +239,8 @@ target_link_libraries(test_crypto_engine PRIVATE GTest::gtest_main)
 # ── test_key_exchange (KeyExchangeManager + ECDH P-256 over real mbedtls) ─────
 add_executable(test_key_exchange
     test_key_exchange.cpp
-    ${SHARED_SRC}/KeyExchangeManager.cpp
-    ${SHARED_SRC}/CryptoEngine.cpp
+    ${SHARED_CMD_SECURITY}/KeyExchangeManager.cpp
+    ${SHARED_CMD_SECURITY}/CryptoEngine.cpp
     ${FREERTOS_STUBS}
     ${MBEDTLS_SOURCES}
 )
@@ -232,9 +256,9 @@ add_executable(test_registration
     ${F103_SVC_IMPL}/RegistrationServiceImpl.cpp
     ${F103_DRV}/FatFsFilePort.cpp
     ${ATS_SRC}/ArcanaTsDb.cpp
-    ${SHARED_SRC}/Observable.cpp
+    ${SHARED_CORE_EVENT}/Observable.cpp
     ${SHARED_SRC}/uECC.c
-    ${SHARED_SRC}/registration.pb.c
+    ${SHARED_CMD_CODEC}/registration.pb.c
     ${NANOPB_SRC}/pb_encode.c
     ${NANOPB_SRC}/pb_decode.c
     ${NANOPB_SRC}/pb_common.c
@@ -268,14 +292,14 @@ add_executable(test_atsstorage
     ${F103_SVC_IMPL}/AtsStorageServiceImpl.cpp
     ${F103_DRV}/FatFsFilePort.cpp
     ${ATS_SRC}/ArcanaTsDb.cpp
-    ${SHARED_SRC}/Observable.cpp
+    ${SHARED_CORE_EVENT}/Observable.cpp
     ${MOCKS_DIR}/test_hal_stub.cpp
     ${MOCKS_DIR}/ff_host_stub.cpp
     ${MOCKS_DIR}/atsstorage_host_stubs.cpp
     ${FREERTOS_STUBS}
 )
 target_include_directories(test_atsstorage PRIVATE
-    ${COMMON_INCS} ${ATS_INC} ${SHARED_INC}/display
+    ${COMMON_INCS} ${ATS_INC} ${SHARED_INC}/view
     ${F103_COMMON} ${F103_SVC_INC} ${F103_SVC_IMPL} ${F103_CMD_INC}
     ${F103_DRV} ${F103_MODEL})
 target_link_libraries(test_atsstorage PRIVATE GTest::gtest_main)
@@ -292,9 +316,9 @@ add_executable(test_httpupload
     ${F103_SVC_IMPL}/HttpUploadServiceImpl.cpp
     ${F103_DRV}/FatFsFilePort.cpp
     ${ATS_SRC}/ArcanaTsDb.cpp
-    ${SHARED_SRC}/Observable.cpp
+    ${SHARED_CORE_EVENT}/Observable.cpp
     ${SHARED_SRC}/uECC.c
-    ${SHARED_SRC}/registration.pb.c
+    ${SHARED_CMD_CODEC}/registration.pb.c
     ${NANOPB_SRC}/pb_encode.c
     ${NANOPB_SRC}/pb_decode.c
     ${NANOPB_SRC}/pb_common.c
@@ -306,7 +330,7 @@ add_executable(test_httpupload
     ${FREERTOS_STUBS}
 )
 target_include_directories(test_httpupload PRIVATE
-    ${COMMON_INCS} ${ATS_INC} ${SHARED_INC}/display
+    ${COMMON_INCS} ${ATS_INC} ${SHARED_INC}/view
     ${MBEDTLS_INC} ${MBEDTLS_INC2} ${NANOPB_INC}
     ${F103_COMMON} ${F103_SVC_INC} ${F103_SVC_IMPL} ${F103_CMD_INC}
     ${F103_DRV} ${F103_MODEL})
@@ -339,9 +363,9 @@ add_executable(test_mqtt
     ${F103_SVC_IMPL}/CommandBridgeImpl.cpp
     ${F103_DRV}/FatFsFilePort.cpp
     ${ATS_SRC}/ArcanaTsDb.cpp
-    ${SHARED_SRC}/Observable.cpp
+    ${SHARED_CORE_EVENT}/Observable.cpp
     ${SHARED_SRC}/uECC.c
-    ${SHARED_SRC}/registration.pb.c
+    ${SHARED_CMD_CODEC}/registration.pb.c
     ${NANOPB_SRC}/pb_encode.c
     ${NANOPB_SRC}/pb_decode.c
     ${NANOPB_SRC}/pb_common.c
@@ -353,7 +377,7 @@ add_executable(test_mqtt
     ${FREERTOS_STUBS}
 )
 target_include_directories(test_mqtt PRIVATE
-    ${COMMON_INCS} ${ATS_INC} ${SHARED_INC}/display
+    ${COMMON_INCS} ${ATS_INC} ${SHARED_INC}/view
     ${MBEDTLS_INC} ${MBEDTLS_INC2} ${NANOPB_INC}
     ${F103_COMMON} ${F103_SVC_INC} ${F103_SVC_IMPL} ${F103_CMD_INC}
     ${F103_DRV} ${F103_MODEL})
@@ -375,35 +399,35 @@ target_link_libraries(test_wifi PRIVATE GTest::gtest_main)
 # ── test_main_view (MainView render functions against StubDisplay) ───────────
 add_executable(test_main_view
     test_main_view.cpp
-    ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/View/MainView.cpp
-    ${SHARED_SRC}/Observable.cpp
+    ${F103_SVC_ROOT}/view/main/MainView.cpp
+    ${SHARED_CORE_EVENT}/Observable.cpp
     ${MOCKS_DIR}/test_hal_stub.cpp
     ${MOCKS_DIR}/display_stubs.cpp
     ${FREERTOS_STUBS}
 )
 target_include_directories(test_main_view PRIVATE
-    ${COMMON_INCS} ${SHARED_INC}/display
+    ${COMMON_INCS}
     ${F103_COMMON} ${F103_MODEL}
-    ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/View
-    ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/ViewModel)
+    ${F103_SVC_ROOT}/view
+    ${F103_SVC_ROOT}/view/main)
 target_link_libraries(test_main_view PRIVATE GTest::gtest_main)
 
-# ── test_lcd_viewmodel (LcdViewModel observable wiring + dirty flags) ────────
+# ── test_lcd_viewmodel (MainViewModel observable wiring + dirty flags) ───────
 add_executable(test_lcd_viewmodel
     test_lcd_viewmodel.cpp
-    ${SHARED_SRC}/Observable.cpp
+    ${SHARED_CORE_EVENT}/Observable.cpp
     ${MOCKS_DIR}/test_hal_stub.cpp
     ${FREERTOS_STUBS}
 )
 target_include_directories(test_lcd_viewmodel PRIVATE
     ${COMMON_INCS} ${F103_COMMON} ${F103_MODEL}
-    ${CMAKE_SOURCE_DIR}/../Targets/stm32f103ze/Services/ViewModel)
+    ${F103_SVC_ROOT}/view
+    ${F103_SVC_ROOT}/view/main)
 target_link_libraries(test_lcd_viewmodel PRIVATE GTest::gtest_main)
 
 # ── test_widgets (FormWidgets + DialogWidgets + Widget + WidgetGroup) ────────
 add_executable(test_widgets test_widgets.cpp)
-target_include_directories(test_widgets PRIVATE
-    ${COMMON_INCS} ${SHARED_INC}/display)
+target_include_directories(test_widgets PRIVATE ${COMMON_INCS})
 target_link_libraries(test_widgets PRIVATE GTest::gtest_main)
 
 # ── test_mqtt_packet (MqttPacket header-only build/parse) ────────────────────
@@ -419,7 +443,7 @@ add_executable(test_command_bridge
     test_command_bridge.cpp
     ${F103_SVC_IMPL}/CommandBridgeImpl.cpp
     ${SHARED_SRC}/uECC.c
-    ${SHARED_SRC}/Observable.cpp
+    ${SHARED_CORE_EVENT}/Observable.cpp
     ${MOCKS_DIR}/test_hal_stub.cpp
     ${FREERTOS_STUBS}
 )
@@ -436,7 +460,7 @@ add_executable(test_ble
     ${F103_SVC_IMPL}/BleServiceImpl.cpp
     ${F103_SVC_IMPL}/CommandBridgeImpl.cpp
     ${SHARED_SRC}/uECC.c
-    ${SHARED_SRC}/Observable.cpp
+    ${SHARED_CORE_EVENT}/Observable.cpp
     ${MOCKS_DIR}/test_hal_stub.cpp
     ${MOCKS_DIR}/Hc08Ble_stub.cpp
     ${MOCKS_DIR}/RegistrationServiceImpl_stub.cpp
@@ -478,14 +502,14 @@ target_link_libraries(test_i2c_drivers PRIVATE GTest::gtest_main)
 # ── test_esp_flasher (production EspFlasher SLIP bootloader driver) ─────────
 add_executable(test_esp_flasher
     test_esp_flasher.cpp
-    ${F103_DRV}/EspFlasher.cpp
+    ${F103_TRANSPORT_WIFI}/EspFlasher.cpp
     ${MOCKS_DIR}/test_hal_stub.cpp
     ${MOCKS_DIR}/ff_host_stub.cpp
     ${FREERTOS_STUBS}
 )
 target_compile_definitions(test_esp_flasher PRIVATE g_exfat_ready_storage=1)
 target_include_directories(test_esp_flasher PRIVATE
-    ${F103_DRV} ${MOCKS_DIR} ${SHARED_INC} ${F103_COMMON})
+    ${F103_DRV} ${F103_TRANSPORT_WIFI} ${COMMON_INCS} ${F103_COMMON})
 target_link_libraries(test_esp_flasher PRIVATE GTest::gtest_main)
 
 # ── test_esp8266_driver (production Esp8266 UART driver) ────────────────────
@@ -493,12 +517,12 @@ target_link_libraries(test_esp_flasher PRIVATE GTest::gtest_main)
 # order (F103_DRV before MOCKS_DIR).
 add_executable(test_esp8266_driver
     test_esp8266_driver.cpp
-    ${F103_DRV}/Esp8266.cpp
+    ${F103_TRANSPORT_WIFI}/Esp8266.cpp
     ${MOCKS_DIR}/test_hal_stub.cpp
     ${FREERTOS_STUBS}
 )
 target_include_directories(test_esp8266_driver PRIVATE
-    ${F103_DRV} ${MOCKS_DIR} ${SHARED_INC} ${F103_COMMON})
+    ${F103_DRV} ${F103_TRANSPORT_WIFI} ${COMMON_INCS} ${F103_COMMON})
 target_link_libraries(test_esp8266_driver PRIVATE GTest::gtest_main)
 
 # ── test_hc08ble_driver (production Hc08Ble UART driver) ────────────────────
@@ -507,12 +531,12 @@ target_link_libraries(test_esp8266_driver PRIVATE GTest::gtest_main)
 # of the host stub. UART HAL stubs in test_hal_stub return HAL_OK.
 add_executable(test_hc08ble_driver
     test_hc08ble_driver.cpp
-    ${F103_DRV}/Hc08Ble.cpp
+    ${F103_TRANSPORT_BLE}/Hc08Ble.cpp
     ${MOCKS_DIR}/test_hal_stub.cpp
     ${FREERTOS_STUBS}
 )
 target_include_directories(test_hc08ble_driver PRIVATE
-    ${F103_DRV} ${MOCKS_DIR} ${SHARED_INC} ${F103_COMMON})
+    ${F103_DRV} ${F103_TRANSPORT_BLE} ${COMMON_INCS} ${F103_COMMON})
 target_link_libraries(test_hc08ble_driver PRIVATE GTest::gtest_main)
 
 # ── test_app_entry (F051 App.cpp entry points) ──────────────────────────────
@@ -526,15 +550,15 @@ add_executable(test_app_entry
     ${F051_CMD}/CommandService.cpp
     ${F051_CMD}/CommandRegistry.cpp
     ${F051_CMD}/CommandDispatcher.cpp
-    ${F051_CMD}/CommandCodec.cpp
+    ${F051_CMD_CODEC}/CommandCodec.cpp
     ${F051_SVC}/CounterService.cpp
     ${F051_SVC}/TimeDisplayService.cpp
     ${F051_SVC}/TimerService.cpp
-    ${SHARED_SRC}/Observable.cpp
+    ${SHARED_CORE_EVENT}/Observable.cpp
     ${FREERTOS_STUBS}
 )
 target_include_directories(test_app_entry PRIVATE
-    ${COMMON_INCS} ${F051_CMD} ${F051_CMD}/impl ${F051_SVC})
+    ${COMMON_INCS} ${F051_CMD} ${F051_CMD_CMDS} ${F051_SVC})
 target_link_libraries(test_app_entry PRIVATE GTest::gtest_main)
 
 # ── test_services_f103 (Timer + Led + Io + Sensor + Light services) ─────────
@@ -549,7 +573,7 @@ add_executable(test_services_f103
     ${F103_SVC_IMPL}/IoServiceImpl.cpp
     ${F103_SVC_IMPL}/SensorServiceImpl.cpp
     ${F103_SVC_IMPL}/LightServiceImpl.cpp
-    ${SHARED_SRC}/Observable.cpp
+    ${SHARED_CORE_EVENT}/Observable.cpp
     ${MOCKS_DIR}/test_hal_stub.cpp
     ${MOCKS_DIR}/Esp8266_stub.cpp
     ${MOCKS_DIR}/display_stubs.cpp
@@ -557,7 +581,7 @@ add_executable(test_services_f103
     ${FREERTOS_STUBS}
 )
 target_include_directories(test_services_f103 PRIVATE
-    ${COMMON_INCS} ${SHARED_INC}/display
+    ${COMMON_INCS} ${SHARED_INC}/view
     ${F103_COMMON} ${F103_SVC_INC} ${F103_SVC_IMPL} ${F103_MODEL} ${F103_DRV})
 target_link_libraries(test_services_f103 PRIVATE GTest::gtest_main)
 
@@ -574,7 +598,7 @@ add_executable(test_display_clock
     ${FREERTOS_STUBS}
 )
 target_include_directories(test_display_clock PRIVATE
-    ${F103_COMMON} ${MOCKS_DIR} ${SHARED_INC} ${SHARED_INC}/display)
+    ${F103_COMMON} ${MOCKS_DIR} ${SHARED_INC} ${SHARED_INC}/view)
 target_link_libraries(test_display_clock PRIVATE GTest::gtest_main)
 
 # ── test_fatfs_file_port (FatFsFilePort retry + zero-fill recovery) ─────────

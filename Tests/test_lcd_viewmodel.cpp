@@ -1,16 +1,16 @@
 /**
  * @file test_lcd_viewmodel.cpp
- * @brief Coverage for LcdViewModel.hpp Input → Output transformation.
+ * @brief Coverage for MainViewModel.hpp Input → Output transformation.
  */
 #include <gtest/gtest.h>
 #include <cstring>
 
 #include "stm32f1xx_hal.h"
-#include "LcdViewModel.hpp"
+#include "MainViewModel.hpp"
 #include "F103Models.hpp"
 #include "Observable.hpp"
 
-using arcana::lcd::LcdViewModel;
+using arcana::lcd::MainViewModel;
 using arcana::lcd::LcdInput;
 using arcana::lcd::LcdOutput;
 using arcana::SensorDataModel;
@@ -23,7 +23,7 @@ using arcana::Observable;
 // ── onEvent direct ─────────────────────────────────────────────────────────
 
 TEST(LcdViewModelEvent, SensorDataUpdatesTemperatureAndDirty) {
-    LcdViewModel vm;
+    MainViewModel vm;
     LcdInput in; in.type = LcdInput::SensorData;
     in.sensor.temperature = 23.5f;
     vm.onEvent(in);
@@ -34,7 +34,7 @@ TEST(LcdViewModelEvent, SensorDataUpdatesTemperatureAndDirty) {
 }
 
 TEST(LcdViewModelEvent, StorageStatsUpdatesAllFields) {
-    LcdViewModel vm;
+    MainViewModel vm;
     LcdInput in; in.type = LcdInput::StorageStats;
     in.storage.records = 12345;
     in.storage.rate = 50;
@@ -50,7 +50,7 @@ TEST(LcdViewModelEvent, StorageStatsUpdatesAllFields) {
 }
 
 TEST(LcdViewModelEvent, TimerTickUpdatesEpoch) {
-    LcdViewModel vm;
+    MainViewModel vm;
     LcdInput in; in.type = LcdInput::TimerTick;
     in.timer.epoch = 1700000000;
     in.timer.synced = true;
@@ -64,7 +64,7 @@ TEST(LcdViewModelEvent, TimerTickUpdatesEpoch) {
 }
 
 TEST(LcdViewModelEvent, SdInfoUpdates) {
-    LcdViewModel vm;
+    MainViewModel vm;
     LcdInput in; in.type = LcdInput::SdInfo;
     in.sdinfo.freeMB = 100;
     in.sdinfo.totalMB = 1000;
@@ -76,7 +76,7 @@ TEST(LcdViewModelEvent, SdInfoUpdates) {
 }
 
 TEST(LcdViewModelEvent, MqttStatusUpdates) {
-    LcdViewModel vm;
+    MainViewModel vm;
     LcdInput in; in.type = LcdInput::MqttStatus;
     in.mqtt.connected = true;
     vm.onEvent(in);
@@ -93,7 +93,7 @@ TEST(LcdViewModelEvent, MqttStatusUpdates) {
 }
 
 TEST(LcdViewModelEvent, EcgSampleAdvancesCursor) {
-    LcdViewModel vm;
+    MainViewModel vm;
     EXPECT_EQ(vm.ecgCursor(), 0);
 
     /* Push 5 samples */
@@ -109,7 +109,7 @@ TEST(LcdViewModelEvent, EcgSampleAdvancesCursor) {
 }
 
 TEST(LcdViewModelEvent, EcgSampleClampsOutOfRange) {
-    LcdViewModel vm;
+    MainViewModel vm;
     LcdInput in; in.type = LcdInput::EcgSample;
     in.ecg.y = 200;  /* > ECG_WIDTH (120) → clamp to 99 */
     vm.onEvent(in);
@@ -117,7 +117,7 @@ TEST(LcdViewModelEvent, EcgSampleClampsOutOfRange) {
 }
 
 TEST(LcdViewModelEvent, EcgCursorWrapsAroundEcgWidth) {
-    LcdViewModel vm;
+    MainViewModel vm;
     LcdInput in; in.type = LcdInput::EcgSample;
     in.ecg.y = 50;
     /* Push ECG_WIDTH + 1 samples to verify wrap */
@@ -128,7 +128,7 @@ TEST(LcdViewModelEvent, EcgCursorWrapsAroundEcgWidth) {
 // ── clearDirty ─────────────────────────────────────────────────────────────
 
 TEST(LcdViewModelDirty, ClearDirtyResetsAllFlags) {
-    LcdViewModel vm;
+    MainViewModel vm;
     LcdInput in;
     in.type = LcdInput::SensorData;
     in.sensor.temperature = 1.0f;
@@ -144,14 +144,14 @@ TEST(LcdViewModelDirty, ClearDirtyResetsAllFlags) {
 // ── Observable wiring via init() ────────────────────────────────────────────
 
 TEST(LcdViewModelInit, InitWithNoObservablesNoOps) {
-    LcdViewModel vm;
+    MainViewModel vm;
     /* All inputs nullptr → init does nothing */
     vm.init(nullptr);
     SUCCEED();
 }
 
 TEST(LcdViewModelInit, SubscribesAndForwardsViaObservables) {
-    LcdViewModel vm;
+    MainViewModel vm;
     Observable<SensorDataModel>    sensors("s");
     Observable<StorageStatsModel>  stats("t");
     Observable<TimerModel>         timer("ti");
@@ -179,7 +179,7 @@ TEST(LcdViewModelInit, SubscribesAndForwardsViaObservables) {
 // running).
 
 TEST(LcdViewModelObservers, NotifyDrivesAllStaticCallbacks) {
-    LcdViewModel vm;
+    MainViewModel vm;
     Observable<SensorDataModel>    sensors("s");
     Observable<arcana::LightDataModel> light("l");
     Observable<StorageStatsModel>  stats("st");

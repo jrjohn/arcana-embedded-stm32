@@ -15,4 +15,4 @@
 #define App_GetHighPublishCount        F051_App_GetHighPublishCount
 #define App_GetHighDispatchCount       F051_App_GetHighDispatchCount
 
-#include "../Targets/stm32f051c8/Services/controller/App.cpp"
+#include "../Targets/stm32f051c8/Services/App.cpp"
