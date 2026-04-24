@@ -577,9 +577,10 @@ Firmware was rebuilt clean between every phase; all 42 host tests stayed green e
 
 ## Architecture Score
 
-Scores reassessed 2026-04-24 after the Services → Main layered restructure.
-Restructure bumped **Extensibility** and **Cross-Platform** by 1 each and added
-a new **Code Organization** dimension; other dimensions untouched by the rename.
+Scores reassessed 2026-04-24 after the Services → Main layered restructure and
+a re-audit of Thread Safety (bumped after recognizing the single-writer
+render-task discipline is effectively race-free in practice; the MutexDisplay
+penalty was over-weighted). Other dimensions untouched by the rename.
 
 | Dimension | Score | Δ | Notes |
 |-----------|-------|---|-------|
@@ -587,10 +588,10 @@ a new **Code Organization** dimension; other dimensions untouched by the rename.
 | **Resource Efficiency** | 9/10 | — | +1.6KB Flash, +16B RAM for full abstraction. gc-sections strips unused widgets. Restructure is binary-neutral (±4B alignment noise) |
 | **Extensibility** | 9/10 | **+1** | Feature-folder views (`view/main/`, future `view/setting/`, `view/history/`), `service/` + `service/impl/` split, `transport/` pulls network adapters out of HAL. New screens/services/transports slot in without pattern changes |
 | **Cross-Platform** | 9/10 | **+1** | `Shared/Inc/{core,command,db,view}/` layered identically across STM32 targets. `Main/` shape mirrors ESP32 `main/` and Android `app/src/main/` — same service/transport/view/core vocabulary in every repo |
-| **Thread Safety** | 7/10 | — | MutexDisplay exists but disabled (88B RAM). MQTT + ECG via ViewModel/callback. Other services still direct-write |
-| **Compositing** | 5/10 | — | No hardware layers, no framebuffer. Repaint-on-top is pragmatic but limited |
+| **Thread Safety** | 8/10 | **+1** | All LCD writes serialize through a single render task (ViewModel dirty); I2C/UART/SDIO each have a dedicated bus mutex or owner task; Observable dispatcher is ISR-safe with dual-priority queues; 100% static allocation. Penalty: MutexDisplay disabled (88B RAM saved) so ad-hoc `g_display` callers (statusLine, headerBar) rely on render-task convergence rather than explicit locking |
+| **Compositing** | 5/10 | — | Hardware ceiling on F103: no LTDC, no DMA2D, 64KB RAM can't fit a 150KB framebuffer. Repaint-on-top is the only option; Toast dismiss triggers full MainView rebuild (no restore buffer). Same architecture on STM32H7+LTDC+DMA2D would score ~9 |
 | **Code Organization** | 9/10 | **NEW** | Layered by role (service, transport, driver, view, core, command), interface-first (`service/` + `service/impl/`), feature-folder views. Shared `Inc/` no longer flat — `core/ command/ db/ view/` are scannable. See [Restructure Trade-offs](#restructure-trade-offs-2026-04-24) |
-| **Overall** | **8.1/10** | +0.3 | Average of 7 dimensions. Solid embedded architecture within severe HW constraints (64KB RAM, FSMC direct-write); correct tradeoffs for ILI9341 without LTDC. Restructure improved organizational dimensions without touching runtime behavior |
+| **Overall** | **8.3/10** | +0.5 | Average of 7 dimensions. Solid embedded architecture within severe HW constraints (64KB RAM, FSMC direct-write); correct tradeoffs for ILI9341 without LTDC. Compositing score is HW-bound, not an implementation gap |
 
 **Key architectural decisions:**
 - **Layered by role** (`service/`, `transport/`, `driver/`, `view/`, `core/`) — same shape on STM32/ESP32/Android, moving between repos is free
