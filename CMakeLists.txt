@@ -31,12 +31,12 @@ file(GLOB_RECURSE F051_RTOS      "${F051_ROOT}/Middlewares/Third_Party/FreeRTOS/
                                   "${F051_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM0/*.c"
                                   "${F051_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/portable/MemMang/heap_4.c")
 file(GLOB         F051_STARTUP   "${F051_ROOT}/Core/Startup/*.s")
-file(GLOB_RECURSE F051_SERVICES  "${F051_ROOT}/Services/*.cpp")
+file(GLOB_RECURSE F051_MAIN  "${F051_ROOT}/main/*.cpp")
 file(GLOB_RECURSE F051_SHARED    "Shared/Src/*.cpp")
 
 add_executable(arcana-f051.elf
     ${F051_CORE} ${F051_HAL} ${F051_RTOS} ${F051_STARTUP}
-    ${F051_SERVICES} ${F051_SHARED}
+    ${F051_MAIN} ${F051_SHARED}
 )
 
 target_compile_definitions(arcana-f051.elf PRIVATE USE_HAL_DRIVER STM32F051x8)
@@ -49,11 +49,11 @@ target_include_directories(arcana-f051.elf PRIVATE
     ${F051_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/include
     ${F051_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2
     ${F051_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM0
-    ${F051_ROOT}/Services
-    ${F051_ROOT}/Services/service
-    ${F051_ROOT}/Services/command
-    ${F051_ROOT}/Services/command/codec
-    ${F051_ROOT}/Services/command/commands
+    ${F051_ROOT}/main
+    ${F051_ROOT}/main/service
+    ${F051_ROOT}/main/command
+    ${F051_ROOT}/main/command/codec
+    ${F051_ROOT}/main/command/commands
     Shared/Inc
     Shared/Inc/core/event
     Shared/Inc/core/log
@@ -103,7 +103,7 @@ file(GLOB_RECURSE F103_RTOS      "${F103_ROOT}/Middlewares/Third_Party/FreeRTOS/
 file(GLOB         F103_STARTUP   "${F103_ROOT}/Core/Startup/*.s")
 file(GLOB_RECURSE F103_FATFS     "${F103_ROOT}/Middlewares/Third_Party/FatFs/src/*.c")
 file(GLOB_RECURSE F103_FLASHDB   "${F103_ROOT}/Middlewares/Third_Party/FlashDB/src/*.c")
-file(GLOB_RECURSE F103_SERVICES  "${F103_ROOT}/Services/*.cpp")
+file(GLOB_RECURSE F103_MAIN  "${F103_ROOT}/main/*.cpp")
 file(GLOB_RECURSE F103_SHARED    "Shared/Src/*.cpp")
 file(GLOB         F103_NANOPB    "Shared/Src/nanopb/*.c")
 file(GLOB         F103_PROTO     "Shared/Src/command/codec/*.c")
@@ -116,7 +116,7 @@ list(FILTER F103_FATFS EXCLUDE REGEX ".*/backup/.*")
 add_executable(arcana-f103.elf
     ${F103_CORE} ${F103_HAL} ${F103_RTOS} ${F103_STARTUP}
     ${F103_FATFS} ${F103_FLASHDB}
-    ${F103_SERVICES} ${F103_SHARED}
+    ${F103_MAIN} ${F103_SHARED}
     ${F103_NANOPB} ${F103_PROTO} ${F103_MBEDTLS} ${F103_UECC}
 )
 
@@ -134,17 +134,17 @@ target_include_directories(arcana-f103.elf PRIVATE
     ${F103_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM3
     ${F103_ROOT}/Middlewares/Third_Party/FatFs/src
     ${F103_ROOT}/Middlewares/Third_Party/FlashDB/inc
-    ${F103_ROOT}/Services
-    ${F103_ROOT}/Services/service
-    ${F103_ROOT}/Services/service/impl
-    ${F103_ROOT}/Services/driver
-    ${F103_ROOT}/Services/transport/ble
-    ${F103_ROOT}/Services/transport/wifi
-    ${F103_ROOT}/Services/core
-    ${F103_ROOT}/Services/core/model
-    ${F103_ROOT}/Services/view
-    ${F103_ROOT}/Services/view/main
-    ${F103_ROOT}/Services/command
+    ${F103_ROOT}/main
+    ${F103_ROOT}/main/service
+    ${F103_ROOT}/main/service/impl
+    ${F103_ROOT}/main/driver
+    ${F103_ROOT}/main/transport/ble
+    ${F103_ROOT}/main/transport/wifi
+    ${F103_ROOT}/main/core
+    ${F103_ROOT}/main/core/model
+    ${F103_ROOT}/main/view
+    ${F103_ROOT}/main/view/main
+    ${F103_ROOT}/main/command
     Shared/Inc
     Shared/Inc/core/event
     Shared/Inc/core/log
