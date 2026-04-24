@@ -31,7 +31,7 @@ file(GLOB_RECURSE F051_RTOS      "${F051_ROOT}/Middlewares/Third_Party/FreeRTOS/
                                   "${F051_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM0/*.c"
                                   "${F051_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/portable/MemMang/heap_4.c")
 file(GLOB         F051_STARTUP   "${F051_ROOT}/Core/Startup/*.s")
-file(GLOB_RECURSE F051_MAIN  "${F051_ROOT}/main/*.cpp")
+file(GLOB_RECURSE F051_MAIN  "${F051_ROOT}/Main/*.cpp")
 file(GLOB_RECURSE F051_SHARED    "Shared/Src/*.cpp")
 
 add_executable(arcana-f051.elf
@@ -49,11 +49,11 @@ target_include_directories(arcana-f051.elf PRIVATE
     ${F051_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/include
     ${F051_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2
     ${F051_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM0
-    ${F051_ROOT}/main
-    ${F051_ROOT}/main/service
-    ${F051_ROOT}/main/command
-    ${F051_ROOT}/main/command/codec
-    ${F051_ROOT}/main/command/commands
+    ${F051_ROOT}/Main
+    ${F051_ROOT}/Main/service
+    ${F051_ROOT}/Main/command
+    ${F051_ROOT}/Main/command/codec
+    ${F051_ROOT}/Main/command/commands
     Shared/Inc
     Shared/Inc/core/event
     Shared/Inc/core/log
@@ -103,7 +103,7 @@ file(GLOB_RECURSE F103_RTOS      "${F103_ROOT}/Middlewares/Third_Party/FreeRTOS/
 file(GLOB         F103_STARTUP   "${F103_ROOT}/Core/Startup/*.s")
 file(GLOB_RECURSE F103_FATFS     "${F103_ROOT}/Middlewares/Third_Party/FatFs/src/*.c")
 file(GLOB_RECURSE F103_FLASHDB   "${F103_ROOT}/Middlewares/Third_Party/FlashDB/src/*.c")
-file(GLOB_RECURSE F103_MAIN  "${F103_ROOT}/main/*.cpp")
+file(GLOB_RECURSE F103_MAIN  "${F103_ROOT}/Main/*.cpp")
 file(GLOB_RECURSE F103_SHARED    "Shared/Src/*.cpp")
 file(GLOB         F103_NANOPB    "Shared/Src/nanopb/*.c")
 file(GLOB         F103_PROTO     "Shared/Src/command/codec/*.c")
@@ -134,17 +134,17 @@ target_include_directories(arcana-f103.elf PRIVATE
     ${F103_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM3
     ${F103_ROOT}/Middlewares/Third_Party/FatFs/src
     ${F103_ROOT}/Middlewares/Third_Party/FlashDB/inc
-    ${F103_ROOT}/main
-    ${F103_ROOT}/main/service
-    ${F103_ROOT}/main/service/impl
-    ${F103_ROOT}/main/driver
-    ${F103_ROOT}/main/transport/ble
-    ${F103_ROOT}/main/transport/wifi
-    ${F103_ROOT}/main/core
-    ${F103_ROOT}/main/core/model
-    ${F103_ROOT}/main/view
-    ${F103_ROOT}/main/view/main
-    ${F103_ROOT}/main/command
+    ${F103_ROOT}/Main
+    ${F103_ROOT}/Main/service
+    ${F103_ROOT}/Main/service/impl
+    ${F103_ROOT}/Main/driver
+    ${F103_ROOT}/Main/transport/ble
+    ${F103_ROOT}/Main/transport/wifi
+    ${F103_ROOT}/Main/core
+    ${F103_ROOT}/Main/core/model
+    ${F103_ROOT}/Main/view
+    ${F103_ROOT}/Main/view/main
+    ${F103_ROOT}/Main/command
     Shared/Inc
     Shared/Inc/core/event
     Shared/Inc/core/log
