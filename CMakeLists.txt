@@ -137,6 +137,8 @@ target_include_directories(arcana-f103.elf PRIVATE
     ${F103_ROOT}/Services/service
     ${F103_ROOT}/Services/service/impl
     ${F103_ROOT}/Services/driver
+    ${F103_ROOT}/Services/transport/ble
+    ${F103_ROOT}/Services/transport/wifi
     ${F103_ROOT}/Services/core
     ${F103_ROOT}/Services/core/model
     ${F103_ROOT}/Services/view
