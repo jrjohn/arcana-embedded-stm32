@@ -54,8 +54,17 @@ target_include_directories(arcana-f051.elf PRIVATE
     ${F051_ROOT}/Services/command
     ${F051_ROOT}/Services/command/impl
     Shared/Inc
-    Shared/Inc/ats
-    Shared/Inc/display
+    Shared/Inc/core/event
+    Shared/Inc/core/log
+    Shared/Inc/core/model
+    Shared/Inc/core/validation
+    Shared/Inc/core/types
+    Shared/Inc/command
+    Shared/Inc/command/codec
+    Shared/Inc/command/security
+    Shared/Inc/db/arcanats
+    Shared/Inc/db/arcanats/ats
+    Shared/Inc/view
 )
 target_compile_options(arcana-f051.elf PRIVATE
     $<$<COMPILE_LANGUAGE:C>:${F051_MCU_FLAGS} -Wall -fdata-sections -ffunction-sections -std=gnu11>
@@ -96,8 +105,9 @@ file(GLOB_RECURSE F103_FLASHDB   "${F103_ROOT}/Middlewares/Third_Party/FlashDB/s
 file(GLOB_RECURSE F103_SERVICES  "${F103_ROOT}/Services/**/*.cpp")
 file(GLOB_RECURSE F103_SHARED    "Shared/Src/*.cpp")
 file(GLOB         F103_NANOPB    "Shared/Src/nanopb/*.c")
-file(GLOB         F103_PROTO     "Shared/Src/*.c")
+file(GLOB         F103_PROTO     "Shared/Src/command/codec/*.c")
 file(GLOB         F103_MBEDTLS   "Shared/Src/mbedtls/*.c")
+set(F103_UECC    "Shared/Src/uECC.c")
 
 # Exclude FatFs backup directory (duplicate ff.c)
 list(FILTER F103_FATFS EXCLUDE REGEX ".*/backup/.*")
@@ -106,7 +116,7 @@ add_executable(arcana-f103.elf
     ${F103_CORE} ${F103_HAL} ${F103_RTOS} ${F103_STARTUP}
     ${F103_FATFS} ${F103_FLASHDB}
     ${F103_SERVICES} ${F103_SHARED}
-    ${F103_NANOPB} ${F103_PROTO} ${F103_MBEDTLS}
+    ${F103_NANOPB} ${F103_PROTO} ${F103_MBEDTLS} ${F103_UECC}
 )
 
 target_compile_definitions(arcana-f103.elf PRIVATE
@@ -133,8 +143,17 @@ target_include_directories(arcana-f103.elf PRIVATE
     ${F103_ROOT}/Services/ViewModel
     ${F103_ROOT}/Services/Command
     Shared/Inc
-    Shared/Inc/ats
-    Shared/Inc/display
+    Shared/Inc/core/event
+    Shared/Inc/core/log
+    Shared/Inc/core/model
+    Shared/Inc/core/validation
+    Shared/Inc/core/types
+    Shared/Inc/command
+    Shared/Inc/command/codec
+    Shared/Inc/command/security
+    Shared/Inc/db/arcanats
+    Shared/Inc/db/arcanats/ats
+    Shared/Inc/view
     Shared/Inc/nanopb
     Shared/Inc/mbedtls
 )

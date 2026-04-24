@@ -1,6 +1,8 @@
 # Build output
 Debug/
 Release/
+build/
+Tests/build/
 
 # IDE metadata
 .metadata/
