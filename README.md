@@ -577,17 +577,23 @@ Firmware was rebuilt clean between every phase; all 42 host tests stayed green e
 
 ## Architecture Score
 
-| Dimension | Score | Notes |
-|-----------|-------|-------|
-| **Abstraction** | 9/10 | IDisplay interface, Adapter pattern, feature flags — View code never sees hardware |
-| **Resource Efficiency** | 9/10 | +1.6KB Flash, +16B RAM for full abstraction. gc-sections strips unused widgets |
-| **Extensibility** | 8/10 | Widget system, ViewManager, FormWidgets ready. Feature flags enable incrementally |
-| **Cross-Platform** | 8/10 | `Shared/Inc/display/` portable to ESP32/Linux. Only Adapter is target-specific |
-| **Thread Safety** | 7/10 | MutexDisplay exists but disabled (88B RAM). MQTT + ECG via ViewModel/callback. Other services still direct-write |
-| **Compositing** | 5/10 | No hardware layers, no framebuffer. Repaint-on-top is pragmatic but limited |
-| **Overall** | **7.8/10** | Solid embedded display abstraction within severe HW constraints (64KB RAM, FSMC direct-write). Correct tradeoffs for ILI9341 without LTDC |
+Scores reassessed 2026-04-24 after the Services → Main layered restructure.
+Restructure bumped **Extensibility** and **Cross-Platform** by 1 each and added
+a new **Code Organization** dimension; other dimensions untouched by the rename.
+
+| Dimension | Score | Δ | Notes |
+|-----------|-------|---|-------|
+| **Abstraction** | 9/10 | — | IDisplay interface, Adapter pattern, feature flags — View code never sees hardware |
+| **Resource Efficiency** | 9/10 | — | +1.6KB Flash, +16B RAM for full abstraction. gc-sections strips unused widgets. Restructure is binary-neutral (±4B alignment noise) |
+| **Extensibility** | 9/10 | **+1** | Feature-folder views (`view/main/`, future `view/setting/`, `view/history/`), `service/` + `service/impl/` split, `transport/` pulls network adapters out of HAL. New screens/services/transports slot in without pattern changes |
+| **Cross-Platform** | 9/10 | **+1** | `Shared/Inc/{core,command,db,view}/` layered identically across STM32 targets. `Main/` shape mirrors ESP32 `main/` and Android `app/src/main/` — same service/transport/view/core vocabulary in every repo |
+| **Thread Safety** | 7/10 | — | MutexDisplay exists but disabled (88B RAM). MQTT + ECG via ViewModel/callback. Other services still direct-write |
+| **Compositing** | 5/10 | — | No hardware layers, no framebuffer. Repaint-on-top is pragmatic but limited |
+| **Code Organization** | 9/10 | **NEW** | Layered by role (service, transport, driver, view, core, command), interface-first (`service/` + `service/impl/`), feature-folder views. Shared `Inc/` no longer flat — `core/ command/ db/ view/` are scannable. See [Restructure Trade-offs](#restructure-trade-offs-2026-04-24) |
+| **Overall** | **8.1/10** | +0.3 | Average of 7 dimensions. Solid embedded architecture within severe HW constraints (64KB RAM, FSMC direct-write); correct tradeoffs for ILI9341 without LTDC. Restructure improved organizational dimensions without touching runtime behavior |
 
 **Key architectural decisions:**
+- **Layered by role** (`service/`, `transport/`, `driver/`, `view/`, `core/`) — same shape on STM32/ESP32/Android, moving between repos is free
 - **Repaint-on-top** over framebuffer — 150KB framebuffer impossible on 64KB RAM
 - **Feature flags** over ifdef spaghetti — `DisplayConfig.hpp` controls what compiles
 - **ViewModel dirty** over direct LCD writes — eliminates race conditions
