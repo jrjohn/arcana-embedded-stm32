@@ -145,7 +145,7 @@
 						<entry excluding="Third_Party/FreeRTOS/Source/stream_buffer.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Middlewares"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Services"/>
-						<entry excluding="Src/mbedtls|Src/nanopb|Src/ats|Src/uECC.c|Src/CryptoEngine.cpp|Src/KeyExchangeManager.cpp|Src/arcana_cmd.pb.c|Src/registration.pb.c|proto" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Shared"/>
+						<entry excluding="Src/mbedtls|Src/nanopb|Src/db|Src/uECC.c|Src/command|proto" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Shared"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
 					</sourceEntries>
 				</configuration>
@@ -291,7 +291,7 @@
 						<entry excluding="Third_Party/FreeRTOS/Source/stream_buffer.c" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Middlewares"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Core"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Services"/>
-						<entry excluding="Src/mbedtls|Src/nanopb|Src/ats|Src/uECC.c|Src/CryptoEngine.cpp|Src/KeyExchangeManager.cpp|Src/arcana_cmd.pb.c|Src/registration.pb.c|proto" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Shared"/>
+						<entry excluding="Src/mbedtls|Src/nanopb|Src/db|Src/uECC.c|Src/command|proto" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Shared"/>
 						<entry flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name="Drivers"/>
 					</sourceEntries>
 				</configuration>
