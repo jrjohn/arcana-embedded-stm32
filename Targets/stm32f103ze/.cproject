@@ -52,18 +52,29 @@
 								</option>
 								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.option.includepaths.1015256395" name="Include paths (-I)" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.option.includepaths" valueType="includePath">
 									<listOptionValue builtIn="false" value="../Core/Inc"/>
-									<listOptionValue builtIn="false" value="../Services/Controller"/>
-									<listOptionValue builtIn="false" value="../Services/Service"/>
-									<listOptionValue builtIn="false" value="../Services/Service/impl"/>
-									<listOptionValue builtIn="false" value="../Services/ViewModel"/>
-									<listOptionValue builtIn="false" value="../Services/View"/>
-									<listOptionValue builtIn="false" value="../Services/Driver"/>
-									<listOptionValue builtIn="false" value="../Services/Model"/>
-									<listOptionValue builtIn="false" value="../Services/Common"/>
-									<listOptionValue builtIn="false" value="../Services/Command"/>
+									<listOptionValue builtIn="false" value="../Services"/>
+									<listOptionValue builtIn="false" value="../Services/service"/>
+									<listOptionValue builtIn="false" value="../Services/service/impl"/>
+									<listOptionValue builtIn="false" value="../Services/driver"/>
+									<listOptionValue builtIn="false" value="../Services/transport/ble"/>
+									<listOptionValue builtIn="false" value="../Services/transport/wifi"/>
+									<listOptionValue builtIn="false" value="../Services/core"/>
+									<listOptionValue builtIn="false" value="../Services/core/model"/>
+									<listOptionValue builtIn="false" value="../Services/view"/>
+									<listOptionValue builtIn="false" value="../Services/view/main"/>
+									<listOptionValue builtIn="false" value="../Services/command"/>
 									<listOptionValue builtIn="false" value="../../../Shared/Inc"/>
-									<listOptionValue builtIn="false" value="../../../Shared/Inc/ats"/>
-									<listOptionValue builtIn="false" value="../../../Shared/Inc/display"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/core/event"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/core/log"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/core/model"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/core/validation"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/core/types"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/command"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/command/codec"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/command/security"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/db/arcanats"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/db/arcanats/ats"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/view"/>
 									<listOptionValue builtIn="false" value="../../../Shared/Inc/nanopb"/>
 									<listOptionValue builtIn="false" value="../../../Shared/Inc/mbedtls"/>
 									<listOptionValue builtIn="false" value="../Middlewares/Third_Party/FatFs/src"/>
@@ -89,18 +100,29 @@
 								</option>
 								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.cpp.compiler.option.includepaths.100000001" name="Include paths (-I)" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.cpp.compiler.option.includepaths" valueType="includePath">
 									<listOptionValue builtIn="false" value="../Core/Inc"/>
-									<listOptionValue builtIn="false" value="../Services/Controller"/>
-									<listOptionValue builtIn="false" value="../Services/Service"/>
-									<listOptionValue builtIn="false" value="../Services/Service/impl"/>
-									<listOptionValue builtIn="false" value="../Services/ViewModel"/>
-									<listOptionValue builtIn="false" value="../Services/View"/>
-									<listOptionValue builtIn="false" value="../Services/Driver"/>
-									<listOptionValue builtIn="false" value="../Services/Model"/>
-									<listOptionValue builtIn="false" value="../Services/Common"/>
-									<listOptionValue builtIn="false" value="../Services/Command"/>
+									<listOptionValue builtIn="false" value="../Services"/>
+									<listOptionValue builtIn="false" value="../Services/service"/>
+									<listOptionValue builtIn="false" value="../Services/service/impl"/>
+									<listOptionValue builtIn="false" value="../Services/driver"/>
+									<listOptionValue builtIn="false" value="../Services/transport/ble"/>
+									<listOptionValue builtIn="false" value="../Services/transport/wifi"/>
+									<listOptionValue builtIn="false" value="../Services/core"/>
+									<listOptionValue builtIn="false" value="../Services/core/model"/>
+									<listOptionValue builtIn="false" value="../Services/view"/>
+									<listOptionValue builtIn="false" value="../Services/view/main"/>
+									<listOptionValue builtIn="false" value="../Services/command"/>
 									<listOptionValue builtIn="false" value="../../../Shared/Inc"/>
-									<listOptionValue builtIn="false" value="../../../Shared/Inc/ats"/>
-									<listOptionValue builtIn="false" value="../../../Shared/Inc/display"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/core/event"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/core/log"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/core/model"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/core/validation"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/core/types"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/command"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/command/codec"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/command/security"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/db/arcanats"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/db/arcanats/ats"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/view"/>
 									<listOptionValue builtIn="false" value="../../../Shared/Inc/nanopb"/>
 									<listOptionValue builtIn="false" value="../../../Shared/Inc/mbedtls"/>
 									<listOptionValue builtIn="false" value="../Middlewares/Third_Party/FatFs/src"/>
@@ -198,18 +220,29 @@
 								</option>
 								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.option.includepaths.270879046" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.c.compiler.option.includepaths" valueType="includePath">
 									<listOptionValue builtIn="false" value="../Core/Inc"/>
-									<listOptionValue builtIn="false" value="../Services/Controller"/>
-									<listOptionValue builtIn="false" value="../Services/Service"/>
-									<listOptionValue builtIn="false" value="../Services/Service/impl"/>
-									<listOptionValue builtIn="false" value="../Services/ViewModel"/>
-									<listOptionValue builtIn="false" value="../Services/View"/>
-									<listOptionValue builtIn="false" value="../Services/Driver"/>
-									<listOptionValue builtIn="false" value="../Services/Model"/>
-									<listOptionValue builtIn="false" value="../Services/Common"/>
-									<listOptionValue builtIn="false" value="../Services/Command"/>
+									<listOptionValue builtIn="false" value="../Services"/>
+									<listOptionValue builtIn="false" value="../Services/service"/>
+									<listOptionValue builtIn="false" value="../Services/service/impl"/>
+									<listOptionValue builtIn="false" value="../Services/driver"/>
+									<listOptionValue builtIn="false" value="../Services/transport/ble"/>
+									<listOptionValue builtIn="false" value="../Services/transport/wifi"/>
+									<listOptionValue builtIn="false" value="../Services/core"/>
+									<listOptionValue builtIn="false" value="../Services/core/model"/>
+									<listOptionValue builtIn="false" value="../Services/view"/>
+									<listOptionValue builtIn="false" value="../Services/view/main"/>
+									<listOptionValue builtIn="false" value="../Services/command"/>
 									<listOptionValue builtIn="false" value="../../../Shared/Inc"/>
-									<listOptionValue builtIn="false" value="../../../Shared/Inc/ats"/>
-									<listOptionValue builtIn="false" value="../../../Shared/Inc/display"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/core/event"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/core/log"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/core/model"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/core/validation"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/core/types"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/command"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/command/codec"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/command/security"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/db/arcanats"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/db/arcanats/ats"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/view"/>
 									<listOptionValue builtIn="false" value="../../../Shared/Inc/nanopb"/>
 									<listOptionValue builtIn="false" value="../../../Shared/Inc/mbedtls"/>
 									<listOptionValue builtIn="false" value="../Middlewares/Third_Party/FatFs/src"/>
@@ -233,18 +266,29 @@
 								</option>
 								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.cpp.compiler.option.includepaths.200000001" name="Include paths (-I)" superClass="com.st.stm32cube.ide.mcu.gnu.managedbuild.tool.cpp.compiler.option.includepaths" valueType="includePath">
 									<listOptionValue builtIn="false" value="../Core/Inc"/>
-									<listOptionValue builtIn="false" value="../Services/Controller"/>
-									<listOptionValue builtIn="false" value="../Services/Service"/>
-									<listOptionValue builtIn="false" value="../Services/Service/impl"/>
-									<listOptionValue builtIn="false" value="../Services/ViewModel"/>
-									<listOptionValue builtIn="false" value="../Services/View"/>
-									<listOptionValue builtIn="false" value="../Services/Driver"/>
-									<listOptionValue builtIn="false" value="../Services/Model"/>
-									<listOptionValue builtIn="false" value="../Services/Common"/>
-									<listOptionValue builtIn="false" value="../Services/Command"/>
+									<listOptionValue builtIn="false" value="../Services"/>
+									<listOptionValue builtIn="false" value="../Services/service"/>
+									<listOptionValue builtIn="false" value="../Services/service/impl"/>
+									<listOptionValue builtIn="false" value="../Services/driver"/>
+									<listOptionValue builtIn="false" value="../Services/transport/ble"/>
+									<listOptionValue builtIn="false" value="../Services/transport/wifi"/>
+									<listOptionValue builtIn="false" value="../Services/core"/>
+									<listOptionValue builtIn="false" value="../Services/core/model"/>
+									<listOptionValue builtIn="false" value="../Services/view"/>
+									<listOptionValue builtIn="false" value="../Services/view/main"/>
+									<listOptionValue builtIn="false" value="../Services/command"/>
 									<listOptionValue builtIn="false" value="../../../Shared/Inc"/>
-									<listOptionValue builtIn="false" value="../../../Shared/Inc/ats"/>
-									<listOptionValue builtIn="false" value="../../../Shared/Inc/display"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/core/event"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/core/log"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/core/model"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/core/validation"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/core/types"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/command"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/command/codec"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/command/security"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/db/arcanats"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/db/arcanats/ats"/>
+									<listOptionValue builtIn="false" value="../../../Shared/Inc/view"/>
 									<listOptionValue builtIn="false" value="../../../Shared/Inc/nanopb"/>
 									<listOptionValue builtIn="false" value="../../../Shared/Inc/mbedtls"/>
 									<listOptionValue builtIn="false" value="../Middlewares/Third_Party/FatFs/src"/>
