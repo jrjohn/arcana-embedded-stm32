@@ -5,7 +5,7 @@
 #if DISPLAY_FEATURE_TOUCH
 #include "TouchTypes.hpp"
 #endif
-#include "LcdViewModel.hpp"
+#include "MainViewModel.hpp"
 
 namespace arcana {
 namespace lcd {
@@ -21,9 +21,9 @@ namespace lcd {
  * Future views: SettingsView, ChartView, DetailView, etc.
  * Switch via button (KEY1/KEY2) or touch input.
  */
-class LcdView {
+class BaseLcdView {
 public:
-    virtual ~LcdView() {}
+    virtual ~BaseLcdView() {}
 
     /** Draw static layout (labels, borders, titles) */
     virtual void onEnter(display::IDisplay& lcd) = 0;

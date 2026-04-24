@@ -31,7 +31,7 @@ file(GLOB_RECURSE F051_RTOS      "${F051_ROOT}/Middlewares/Third_Party/FreeRTOS/
                                   "${F051_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM0/*.c"
                                   "${F051_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/portable/MemMang/heap_4.c")
 file(GLOB         F051_STARTUP   "${F051_ROOT}/Core/Startup/*.s")
-file(GLOB_RECURSE F051_SERVICES  "${F051_ROOT}/Services/**/*.cpp")
+file(GLOB_RECURSE F051_SERVICES  "${F051_ROOT}/Services/*.cpp")
 file(GLOB_RECURSE F051_SHARED    "Shared/Src/*.cpp")
 
 add_executable(arcana-f051.elf
@@ -102,7 +102,7 @@ file(GLOB_RECURSE F103_RTOS      "${F103_ROOT}/Middlewares/Third_Party/FreeRTOS/
 file(GLOB         F103_STARTUP   "${F103_ROOT}/Core/Startup/*.s")
 file(GLOB_RECURSE F103_FATFS     "${F103_ROOT}/Middlewares/Third_Party/FatFs/src/*.c")
 file(GLOB_RECURSE F103_FLASHDB   "${F103_ROOT}/Middlewares/Third_Party/FlashDB/src/*.c")
-file(GLOB_RECURSE F103_SERVICES  "${F103_ROOT}/Services/**/*.cpp")
+file(GLOB_RECURSE F103_SERVICES  "${F103_ROOT}/Services/*.cpp")
 file(GLOB_RECURSE F103_SHARED    "Shared/Src/*.cpp")
 file(GLOB         F103_NANOPB    "Shared/Src/nanopb/*.c")
 file(GLOB         F103_PROTO     "Shared/Src/command/codec/*.c")
@@ -133,15 +133,15 @@ target_include_directories(arcana-f103.elf PRIVATE
     ${F103_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM3
     ${F103_ROOT}/Middlewares/Third_Party/FatFs/src
     ${F103_ROOT}/Middlewares/Third_Party/FlashDB/inc
-    ${F103_ROOT}/Services/Controller
-    ${F103_ROOT}/Services/Service
-    ${F103_ROOT}/Services/Service/impl
-    ${F103_ROOT}/Services/Driver
-    ${F103_ROOT}/Services/Model
-    ${F103_ROOT}/Services/Common
-    ${F103_ROOT}/Services/View
-    ${F103_ROOT}/Services/ViewModel
-    ${F103_ROOT}/Services/Command
+    ${F103_ROOT}/Services
+    ${F103_ROOT}/Services/service
+    ${F103_ROOT}/Services/service/impl
+    ${F103_ROOT}/Services/driver
+    ${F103_ROOT}/Services/core
+    ${F103_ROOT}/Services/core/model
+    ${F103_ROOT}/Services/view
+    ${F103_ROOT}/Services/view/main
+    ${F103_ROOT}/Services/command
     Shared/Inc
     Shared/Inc/core/event
     Shared/Inc/core/log

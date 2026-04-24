@@ -23,17 +23,17 @@ class CommandBridgeService;
 
 namespace arcana {
 
-class Controller {
+class AppContainer {
 public:
-    static Controller& getInstance();
+    static AppContainer& getInstance();
 
     void run();
 
 private:
-    Controller();
-    ~Controller();
-    Controller(const Controller&);
-    Controller& operator=(const Controller&);
+    AppContainer();
+    ~AppContainer();
+    AppContainer(const AppContainer&);
+    AppContainer& operator=(const AppContainer&);
 
     void wireServices();
     void wireViews();

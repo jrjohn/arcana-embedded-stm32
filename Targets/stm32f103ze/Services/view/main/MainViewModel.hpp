@@ -98,7 +98,7 @@ enum class LcdEffect : uint8_t {
 // ViewModel: transforms Input → Output
 // ---------------------------------------------------------------------------
 
-class LcdViewModel {
+class MainViewModel {
 public:
     // Input: data sources wired by Controller
     struct Input {
@@ -111,7 +111,7 @@ public:
     };
     Input input;
 
-    LcdViewModel() : input(), mOutput(), mNotifyTask(0) {
+    MainViewModel() : input(), mOutput(), mNotifyTask(0) {
         input.SensorData = 0;
         input.LightData = 0;
         input.StorageStats = 0;
@@ -187,14 +187,14 @@ private:
     void notifyView() { if (mNotifyTask) xTaskNotifyGive(mNotifyTask); }
 
     static void onSensorData(SensorDataModel* model, void* ctx) {
-        LcdViewModel* self = static_cast<LcdViewModel*>(ctx);
+        MainViewModel* self = static_cast<MainViewModel*>(ctx);
         LcdInput in; in.type = LcdInput::SensorData;
         in.sensor.temperature = model->temperature;
         self->onEvent(in); self->notifyView();
     }
     static void onLightData(LightDataModel*, void*) {}
     static void onStorageStats(StorageStatsModel* model, void* ctx) {
-        LcdViewModel* self = static_cast<LcdViewModel*>(ctx);
+        MainViewModel* self = static_cast<MainViewModel*>(ctx);
         LcdInput in; in.type = LcdInput::StorageStats;
         in.storage.records = model->recordCount;
         in.storage.rate = model->writesPerSec;
@@ -203,14 +203,14 @@ private:
         self->onEvent(in); self->notifyView();
     }
     static void onSdBenchmark(SdBenchmarkModel* model, void* ctx) {
-        LcdViewModel* self = static_cast<LcdViewModel*>(ctx);
+        MainViewModel* self = static_cast<MainViewModel*>(ctx);
         LcdInput in; in.type = LcdInput::SdInfo;
         in.sdinfo.freeMB = model->totalKB;
         in.sdinfo.totalMB = model->totalRecords;
         self->onEvent(in); self->notifyView();
     }
     static void onBaseTimer(TimerModel*, void* ctx) {
-        LcdViewModel* self = static_cast<LcdViewModel*>(ctx);
+        MainViewModel* self = static_cast<MainViewModel*>(ctx);
         LcdInput in; in.type = LcdInput::TimerTick;
         in.timer.epoch = SystemClock::getInstance().localNow();
         in.timer.synced = SystemClock::getInstance().isSynced();
@@ -219,7 +219,7 @@ private:
     }
 
     static void onMqttConn(MqttConnectionModel* model, void* ctx) {
-        LcdViewModel* self = static_cast<LcdViewModel*>(ctx);
+        MainViewModel* self = static_cast<MainViewModel*>(ctx);
         LcdInput in; in.type = LcdInput::MqttStatus;
         in.mqtt.connected = model->connected;
         self->onEvent(in); self->notifyView();

@@ -1,5 +1,5 @@
 #include "MainView.hpp"
-#include "LcdViewModel.hpp"
+#include "MainViewModel.hpp"
 #include "SystemClock.hpp"
 #include "DisplayStatus.hpp"
 #include <cstdio>
@@ -62,7 +62,7 @@ void MainView::processRender() {
     if (!input.viewModel || !input.lcd) return;
     if (xSemaphoreTake(mLcdMutex, pdMS_TO_TICKS(10)) != pdTRUE) return;
 
-    LcdViewModel& vm = *input.viewModel;
+    MainViewModel& vm = *input.viewModel;
     display::IDisplay& lcd = *input.lcd;
 
     // 1. Drain all pending ECG samples → ViewModel → render

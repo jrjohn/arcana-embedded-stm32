@@ -1,6 +1,6 @@
 #pragma once
 
-#include "LcdView.hpp"
+#include "BaseLcdView.hpp"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
@@ -9,17 +9,17 @@
 namespace arcana {
 namespace lcd {
 
-class LcdViewModel;  // forward
+class MainViewModel;  // forward
 
 /**
  * Main dashboard view — ECG waveform + storage stats + time.
  * Owns render task, ECG queue, LCD mutex.
  * Default view on boot.
  */
-class MainView : public LcdView {
+class MainView : public BaseLcdView {
 public:
     struct Input {
-        LcdViewModel* viewModel;
+        MainViewModel* viewModel;
         display::IDisplay* lcd;
     };
     Input input;
@@ -35,7 +35,7 @@ public:
     /** Render task handle — ViewModel needs this for xTaskNotifyGive */
     TaskHandle_t renderTaskHandle() const { return mRenderTaskHandle; }
 
-    // LcdView interface
+    // BaseLcdView interface
     void onEnter(display::IDisplay& lcd) override;
     void render(display::IDisplay& lcd, const LcdOutput& output, LcdOutput& rendered) override;
     void renderEcgColumn(display::IDisplay& lcd, uint8_t x, uint8_t y, uint8_t prevY) override;

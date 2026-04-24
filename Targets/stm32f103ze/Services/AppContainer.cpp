@@ -1,4 +1,4 @@
-#include "Controller.hpp"
+#include "AppContainer.hpp"
 #include "TimerServiceImpl.hpp"
 #include "LedServiceImpl.hpp"
 #include "SensorServiceImpl.hpp"
@@ -13,7 +13,7 @@
 #include "BleServiceImpl.hpp"
 #include "OtaServiceImpl.hpp"
 #include "IoServiceImpl.hpp"
-#include "LcdViewModel.hpp"
+#include "MainViewModel.hpp"
 #include "MainView.hpp"
 #include "IDisplay.hpp"
 #include "Hc08Ble.hpp"
@@ -26,7 +26,7 @@ namespace arcana {
 // Global thread-safe display for ad-hoc status callers
 namespace display { IDisplay* g_display = nullptr; }
 
-Controller::Controller()
+AppContainer::AppContainer()
     : mTimer(0)
     , mLed(0)
     , mSensor(0)
@@ -43,21 +43,21 @@ Controller::Controller()
 {
 }
 
-Controller::~Controller() {}
+AppContainer::~AppContainer() {}
 
-Controller& Controller::getInstance() {
-    static Controller sInstance;
+AppContainer& AppContainer::getInstance() {
+    static AppContainer sInstance;
     return sInstance;
 }
 
-// Static MVVM instances (owned by Controller scope)
-static lcd::LcdViewModel sViewModel;
+// Static MVVM instances (owned by AppContainer scope)
+static lcd::MainViewModel sViewModel;
 static lcd::MainView     sMainView;
 
-// ECG callback: Service → Controller → View (no direct Service→View coupling)
+// ECG callback: Service → AppContainer → View (no direct Service→View coupling)
 static void ecgCallback(uint8_t sample) { sMainView.pushEcgSample(sample); }
 
-void Controller::run() {
+void AppContainer::run() {
     wireServices();
     wireViews();
     initHAL();
@@ -65,7 +65,7 @@ void Controller::run() {
     startServices();
 }
 
-void Controller::wireServices() {
+void AppContainer::wireServices() {
     mTimer     = &timer::TimerServiceImpl::getInstance();
     mLed       = &led::LedServiceImpl::getInstance();
     mSensor    = &sensor::SensorServiceImpl::getInstance();
@@ -80,7 +80,7 @@ void Controller::wireServices() {
     mBle       = &ble::BleServiceImpl::getInstance();
     mOta       = &OtaServiceImpl::getInstance();
 
-    // Wire ECG callback: AtsStorage → Controller → MainView (decoupled)
+    // Wire ECG callback: AtsStorage → AppContainer → MainView (decoupled)
     static_cast<atsstorage::AtsStorageServiceImpl*>(mSdStorage)->setEcgCallback(ecgCallback);
 
     // Wire OTA <- ESP8266
@@ -106,7 +106,7 @@ void Controller::wireServices() {
 #endif
 }
 
-void Controller::wireViews() {
+void AppContainer::wireViews() {
     // ViewModel ← Service outputs (ViewModel subscribes to data sources)
     sViewModel.input.SensorData   = mSensor->output.DataEvents;
 #ifdef ARCANA_LIGHT_SENSOR
@@ -122,7 +122,7 @@ void Controller::wireViews() {
     sMainView.input.lcd       = &mLcd->getDisplay();
 }
 
-void Controller::initHAL() {
+void AppContainer::initHAL() {
     mTimer->initHAL();
     mLed->initHAL();
     mSensor->initHAL();
@@ -150,7 +150,7 @@ void Controller::initHAL() {
 #endif
 }
 
-void Controller::initServices() {
+void AppContainer::initServices() {
     mTimer->init();
     mLed->init();
     mSensor->init();
@@ -167,7 +167,7 @@ void Controller::initServices() {
     sMainView.init();
 }
 
-void Controller::startServices() {
+void AppContainer::startServices() {
 #ifdef ESP_FLASH_MODE
     LOG_I(ats::ErrorSource::System, evt::SYS_ESP_FLASH_MODE);
     for (;;) vTaskDelay(pdMS_TO_TICKS(1000));

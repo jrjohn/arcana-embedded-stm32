@@ -1,6 +1,6 @@
 #include "App.hpp"
 #include "Observable.hpp"
-#include "Controller.hpp"
+#include "AppContainer.hpp"
 #include "cmsis_os2.h"
 
 using namespace arcana;
@@ -14,7 +14,7 @@ static void onDispatcherError(ObservableError error, const char* name, void* ctx
 extern "C" void App_Init(void) {
     ObservableDispatcher::setErrorCallback(onDispatcherError);
     ObservableDispatcher::start();
-    Controller::getInstance().run();
+    AppContainer::getInstance().run();
 }
 
 extern "C" void App_Run(void) {

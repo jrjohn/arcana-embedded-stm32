@@ -4,8 +4,8 @@
 
 #include "IDisplay.hpp"
 #include "TouchTypes.hpp"
-#include "LcdView.hpp"
-#include "LcdViewModel.hpp"
+#include "BaseLcdView.hpp"
+#include "MainViewModel.hpp"
 
 namespace arcana {
 namespace lcd {
@@ -21,7 +21,7 @@ public:
     void init(display::IDisplay* display) { mDisplay = display; }
 
     /** Add a root-level view (MainView, EcgView, SettingsView) */
-    void addRootView(LcdView* view) {
+    void addRootView(BaseLcdView* view) {
         if (mRootCount < MAX_ROOT_VIEWS) mRootViews[mRootCount++] = view;
     }
 
@@ -45,7 +45,7 @@ public:
 
     // ── Push/Pop navigation (sub-views) ──
 
-    void push(LcdView* view) {
+    void push(BaseLcdView* view) {
         if (!mDisplay || mStackDepth >= MAX_STACK_DEPTH) return;
         currentView()->onExit(*mDisplay);
         mStack[mStackDepth++] = view;
@@ -99,7 +99,7 @@ public:
 
     // ── Accessors ──
 
-    LcdView* currentView() const {
+    BaseLcdView* currentView() const {
         return (mStackDepth > 0) ? mStack[mStackDepth - 1] : nullptr;
     }
     uint8_t depth() const { return mStackDepth; }
@@ -109,11 +109,11 @@ public:
 private:
     display::IDisplay* mDisplay;
 
-    LcdView* mRootViews[MAX_ROOT_VIEWS];
+    BaseLcdView* mRootViews[MAX_ROOT_VIEWS];
     uint8_t mRootCount;
     uint8_t mRootIndex;
 
-    LcdView* mStack[MAX_STACK_DEPTH];
+    BaseLcdView* mStack[MAX_STACK_DEPTH];
     uint8_t mStackDepth;
 };
 
