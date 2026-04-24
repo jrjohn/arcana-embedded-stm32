@@ -49,10 +49,11 @@ target_include_directories(arcana-f051.elf PRIVATE
     ${F051_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/include
     ${F051_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2
     ${F051_ROOT}/Middlewares/Third_Party/FreeRTOS/Source/portable/GCC/ARM_CM0
-    ${F051_ROOT}/Services/controller
+    ${F051_ROOT}/Services
     ${F051_ROOT}/Services/service
     ${F051_ROOT}/Services/command
-    ${F051_ROOT}/Services/command/impl
+    ${F051_ROOT}/Services/command/codec
+    ${F051_ROOT}/Services/command/commands
     Shared/Inc
     Shared/Inc/core/event
     Shared/Inc/core/log
