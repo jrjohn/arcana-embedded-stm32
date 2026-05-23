@@ -58,14 +58,13 @@ pipeline {
             steps {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                     script {
-                        def prArgs = env.CHANGE_ID ? " -Dsonar.pullrequest.key=${env.CHANGE_ID} -Dsonar.pullrequest.branch=${env.BRANCH_NAME} -Dsonar.pullrequest.base=${env.CHANGE_TARGET}" : ''
                         sh """docker run --rm --network devops_default \\
                             -v \$(pwd):/usr/src \\
                             sonarsource/sonar-scanner-cli:11 \\
                             sonar-scanner \\
                             -Dsonar.host.url=http://sonarqube:9000/sonarqube \\
                             -Dsonar.token=squ_5ce2319b9d8ca2b1db4e0f5bdf36b34249561f18 \\
-                            -Dsonar.projectKey=${PROJECT_NAME}${prArgs}"""
+                            -Dsonar.projectKey=${PROJECT_NAME}"""
                     }
                 }
             }
