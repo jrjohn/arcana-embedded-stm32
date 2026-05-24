@@ -46,6 +46,9 @@ pipeline {
         stage("Unit Tests + Coverage") {
             steps {
                 sh "docker build -f Dockerfile.test -t stm32-test:ci . 2>&1"
+                // Defensive cleanup — prior aborted build may have left this container,
+                // and `docker create --name` fails on collision (#2 hit this 2026-05-23).
+                sh "docker rm -f stm32-cov 2>/dev/null || true"
                 sh "docker create --name stm32-cov stm32-test:ci"
                 sh "docker cp stm32-cov:/workspace/coverage.info . 2>/dev/null || echo 'No coverage.info'"
                 sh "docker cp stm32-cov:/workspace/coverage.xml  . 2>/dev/null || echo 'No coverage.xml'"
@@ -72,6 +75,7 @@ pipeline {
 
         stage("Extract Artifacts") {
             steps {
+                sh "docker rm -f ${APP_NAME}-out 2>/dev/null || true"
                 sh "docker create --name ${APP_NAME}-out stm32-app-build:${VERSION} 2>/dev/null || true"
                 sh "rm -rf /tmp/${APP_NAME}-firmware && docker cp ${APP_NAME}-out:/artifacts/ /tmp/${APP_NAME}-firmware/ 2>/dev/null || echo No artifacts dir"
                 sh "docker rm ${APP_NAME}-out 2>/dev/null || true"
