@@ -115,12 +115,16 @@ pipeline {
                 // host daemon sees at a different path), so arch-qube scanned nothing. Instead
                 // create the container with anonymous volumes and stream the source in via
                 // `tar | docker cp`, then copy the report out. `--ci` exits non-zero if < 90.
+                // --profiles points at the repo-local override (tools/arch-qube/stm32.yaml):
+                // the arch-qube-bundled stm32 profile's source_roots ("Targets/<mcu>/Services")
+                // never existed here, causing a whole-repo fallback scan that spuriously flagged
+                // vendored mbedtls, host Tests, and the DI container. See that file for details.
                 sh '''
                     docker rm -f arcana-arch-qube-stm32 2>/dev/null || true
                     docker create --name arcana-arch-qube-stm32 --network devops_default \
                         -v /src -v /output \
                         arcana.boo/arcana/arch-qube:latest \
-                        scan /src --framework stm32 --no-ai --ci \
+                        scan /src --framework stm32 --profiles /src/tools/arch-qube --no-ai --ci \
                         --format json,markdown -o /output --threshold 90 || exit 1
                     tar --exclude=./.git --exclude=./arch-qube-reports -C . -cf - . \
                         | docker cp - arcana-arch-qube-stm32:/src || exit 1
