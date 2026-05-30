@@ -59,16 +59,34 @@ pipeline {
 
         stage("SonarQube Analysis") {
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    script {
-                        sh """docker run --rm --network devops_default \\
-                            -v \$(pwd):/usr/src \\
-                            sonarsource/sonar-scanner-cli:11 \\
-                            sonar-scanner \\
-                            -Dsonar.host.url=http://sonarqube:9000/sonarqube \\
-                            -Dsonar.token=squ_5ce2319b9d8ca2b1db4e0f5bdf36b34249561f18 \\
-                            -Dsonar.projectKey=${PROJECT_NAME}"""
-                    }
+                withSonarQubeEnv('SonarQube') {
+                    // Native scanner reads sonar-project.properties (sources, cxx config,
+                    // coverage.xml). withSonarQubeEnv supplies SONAR_HOST_URL + the auth
+                    // token, so no host.url/token is hardcoded here.
+                    sh "sonar-scanner -Dsonar.projectKey=stm32-app -Dsonar.scm.disabled=true"
+                    // Community Build has no webhook waitForQualityGate(); poll the CE task
+                    // named in report-task.txt, then read the quality-gate status by analysisId.
+                    sh '''
+                        set -e
+                        TOKEN="${SONAR_AUTH_TOKEN:-$SONAR_TOKEN}"
+                        RT=.scannerwork/report-task.txt
+                        [ -f "$RT" ] || { echo "report-task.txt missing"; exit 1; }
+                        CE_TASK_ID=$(grep '^ceTaskId=' "$RT" | cut -d= -f2-)
+                        ANALYSIS_ID=""
+                        for i in $(seq 1 60); do
+                            RESP=$(curl -s -u "$TOKEN:" "$SONAR_HOST_URL/api/ce/task?id=$CE_TASK_ID")
+                            ST=$(echo "$RESP" | grep -o '"status":"[A-Z_]*"' | head -1 | cut -d'"' -f4)
+                            echo "  CE status: ${ST:-?} (try $i)"
+                            if [ "$ST" = "SUCCESS" ]; then ANALYSIS_ID=$(echo "$RESP" | grep -o '"analysisId":"[^"]*"' | head -1 | cut -d'"' -f4); break;
+                            elif [ "$ST" = "FAILED" ] || [ "$ST" = "CANCELED" ]; then echo "CE $ST"; exit 1; fi
+                            sleep 5
+                        done
+                        [ -n "$ANALYSIS_ID" ] || { echo "CE timeout"; exit 1; }
+                        GATE=$(curl -s -u "$TOKEN:" "$SONAR_HOST_URL/api/qualitygates/project_status?analysisId=$ANALYSIS_ID")
+                        GST=$(echo "$GATE" | grep -o '"status":"[A-Z]*"' | head -1 | cut -d'"' -f4)
+                        echo "Quality gate: ${GST:-UNKNOWN}"
+                        if [ "$GST" != "OK" ]; then echo "$GATE"; exit 1; fi
+                    '''
                 }
             }
         }
@@ -92,19 +110,27 @@ pipeline {
 
         stage("Architecture Qube") {
             steps {
-                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                    sh """
-                        mkdir -p arch-qube-reports
-                        docker run --rm \\
-                            --network devops_default \\
-                            -v \$(pwd):/project \\
-                            -v \$(pwd)/arch-qube-reports:/output \\
-                            arcana.boo/arcana/arch-qube:latest scan /project \\
-                            --framework stm32 --no-ai \\
-                            --ci --format json,markdown \\
-                            -o /output --threshold 90 || true
-                    """
-                }
+                // Blocking architecture gate at --threshold 90. The old `-v $(pwd):/project`
+                // bind mount is empty under DinD (the Jenkins workspace is a named volume the
+                // host daemon sees at a different path), so arch-qube scanned nothing. Instead
+                // create the container with anonymous volumes and stream the source in via
+                // `tar | docker cp`, then copy the report out. `--ci` exits non-zero if < 90.
+                sh '''
+                    docker rm -f arcana-arch-qube-stm32 2>/dev/null || true
+                    docker create --name arcana-arch-qube-stm32 --network devops_default \
+                        -v /src -v /output \
+                        arcana.boo/arcana/arch-qube:latest \
+                        scan /src --framework stm32 --no-ai --ci \
+                        --format json,markdown -o /output --threshold 90 || exit 1
+                    tar --exclude=./.git --exclude=./arch-qube-reports -C . -cf - . \
+                        | docker cp - arcana-arch-qube-stm32:/src || exit 1
+                    docker start -a arcana-arch-qube-stm32
+                    AQ_RC=$?
+                    mkdir -p arch-qube-reports
+                    docker cp arcana-arch-qube-stm32:/output/. arch-qube-reports/ 2>/dev/null || true
+                    docker rm -f arcana-arch-qube-stm32 2>/dev/null || true
+                    exit $AQ_RC
+                '''
             }
         }
 
