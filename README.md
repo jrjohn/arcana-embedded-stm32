@@ -8,6 +8,15 @@
   <img src="https://img.shields.io/badge/Tests-15_suites-blue?style=for-the-badge&logo=googletest" alt="Tests">
 </p>
 
+<!-- agent-managed badges START -->
+[![Quality Gate](https://arcana.boo/sonarqube/api/project_badges/quality_gate?project=stm32-app)](https://arcana.boo/sonarqube/dashboard?id=stm32-app)
+[![Build](https://arcana.boo/jenkins/buildStatus/icon?job=stm32-app-pipeline-mb%2Fmain)](https://arcana.boo/jenkins/job/stm32-app-pipeline-mb/job/main/)
+**Rank**: Quality Gate `OK` · Build `SUCCESS` · Sonar coverage `80.1%`
+<!-- agent-managed badges END -->
+<!-- arch-rank START -->
+**Architecture**: arch-qube `100/100` · grade `A+` · `PASS`
+<!-- arch-rank END -->
+
 <h1 align="center">Arcana Embedded STM32</h1>
 
 <p align="center">
