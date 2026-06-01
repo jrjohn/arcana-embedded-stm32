@@ -10,6 +10,6 @@
   },
   "dependencies": {
     "@abandonware/noble": "^1.9.2-26",
-    "serialport": "^12.0.0"
+    "serialport": "^13.0.0"
   }
 }
