@@ -1,4 +1,4 @@
-FROM gcc:12
+FROM gcc:16
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake ninja-build git lcov ca-certificates python3 python3-pip \
@@ -20,7 +20,7 @@ RUN cd Tests/build && ctest --output-on-failure || true
 RUN lcov --capture \
       --directory Tests/build \
       --output-file /workspace/coverage.info \
-      --rc lcov_branch_coverage=0 && \
+      --rc lcov_branch_coverage=0 --ignore-errors gcov,source,inconsistent && \
     lcov --remove /workspace/coverage.info \
       '*googletest*' '/usr/*' '*/Tests/mocks/*' '*/Tests/test_*' \
       --output-file /workspace/coverage.info && \
