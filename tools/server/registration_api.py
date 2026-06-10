@@ -106,11 +106,23 @@ def chacha20_encrypt(key_32: bytes, nonce_12: bytes, plaintext: bytes) -> bytes:
         result.extend(a ^ b for a, b in zip(chunk, block))
     return bytes(result)
 
+def aes256ctr_encrypt(key_32: bytes, nonce_12: bytes, plaintext: bytes) -> bytes:
+    """AES-256-CTR encrypt/decrypt (symmetric). IV = nonce[12] || counter:4-BE(0),
+    matching the device's Esp32AesCtrCipher (nonce + 4 zero counter bytes)."""
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    iv = nonce_12 + b'\x00\x00\x00\x00'
+    return Cipher(algorithms.AES(key_32), modes.CTR(iv)).encryptor().update(plaintext)
+
+# cipher ids match the .ats header cipherType: 1=ChaCha20 (STM32), 2=AES-256-CTR (ESP32)
 def frame_encode_encrypted(payload: bytes, key_32: bytes,
-                            flags=FLAG_FIN, stream_id=0) -> bytes:
-    """FrameCodec frame with ChaCha20 encrypted payload: [nonce:12][ciphertext:N]"""
+                            flags=FLAG_FIN, stream_id=0, cipher=1) -> bytes:
+    """FrameCodec frame, payload = [nonce:12][ciphertext:N]. Cipher chosen by the
+    device's request (ESP32→2 AES, STM32→1 ChaCha20); wire format is identical."""
     nonce = os.urandom(12)
-    ciphertext = chacha20_encrypt(key_32, nonce, payload)
+    if cipher == 2:
+        ciphertext = aes256ctr_encrypt(key_32, nonce, payload)
+    else:
+        ciphertext = chacha20_encrypt(key_32, nonce, payload)
     return frame_encode(nonce + ciphertext, flags, stream_id)
 
 # ---------------------------------------------------------------------------
@@ -258,7 +270,9 @@ def arcana_protocol(req_fields, resp_fields, encrypt_response=False, sid=SID_REG
             # --- Encrypt + frame ---
             if encrypt_response and req.get('_public_key_raw'):
                 device_key = req['_public_key_raw'][:32]
-                body = frame_encode_encrypted(resp_pb, device_key, stream_id=sid)
+                # cipher from the request: 2=AES-256-CTR (ESP32), default 1=ChaCha20 (STM32)
+                body = frame_encode_encrypted(resp_pb, device_key, stream_id=sid,
+                                              cipher=req.get('cipher', 1) or 1)
             else:
                 body = frame_encode(resp_pb, stream_id=sid)
 
@@ -447,7 +461,7 @@ def health():
 @app.route("/api/register", methods=["POST"])
 @arcana_protocol(
     req_fields={1: ('device_id', 'str'), 2: ('public_key', 'bytes'), 3: ('firmware_ver', 'int'),
-                4: ('ecdh_pub', 'bytes')},
+                4: ('ecdh_pub', 'bytes'), 5: ('cipher', 'int')},
     resp_fields={
         1: ('success', 'bool'), 2: ('mqtt_user', 'str'), 3: ('mqtt_pass', 'str'),
         4: ('mqtt_broker', 'str'), 5: ('mqtt_port', 'int'), 6: ('upload_token', 'str'),
