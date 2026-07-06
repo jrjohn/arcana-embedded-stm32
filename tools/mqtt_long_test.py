@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Long-running MQTT monitor — verify sustained sensor stream + encrypted commands."""
 
-import ssl, json, time, sys
+import os, ssl, json, time, sys
 import paho.mqtt.client as mqtt
+
+BROKER = os.environ.get("MQTT_BROKER", "mqtt.example.com")
+PORT = int(os.environ.get("MQTT_PORT", "443"))
 
 count = 0
 start_time = time.time()
@@ -11,7 +14,7 @@ last_seq = -1
 
 def on_connect(c, ud, fl, rc, p=None):
     c.subscribe("/arcana/#")
-    print("Connected to iot.somnics.cloud:443 (WSS)")
+    print(f"Connected to {BROKER}:{PORT} (WSS)")
     print(f"{'Time':>10} {'Topic':<18} {'Info'}")
     print("-" * 65)
 
@@ -54,7 +57,7 @@ def on_disconnect(c, ud, fl, rc, p=None):
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,
                      client_id="arcana_longtest",
                      transport="websockets")
-client.username_pw_set("arcana", "arcana")
+client.username_pw_set(os.environ.get("MQTT_USER", "user"), os.environ.get("MQTT_PASS", "pass"))
 client.tls_set(cert_reqs=ssl.CERT_REQUIRED)
 client.ws_set_options(path="/mqtt")
 client.on_connect = on_connect
@@ -63,7 +66,7 @@ client.on_disconnect = on_disconnect
 client.reconnect_delay_set(min_delay=1, max_delay=30)
 
 print("Arcana MQTT Long-Run Test (Ctrl+C to stop)")
-client.connect("iot.somnics.cloud", 443, 60)
+client.connect(BROKER, PORT, 60)
 start_time = time.time()
 
 try:

@@ -384,8 +384,8 @@ if not PSK_HEX:
                 PSK_HEX = line.strip().split("=", 1)[1].strip()
 if not PSK_HEX:
     sys.exit("ERROR: Set ARCANA_PSK env var or create tools/.env with ARCANA_PSK=<hex>")
-BROKER = "iot.somnics.cloud"
-PORT = 443
+BROKER = os.environ.get("MQTT_BROKER", "mqtt.example.com")
+PORT = int(os.environ.get("MQTT_PORT", "443"))
 TOPIC_CMD = "/arcana/cmd"
 TOPIC_RSP = "/arcana/rsp"
 
@@ -530,7 +530,7 @@ def main():
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,
                          client_id="arcana_crypto_test",
                          transport="websockets")
-    client.username_pw_set("arcana", "arcana")
+    client.username_pw_set(os.environ.get("MQTT_USER", "user"), os.environ.get("MQTT_PASS", "pass"))
     client.tls_set(cert_reqs=ssl.CERT_REQUIRED)
     client.ws_set_options(path="/mqtt")
     client.on_connect = on_connect
