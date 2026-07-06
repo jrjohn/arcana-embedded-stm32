@@ -4,8 +4,8 @@
   <img src="https://img.shields.io/badge/RTOS-FreeRTOS-00A86B?style=for-the-badge" alt="FreeRTOS">
   <img src="https://img.shields.io/badge/Language-C++20-00599C?style=for-the-badge&logo=cplusplus" alt="C++">
   <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License">
-  <img src="https://img.shields.io/badge/Coverage-100%25-brightgreen?style=for-the-badge" alt="Coverage">
-  <img src="https://img.shields.io/badge/Tests-15_suites-blue?style=for-the-badge&logo=googletest" alt="Tests">
+  <img src="https://img.shields.io/badge/Coverage-80.0%25-brightgreen?style=for-the-badge" alt="Coverage">
+  <img src="https://img.shields.io/badge/Tests-42_passing-blue?style=for-the-badge&logo=googletest" alt="Tests">
 </p>
 
 <h1 align="center">Arcana Embedded STM32</h1>
@@ -401,7 +401,7 @@ Device                                    Server
 
 | Metric | Value |
 |--------|-------|
-| **Coverage** | 100.0% |
+| **Coverage** | 80.0% |
 | **Bugs** | 0 |
 | **Vulnerabilities** | 0 |
 | **Code Smells** | 0 |
@@ -410,7 +410,7 @@ Device                                    Server
 
 ### Test Suite
 
-15 test executables, Google Test v1.14.0, all running on host (x86/ARM64):
+42 test executables, Google Test v1.14.0, all running on host (x86/ARM64):
 
 | Test | Covers |
 |------|--------|
@@ -437,7 +437,7 @@ git push → Jenkins (Docker) → Build (F051+F103) → GTest → lcov → Sonar
 ```
 
 - **Build**: Docker multi-target ARM cross-compile (gcc-arm-none-eabi)
-- **Test**: GTest on gcc:12, coverage via `--coverage` + lcov
+- **Test**: GTest on gcc:16, coverage via `--coverage` + lcov
 - **Analysis**: sonar-scanner-cli → SonarQube (Cobertura XML)
 - **Coverage strategy**: Mock FreeRTOS stubs, controllable queue behavior, mock-captured DispatchItem for RTOS callback lambda coverage
 
@@ -637,7 +637,7 @@ penalty was over-weighted). Other dimensions untouched by the rename.
 - [ ] ECG Observable on AtsStorageService.output (full pub/sub decoupling)
 - [ ] SettingsView / ChartView (multi-view navigation with ViewManager)
 - [ ] XPT2046 touch driver + GestureDetector
-- [x] Host-side unit tests (15 suites, 100% coverage, Jenkins CI/CD + SonarQube)
+- [x] Host-side unit tests (42 suites, 80.0% coverage, Jenkins CI/CD + SonarQube)
 - [ ] BLE baud upgrade (9600 → 115200 for ECG streaming)
 - [ ] Multi-key COMPANY_PRIV (per-customer isolation)
 - [ ] comm_key auto-expiry + periodic re-register
