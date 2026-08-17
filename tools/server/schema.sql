@@ -54,6 +54,6 @@ CREATE TABLE IF NOT EXISTS `device_token` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Default admin user for MQTT monitor/test tools
--- Password: arcana (bcrypt hash)
+-- Replace the placeholder bcrypt hash below with your own before use; do not ship this seed to production
 INSERT IGNORE INTO `user` (username, password_hash, is_admin)
 VALUES ('arcana', '$2b$10$YourBcryptHashHere', 0);
