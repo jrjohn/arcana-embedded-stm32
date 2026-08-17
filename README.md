@@ -1,4 +1,5 @@
 <p align="center">
+  <img src="https://img.shields.io/badge/Architecture%20Rating-⭐⭐⭐⭐%208.3%2F10-gold?style=for-the-badge" alt="Architecture Rating">
   <img src="https://img.shields.io/badge/Architecture-MVVM_Embedded-gold?style=for-the-badge" alt="Architecture">
   <img src="https://img.shields.io/badge/MCU-STM32F051_/_F103-03234B?style=for-the-badge&logo=stmicroelectronics" alt="STM32">
   <img src="https://img.shields.io/badge/RTOS-FreeRTOS-00A86B?style=for-the-badge" alt="FreeRTOS">
