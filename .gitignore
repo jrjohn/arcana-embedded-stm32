@@ -31,3 +31,6 @@ tools/esp8266_fw/
 tools/.env
 certs/
 uploads/
+
+# CI scanner scratch output (do not commit)
+.scannerwork/

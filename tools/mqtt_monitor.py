@@ -95,18 +95,18 @@ def main():
 
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,
                          client_id='arcana_monitor', transport='websockets')
-    client.username_pw_set('arcana', 'arcana')
+    client.username_pw_set(os.environ.get('MQTT_USER', 'user'), os.environ.get('MQTT_PASS', 'pass'))
     client.tls_set(cert_reqs=ssl.CERT_REQUIRED)
     client.ws_set_options(path='/mqtt')
     client.on_connect = on_connect
     client.on_message = on_message
 
     print('Arcana MQTT Monitor')
-    print(f'Broker: iot.somnics.cloud:443 (WSS)')
+    print(f'Broker: {BROKER}:{PORT} (WSS)')
     print(f'Encryption: AES-256-CCM | Serialization: protobuf')
     print('─' * 60)
 
-    client.connect('iot.somnics.cloud', 443, 60)
+    client.connect(BROKER, PORT, 60)
     client.loop_start()
 
     def send_cmd(name):

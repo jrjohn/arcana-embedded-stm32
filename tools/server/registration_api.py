@@ -280,7 +280,7 @@ DB_CONFIG = {
     "host": os.environ.get("MYSQL_HOST", "127.0.0.1"),
     "port": int(os.environ.get("MYSQL_PORT", "3306")),
     "user": os.environ.get("MYSQL_USER", "root"),
-    "password": os.environ.get("MYSQL_PASSWORD", "5YzYziFT3g"),
+    "password": os.environ.get("MYSQL_PASSWORD", "changeme"),
     "database": os.environ.get("MYSQL_DB", "mqtt"),
     "charset": "utf8mb4",
 }
