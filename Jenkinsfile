@@ -48,11 +48,17 @@ pipeline {
                 sh "docker build -f Dockerfile.test -t stm32-test:ci . 2>&1"
                 // Defensive cleanup — prior aborted build may have left this container,
                 // and `docker create --name` fails on collision (#2 hit this 2026-05-23).
-                sh "docker rm -f stm32-cov 2>/dev/null || true"
-                sh "docker create --name stm32-cov stm32-test:ci"
-                sh "docker cp stm32-cov:/workspace/coverage.info . 2>/dev/null || echo 'No coverage.info'"
-                sh "docker cp stm32-cov:/workspace/coverage.xml  . 2>/dev/null || echo 'No coverage.xml'"
-                sh "docker rm stm32-cov || true"
+                // One shell block so the container name can carry the branch: a fixed "stm32-cov"
+                // collided whenever two branches built at once (one's `docker rm -f` removed the
+                // other's container). Same fail-fast behaviour as the former separate sh steps.
+                sh '''
+                    COV_CTR="stm32-cov-$(printf '%s' "${BRANCH_NAME}-${BUILD_NUMBER}" | tr -c 'A-Za-z0-9_.-' '-')"
+                    docker rm -f "$COV_CTR" 2>/dev/null || true
+                    docker create --name "$COV_CTR" stm32-test:ci
+                    docker cp "$COV_CTR":/workspace/coverage.info . 2>/dev/null || echo 'No coverage.info'
+                    docker cp "$COV_CTR":/workspace/coverage.xml  . 2>/dev/null || echo 'No coverage.xml'
+                    docker rm "$COV_CTR" || true
+                '''
                 sh "ls -lh coverage.info 2>/dev/null || true"
             }
         }
@@ -93,11 +99,18 @@ pipeline {
 
         stage("Extract Artifacts") {
             steps {
-                sh "docker rm -f ${APP_NAME}-out 2>/dev/null || true"
-                sh "docker create --name ${APP_NAME}-out stm32-app-build:${VERSION} 2>/dev/null || true"
-                sh "rm -rf /tmp/${APP_NAME}-firmware && docker cp ${APP_NAME}-out:/artifacts/ /tmp/${APP_NAME}-firmware/ 2>/dev/null || echo No artifacts dir"
-                sh "docker rm ${APP_NAME}-out 2>/dev/null || true"
-                sh "ls -la /tmp/${APP_NAME}-firmware/ 2>/dev/null || echo No firmware output"
+                // Container and scratch dir both carry the branch; the fixed "<app>-out" and
+                // /tmp/<app>-firmware were shared by concurrent builds of different branches.
+                sh '''
+                    OUT_CTR="${APP_NAME}-out-$(printf '%s' "${BRANCH_NAME}-${BUILD_NUMBER}" | tr -c 'A-Za-z0-9_.-' '-')"
+                    FW_DIR="/tmp/${OUT_CTR}-firmware"
+                    docker rm -f "$OUT_CTR" 2>/dev/null || true
+                    docker create --name "$OUT_CTR" "stm32-app-build:${VERSION}" 2>/dev/null || true
+                    rm -rf "$FW_DIR" && docker cp "$OUT_CTR":/artifacts/ "$FW_DIR/" 2>/dev/null || echo No artifacts dir
+                    docker rm "$OUT_CTR" 2>/dev/null || true
+                    ls -la "$FW_DIR/" 2>/dev/null || echo No firmware output
+                    rm -rf "$FW_DIR"
+                '''
             }
         }
 
@@ -116,19 +129,23 @@ pipeline {
                 // create the container with anonymous volumes and stream the source in via
                 // `tar | docker cp`, then copy the report out. `--ci` exits non-zero if < 90.
                 sh '''
-                    docker rm -f arcana-arch-qube-stm32 2>/dev/null || true
-                    docker create --name arcana-arch-qube-stm32 --network devops_default \
+                    # Branch in the name: BUILD_NUMBER restarts at 1 on every branch, so two branches building
+                    # at once used the same name and one's `docker rm -f` deleted the other's container
+                    # (arcana-ios PR-14/PR-15, 2026-09-30: "destination ...:/src must be a directory").
+                    AQ="arcana-arch-qube-stm32-$(printf '%s' "${BRANCH_NAME}-${BUILD_NUMBER}" | tr -c 'A-Za-z0-9_.-' '-')"
+                    docker rm -f "$AQ" 2>/dev/null || true
+                    docker create --name "$AQ" --network devops_default \
                         -v /src -v /output \
                         arcana.boo/arcana/arch-qube:latest \
                         scan /src --framework stm32 --no-ai --ci \
                         --format json,markdown -o /output --threshold 90 || exit 1
                     tar --exclude=./.git --exclude=./arch-qube-reports -C . -cf - . \
-                        | docker cp - arcana-arch-qube-stm32:/src || exit 1
-                    docker start -a arcana-arch-qube-stm32
+                        | docker cp - "$AQ":/src || exit 1
+                    docker start -a "$AQ"
                     AQ_RC=$?
                     mkdir -p arch-qube-reports
-                    docker cp arcana-arch-qube-stm32:/output/. arch-qube-reports/ 2>/dev/null || true
-                    docker rm -f arcana-arch-qube-stm32 2>/dev/null || true
+                    docker cp "$AQ":/output/. arch-qube-reports/ 2>/dev/null || true
+                    docker rm -f "$AQ" 2>/dev/null || true
                     exit $AQ_RC
                 '''
             }
