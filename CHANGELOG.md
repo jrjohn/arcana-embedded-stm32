@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2](https://github.com/jrjohn/arcana-embedded-stm32/compare/v1.0.1...v1.0.2) (2026-10-13)
+
+
+### Bug Fixes
+
+* **deps:** update python docker tag to v3.15 ([#14](https://github.com/jrjohn/arcana-embedded-stm32/issues/14)) ([ea29941](https://github.com/jrjohn/arcana-embedded-stm32/commit/ea29941d450652f7e366ce8771be1bf88f7be7ba))
+
 ## [1.0.1](https://github.com/jrjohn/arcana-embedded-stm32/compare/v1.0.0...v1.0.1) (2026-07-06)
 
 
