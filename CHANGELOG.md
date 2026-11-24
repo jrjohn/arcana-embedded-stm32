@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/jrjohn/arcana-embedded-stm32/compare/v1.0.3...v1.1.0) (2026-11-24)
+
+
+### Features
+
+* **arch:** AGENTS.md + scaffolding + pinned arch-qube + RAM/flash budget + test exit-code gate ([#18](https://github.com/jrjohn/arcana-embedded-stm32/issues/18)) ([5dd8bda](https://github.com/jrjohn/arcana-embedded-stm32/commit/5dd8bda4c41ce3153103aead89e2e234ba609c4e))
+
 ## [1.0.3](https://github.com/jrjohn/arcana-embedded-stm32/compare/v1.0.2...v1.0.3) (2026-11-24)
 
 
