@@ -92,6 +92,14 @@ uint16_t      AtsStorageServiceImpl::queryByDate(uint32_t /*d*/,
     return 0;
 }
 
+/* Remaining AtsStorageService interface methods (vtable completeness —
+ * not exercised by the registration suite). */
+uint8_t AtsStorageServiceImpl::listPendingUploads(PendingFile* /*o*/, uint8_t /*m*/) {
+    return 0;
+}
+void AtsStorageServiceImpl::markUploaded(uint32_t /*d*/) {}
+bool AtsStorageServiceImpl::saveTzConfig(int16_t /*o*/, uint8_t /*a*/) { return false; }
+
 /* ── The two methods RegistrationServiceImpl actually calls ──────────────── */
 bool AtsStorageServiceImpl::loadCredentials(uint8_t* out, uint16_t bufSize,
                                              uint16_t& outLen) {

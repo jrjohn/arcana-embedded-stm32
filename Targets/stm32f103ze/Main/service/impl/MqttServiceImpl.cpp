@@ -4,10 +4,9 @@
 #include "FrameCodec.hpp"
 #include "ChaCha20.hpp"
 #include "DeviceKey.hpp"
-#include "WifiServiceImpl.hpp"
-#include "AtsStorageServiceImpl.hpp"
-#include "HttpUploadServiceImpl.hpp"
-#include "RegistrationServiceImpl.hpp"
+#include "WifiService.hpp"
+#include "AtsStorageService.hpp"
+#include "RegistrationService.hpp"
 // No IoServiceImpl include — decoupled via Esp8266 resource lock
 #include "Credentials.hpp"
 #include "Esp8266.hpp"
@@ -110,7 +109,7 @@ void MqttServiceImpl::onLightData(LightDataModel* model, void* ctx) {
 bool MqttServiceImpl::sslConnect() {
     Esp8266& esp = input.Wifi->getEsp();
 
-    auto& regSvc = reg::RegistrationServiceImpl::getInstance();
+    auto& regSvc = *input.Registration;
     const char* broker = MQTT_BROKER;
     uint16_t port = MQTT_PORT;
     if (regSvc.isRegistered()) {
@@ -165,7 +164,7 @@ bool MqttServiceImpl::waitMqttPacket(uint8_t* buf, uint16_t& len,
 }
 
 bool MqttServiceImpl::mqttHandshake() {
-    auto& regSvc = reg::RegistrationServiceImpl::getInstance();
+    auto& regSvc = *input.Registration;
     const char* user = "arcana";
     const char* pass = "arcana";
     if (regSvc.isRegistered()) {
@@ -293,13 +292,11 @@ void MqttServiceImpl::runTask() {
         // --- Phase 2.5: Timezone auto-detect ---
         {
             auto& clock = SystemClock::getInstance();
-            auto* wifiImpl = static_cast<wifi::WifiServiceImpl*>(wifi);
-            auto& tzStorage = static_cast<atsstorage::AtsStorageServiceImpl&>(
-                atsstorage::AtsStorageServiceImpl::getInstance());
+            auto& tzStorage = *input.Storage;
 
             int16_t currentTz = clock.tzOffsetMin();
             int16_t detectedTz = 0;
-            if (wifiImpl->detectTimezone(detectedTz)) {
+            if (wifi->detectTimezone(detectedTz)) {
                 if (currentTz != detectedTz) {
                     clock.setTzOffset(detectedTz);
                     tzStorage.saveTzConfig(detectedTz, 1);
@@ -311,7 +308,7 @@ void MqttServiceImpl::runTask() {
 
         // --- Phase 2.7: Device registration (TOFU) ---
         {
-            auto& regSvc = reg::RegistrationServiceImpl::getInstance();
+            auto& regSvc = *input.Registration;
             if (!regSvc.isRegistered()) {
                 if (regSvc.doRegistration()) {
                     LOG_I(ats::ErrorSource::System, 0x0080);  // registration OK
@@ -330,7 +327,7 @@ void MqttServiceImpl::runTask() {
 
         // ESP8266 lock: upload requested by IoServiceImpl → run upload here
         if (esp.isAccessRequested()) {
-            HttpUploadServiceImpl::uploadPendingFiles(esp);
+            input.UploadPendingFiles(esp);
             esp.clearRequest();
         }
 
@@ -352,7 +349,7 @@ void MqttServiceImpl::runTask() {
         if (!connected) {
             LOG_W(ats::ErrorSource::Mqtt, 0x0005);
             // Credentials might be corrupt — invalidate to force re-register
-            auto& regSvc2 = reg::RegistrationServiceImpl::getInstance();
+            auto& regSvc2 = *input.Registration;
             if (regSvc2.isRegistered()) {
                 LOG_W(ats::ErrorSource::Mqtt, evt::MQTT_CREDS_CLEAR);
                 regSvc2.invalidate();
@@ -402,7 +399,7 @@ void MqttServiceImpl::runTask() {
                 sslClose();
                 mMqttConnected = false;
                 if (wifi->resetAndConnect()) {
-                    HttpUploadServiceImpl::uploadPendingFiles(esp);
+                    input.UploadPendingFiles(esp);
                     esp.clearRequest();
                 }
                 break;
@@ -500,7 +497,7 @@ bool MqttServiceImpl::publishSensorData(SensorDataModel* model) {
 #else
     // Production: FrameCodec + ChaCha20 encrypted protobuf
     // Use comm_key (from registration ECDH) if available, else fall back to device_key
-    auto& regSvc = reg::RegistrationServiceImpl::getInstance();
+    auto& regSvc = *input.Registration;
     const uint8_t* key = regSvc.getCommKey();
 
     // 1. Encode protobuf (~20-30 bytes)

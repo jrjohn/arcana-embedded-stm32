@@ -1,7 +1,7 @@
 #include "BleServiceImpl.hpp"
 #include "CommandBridge.hpp"
 #include "ChaCha20.hpp"
-#include "RegistrationServiceImpl.hpp"
+#include "RegistrationService.hpp"
 #include "Log.hpp"
 #include "EventCodes.hpp"
 #include <cstring>
@@ -186,7 +186,7 @@ static uint16_t blePbUint32(uint8_t* buf, uint8_t fieldNum, uint32_t val) {
 
 void BleServiceImpl::pushSensorEncrypted() {
     // Same key as MQTT: comm_key (ECDH-derived) or device_key (fallback)
-    auto& regSvc = reg::RegistrationServiceImpl::getInstance();
+    auto& regSvc = *input.Registration;
     const uint8_t* key = regSvc.getCommKey();
 
     // 1. Encode protobuf (~20-30 bytes) — identical to MQTT

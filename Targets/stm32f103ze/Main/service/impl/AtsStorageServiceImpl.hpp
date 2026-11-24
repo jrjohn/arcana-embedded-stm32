@@ -41,32 +41,26 @@ public:
     uint16_t queryByDate(uint32_t dateYYYYMMDD,
                          SensorDataModel* out, uint16_t maxCount) override;
 
-    /** Upload support: list pending .ats files and track upload status */
-    struct PendingFile {
-        char name[16];      // "YYYYMMDD.ats"
-        uint32_t size;      // file size in bytes
-        uint32_t date;      // YYYYMMDD as uint32
-    };
-    static const uint8_t MAX_PENDING = 8;
-
     /** Scan SD for YYYYMMDD.ats files not yet uploaded. Returns count. */
-    uint8_t listPendingUploads(PendingFile* out, uint8_t maxCount);
+    uint8_t listPendingUploads(PendingFile* out, uint8_t maxCount) override;
 
     /** Check if a date has been uploaded (search device.ats LIFECYCLE). */
     bool isDateUploaded(uint32_t dateYYYYMMDD);
 
     /** Mark date as uploaded in device.ats. */
-    void markUploaded(uint32_t dateYYYYMMDD);
+    void markUploaded(uint32_t dateYYYYMMDD) override;
 
     /** Shared 4KB read cache — for upload file streaming */
     static uint8_t* getReadCache() { return sReadCache; }
+    uint8_t* readCache() override { return sReadCache; }
+    FIL& sharedFil() override { return sSharedFil; }
 
     /** True when DB is open and recording (boot complete) */
-    bool isReady() const { return mDbReady; }
+    bool isReady() const override { return mDbReady; }
 
     /** Cooperative pause/resume — ATS task yields cleanly between writes */
-    void pauseRecording()  { mUploadPause = true; }
-    void resumeRecording() { mUploadPause = false; }
+    void pauseRecording() override  { mUploadPause = true; }
+    void resumeRecording() override { mUploadPause = false; }
 
     // KEY2 short press → upload request
     bool isUploadRequested() const { return mUploadRequested; }
@@ -124,11 +118,11 @@ private:
 public:
     // Timezone config — stored in device.ats CONFIG channel (ch1)
     bool loadTzConfig(int16_t& offsetMin, uint8_t& autoCheck);
-    bool saveTzConfig(int16_t offsetMin, uint8_t autoCheck);
+    bool saveTzConfig(int16_t offsetMin, uint8_t autoCheck) override;
 
     // Credentials — stored in device.ats CREDS channel (ch2), encrypted
-    bool loadCredentials(uint8_t* outBuf, uint16_t bufSize, uint16_t& outLen);
-    bool saveCredentials(const uint8_t* data, uint16_t len);
+    bool loadCredentials(uint8_t* outBuf, uint16_t bufSize, uint16_t& outLen) override;
+    bool saveCredentials(const uint8_t* data, uint16_t len) override;
 
 private:
 

@@ -1,6 +1,6 @@
 #include "stm32f1xx_hal.h"
 #include "AtsStorageServiceImpl.hpp"
-#include "IoServiceImpl.hpp"
+#include "IoService.hpp"
 #include "DeviceKey.hpp"
 #include "SystemClock.hpp"
 // MainView.hpp removed — ECG decoupled via EcgSampleCallback
@@ -11,7 +11,7 @@
 #include <cstring>
 #include <cstdio>
 #include "DisplayStatus.hpp"
-#include "SdBenchmarkServiceImpl.hpp"
+#include "SdBenchmarkService.hpp"
 #include "Log.hpp"
 #include "EventCodes.hpp"
 #include "SerialAppender.hpp"
@@ -446,8 +446,7 @@ void AtsStorageServiceImpl::storageTask(void* param) {
         LOG_I(ats::ErrorSource::Tsdb, evt::ATS_FORMAT_OK);
 
         // Re-publish SD capacity to ViewModel
-        static_cast<sdbench::SdBenchmarkServiceImpl&>(
-            sdbench::SdBenchmarkServiceImpl::getInstance()).refreshSdInfo();
+        self->input.SdBench->refreshSdInfo();
 
         vTaskDelay(pdMS_TO_TICKS(1000));
 
@@ -1042,7 +1041,7 @@ void AtsStorageServiceImpl::taskLoop() {
 
             // KEY1/KEY2 handled by IoServiceImpl (independent task)
             {
-                auto& ioSvc = io::IoServiceImpl::getInstance();
+                auto& ioSvc = *input.Io;
                 if (ioSvc.isFormatRequested()) {
                     ioSvc.clearFormatRequest();
                     LOG_W(ats::ErrorSource::Tsdb, evt::ATS_KEY1_FORMAT);

@@ -4,6 +4,7 @@
 #include <cstdint>
 
 namespace arcana {
+namespace atsstorage { class AtsStorageService; }
 namespace reg {
 
 /**
@@ -25,13 +26,22 @@ public:
         bool valid;
     };
 
+    struct Input {
+        atsstorage::AtsStorageService* Storage;  // credentials in device.ats
+    };
+    Input input;
+
     virtual ~RegistrationService() {}
     virtual bool isRegistered() const = 0;
     virtual const Credentials& credentials() const = 0;
     virtual bool doRegistration() = 0;  // HTTP POST to server
+    /** Invalidate cached credentials (force re-register on next attempt) */
+    virtual void invalidate() = 0;
+    /** comm_key (ECDH-derived); falls back to device_key if not registered */
+    virtual const uint8_t* getCommKey() const = 0;
 
 protected:
-    RegistrationService() {}
+    RegistrationService() : input() { input.Storage = 0; }
 };
 
 } // namespace reg

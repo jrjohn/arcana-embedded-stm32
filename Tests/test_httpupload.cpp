@@ -61,6 +61,19 @@ using arcana::SystemClock;
 using arcana::atsstorage::AtsStorageServiceImpl;
 using arcana::atsstorage::AtsStorageTestAccess;
 
+#include "IoServiceImpl.hpp"
+/* Collaborator wiring — production does this in AppContainer::wireServices(). */
+static const bool sWired = [] {
+    auto& st  = arcana::atsstorage::AtsStorageServiceImpl::getInstance();
+    auto& reg = arcana::reg::RegistrationServiceImpl::getInstance();
+    auto& io  = arcana::io::IoServiceImpl::getInstance();
+    reg.input.Storage = &st;
+    HttpUploadServiceImpl::input.Storage      = &st;
+    HttpUploadServiceImpl::input.Registration = &reg;
+    HttpUploadServiceImpl::input.Io           = &io;
+    return true;
+}();
+
 namespace {
 
 AtsStorageServiceImpl& storage() {

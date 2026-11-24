@@ -1,7 +1,7 @@
 #include "stm32f1xx_hal.h"
 #include "HttpUploadServiceImpl.hpp"
-#include "AtsStorageServiceImpl.hpp"
-#include "RegistrationServiceImpl.hpp"
+#include "AtsStorageService.hpp"
+#include "RegistrationService.hpp"
 #include "DeviceKey.hpp"
 #include "Credentials.hpp"
 #include "Log.hpp"
@@ -9,7 +9,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "DisplayStatus.hpp"
-#include "IoServiceImpl.hpp"
+#include "IoService.hpp"
 #include <cstdio>
 #include <cstring>
 
@@ -27,13 +27,14 @@ const uint16_t HttpUploadServiceImpl::PORT = UPLOAD_PORT_VALUE;
 
 UploadProgress g_uploadProgress = {0, 0, 0, 0};
 
+HttpUploadServiceImpl::Input HttpUploadServiceImpl::input = {0, 0, 0};
+
 // ---------------------------------------------------------------------------
 // Upload all pending files
 // ---------------------------------------------------------------------------
 
 uint8_t HttpUploadServiceImpl::uploadPendingFiles(Esp8266& esp) {
-    auto& storage = static_cast<atsstorage::AtsStorageServiceImpl&>(
-        atsstorage::AtsStorageServiceImpl::getInstance());
+    auto& storage = *input.Storage;
 
     // Get device ID (UID hex, first 8 chars)
     uint8_t uid[12];
@@ -62,8 +63,8 @@ uint8_t HttpUploadServiceImpl::uploadPendingFiles(Esp8266& esp) {
     vTaskDelay(pdMS_TO_TICKS(200));
 
     // List pending files (safe now — ATS task suspended)
-    atsstorage::AtsStorageServiceImpl::PendingFile pending[atsstorage::AtsStorageServiceImpl::MAX_PENDING];
-    uint8_t count = storage.listPendingUploads(pending, atsstorage::AtsStorageServiceImpl::MAX_PENDING);
+    atsstorage::AtsStorageService::PendingFile pending[atsstorage::AtsStorageService::MAX_PENDING];
+    uint8_t count = storage.listPendingUploads(pending, atsstorage::AtsStorageService::MAX_PENDING);
 
     LOG_I(ats::ErrorSource::Upload, evt::UPL_PENDING, (uint32_t)count);
 
@@ -129,7 +130,7 @@ bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
                                     const char* deviceId) {
     LOG_D(ats::ErrorSource::Upload, evt::UPL_FILE_OPEN);
     // Shared FIL — clear before use
-    FIL& fp = atsstorage::AtsStorageServiceImpl::sSharedFil;
+    FIL& fp = input.Storage->sharedFil();
     memset(&fp, 0, sizeof(FIL));
     FRESULT fr = f_open(&fp, filename, FA_READ);
     if (fr != FR_OK) {
@@ -223,7 +224,7 @@ bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
 
         // Send HTTP header (raw bytes, transparent mode)
         {
-            auto& regSvc = reg::RegistrationServiceImpl::getInstance();
+            auto& regSvc = *input.Registration;
             const char* token = regSvc.isRegistered()
                                 ? regSvc.credentials().uploadToken : "";
             char header[448];
@@ -266,8 +267,8 @@ bool HttpUploadServiceImpl::uploadFile(Esp8266& esp, const char* filename,
         if (ok) break;  // success!
 
         // KEY2 cancel — stop all retries
-        if (io::IoServiceImpl::getInstance().isCancelRequested()) {
-            io::IoServiceImpl::getInstance().disarmCancel();
+        if (input.Io->isCancelRequested()) {
+            input.Io->disarmCancel();
             break;
         }
 
@@ -370,7 +371,7 @@ uint32_t HttpUploadServiceImpl::queryServerOffset(Esp8266& esp, const char* file
 bool HttpUploadServiceImpl::sendHttpHeader(Esp8266& esp, const char* filename,
                                         const char* deviceId, uint32_t bodySize,
                                         uint32_t rangeStart, uint32_t totalSize) {
-    auto& regSvc = reg::RegistrationServiceImpl::getInstance();
+    auto& regSvc = *input.Registration;
     const char* token = regSvc.isRegistered()
                         ? regSvc.credentials().uploadToken : "";
     char header[448];
@@ -410,11 +411,11 @@ bool HttpUploadServiceImpl::sendHttpHeader(Esp8266& esp, const char* filename,
 // ---------------------------------------------------------------------------
 
 bool HttpUploadServiceImpl::streamFileBody(Esp8266& esp, FIL* fp, uint32_t fileSize) {
-    uint8_t* chunkBuf = atsstorage::AtsStorageServiceImpl::getReadCache();
+    uint8_t* chunkBuf = input.Storage->readCache();
     static const uint16_t TX_CHUNK = 2048;  // DMA reads stable at 2KB
 
     LOG_D(ats::ErrorSource::Upload, evt::UPL_STREAM_START, (uint32_t)fileSize);
-    io::IoServiceImpl::getInstance().armCancel();
+    input.Io->armCancel();
     uint32_t sent = 0;
     while (sent < fileSize) {
         uint32_t remaining = fileSize - sent;
@@ -461,7 +462,7 @@ bool HttpUploadServiceImpl::streamFileBody(Esp8266& esp, FIL* fp, uint32_t fileS
                            display::colors::WHITE, 0x001F);  // blue bg
 
             // Cancel check — don't clear flag here, let retry loop see it
-            if (io::IoServiceImpl::getInstance().isCancelRequested()) {
+            if (input.Io->isCancelRequested()) {
                 LOG_I(ats::ErrorSource::Upload, evt::UPL_CANCELLED);
                 return false;
             }

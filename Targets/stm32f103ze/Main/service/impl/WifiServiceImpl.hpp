@@ -21,7 +21,7 @@ public:
     Esp8266& getEsp() override;
 
     /** Query IP geolocation for timezone offset (minutes). Returns true on success. */
-    bool detectTimezone(int16_t& offsetMinutes);
+    bool detectTimezone(int16_t& offsetMinutes) override;
 
 private:
     WifiServiceImpl();

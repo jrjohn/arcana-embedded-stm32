@@ -1,5 +1,5 @@
 #include "RegistrationServiceImpl.hpp"
-#include "AtsStorageServiceImpl.hpp"
+#include "AtsStorageService.hpp"
 #include "DeviceKey.hpp"
 #include "ChaCha20.hpp"
 #include "CompanyKey.hpp"
@@ -121,8 +121,7 @@ static bool unpackCreds(const uint8_t* plain, RegistrationService::Credentials& 
 // --- Try device.ats ch2 ---
 
 static bool loadFromDeviceAts(uint8_t* deviceKey, RegistrationService::Credentials& creds) {
-    auto& storage = static_cast<atsstorage::AtsStorageServiceImpl&>(
-        atsstorage::AtsStorageServiceImpl::getInstance());
+    auto& storage = *RegistrationServiceImpl::getInstance().input.Storage;
     if (!storage.isReady()) return false;
 
     uint8_t data[CRED_PLAIN_SIZE];
@@ -135,8 +134,7 @@ static bool loadFromDeviceAts(uint8_t* deviceKey, RegistrationService::Credentia
 }
 
 static bool saveToDeviceAts(uint8_t* deviceKey, const RegistrationService::Credentials& creds) {
-    auto& storage = static_cast<atsstorage::AtsStorageServiceImpl&>(
-        atsstorage::AtsStorageServiceImpl::getInstance());
+    auto& storage = *RegistrationServiceImpl::getInstance().input.Storage;
     if (!storage.isReady()) return false;
 
     // Block encryption protects the data — store plaintext credentials
@@ -204,8 +202,7 @@ static bool saveToFile(uint8_t* deviceKey, const RegistrationService::Credential
 // --- Public API ---
 
 bool RegistrationServiceImpl::loadCredentials() {
-    auto& storage = static_cast<atsstorage::AtsStorageServiceImpl&>(
-        atsstorage::AtsStorageServiceImpl::getInstance());
+    auto& storage = *input.Storage;
 
     // Wait for SD card + device.ats to be ready (ATS task races with MQTT task)
     for (int i = 0; i < 30; i++) {

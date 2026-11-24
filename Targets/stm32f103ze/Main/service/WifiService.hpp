@@ -27,6 +27,7 @@ public:
 
     // Access ESP8266 driver (shared with MqttService)
     virtual Esp8266& getEsp() = 0;
+    virtual bool detectTimezone(int16_t& offsetMinutes) = 0;
 
 protected:
     WifiService() {}
