@@ -43,6 +43,15 @@ pipeline {
             }
         }
 
+        stage("RAM/Flash Budget") {
+            // Blocking. Static RAM (data+bss) and flash (text+data) of arcana-f051 / arcana-f103
+            // against tools/ram-budget.conf, measured in the firmware image just built. The
+            // linker only fails at 100% of RAM; on the 8 KB F051 that is too late (AGENTS.md R9).
+            steps {
+                sh "docker run --rm stm32-app-build:${VERSION} bash tools/ram-budget.sh build"
+            }
+        }
+
         stage("Unit Tests + Coverage") {
             steps {
                 sh "docker build -f Dockerfile.test -t stm32-test:ci . 2>&1"
@@ -134,15 +143,25 @@ pipeline {
                     # (arcana-ios PR-14/PR-15, 2026-09-30: "destination ...:/src must be a directory").
                     AQ="arcana-arch-qube-stm32-$(printf '%s' "${BRANCH_NAME}-${BUILD_NUMBER}" | tr -c 'A-Za-z0-9_.-' '-')"
                     docker rm -f "$AQ" 2>/dev/null || true
+                    # Same pinned image as tools/arch-check.sh: tools/arch-qube.version, tried on
+                    # ghcr.io then arcana.boo. NO :latest fallback — an unpinned image changes the
+                    # verdict without a commit in this repo (it broke arcana-embedded-esp32's CI).
+                    AQ_IMG="$(bash tools/arch-qube-image.sh)" || { echo "arch-qube image not available — NOT a pass"; exit 1; }
+                    echo "arch-qube image: $AQ_IMG"
                     docker create --name "$AQ" --network devops_default \
                         -v /src -v /output \
-                        arcana.boo/arcana/arch-qube:latest \
+                        "$AQ_IMG" \
                         scan /src --framework stm32 --no-ai --ci \
                         --format json,markdown -o /output --threshold 90 || exit 1
-                    tar --exclude=./.git --exclude=./arch-qube-reports -C . -cf - . \
+                    tar --exclude=./.git --exclude=./build --exclude=./Tests/build \
+                        --exclude=./arch-qube-reports --exclude=./.scannerwork -C . -cf - . \
                         | docker cp - "$AQ":/src || exit 1
+                    # `sh` runs with -e: without set +e a failing scan would exit here, before
+                    # the report is copied out. --ci prints nothing on failure; read the report.
+                    set +e
                     docker start -a "$AQ"
                     AQ_RC=$?
+                    set -e
                     mkdir -p arch-qube-reports
                     docker cp "$AQ":/output/. arch-qube-reports/ 2>/dev/null || true
                     docker rm -f "$AQ" 2>/dev/null || true

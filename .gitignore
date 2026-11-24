@@ -34,3 +34,6 @@ uploads/
 
 # CI scanner scratch output (do not commit)
 .scannerwork/
+
+# arch-qube scan output (tools/arch-check.sh)
+arch-qube-reports/

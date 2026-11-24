@@ -13,8 +13,10 @@ RUN cmake -S Tests -B Tests/build -G Ninja -DCMAKE_BUILD_TYPE=Debug
 
 RUN cmake --build Tests/build -- -j$(nproc)
 
-# Run tests (|| true: coverage still generated even if some tests fail)
-RUN cd Tests/build && ctest --output-on-failure || true
+# Run tests. The exit code is recorded, not swallowed: coverage is still generated below,
+# then the last RUN fails the image build (and the Jenkins stage) if any test failed.
+# (Previously `|| true` — a failing host test produced a green build.)
+RUN cd Tests/build && { ctest --output-on-failure; echo $? > /workspace/ctest.rc; }
 
 # Generate lcov → filter → convert to Cobertura XML
 RUN lcov --capture \
@@ -33,5 +35,8 @@ RUN lcov --capture \
     # sonar-scanner mounts project at /usr/src, not /workspace
     sed -i 's|<source>/workspace</source>|<source>.</source>|g' /workspace/coverage.xml && \
     echo "coverage.xml generated:" && wc -l /workspace/coverage.xml
+
+# Gate: fail the build when ctest failed (after coverage, so the report still exists).
+RUN rc="$(cat /workspace/ctest.rc)"; if [ "$rc" != 0 ]; then echo "host tests FAILED (ctest rc=$rc)"; exit 1; fi; echo "host tests: PASS"
 
 CMD ["echo", "Tests complete. Artifacts: /workspace/coverage.info /workspace/coverage.xml"]
