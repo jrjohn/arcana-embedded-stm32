@@ -34,7 +34,7 @@ for f in "$IFACE" "$IMPL_H" "$IMPL_C" "$TEST"; do
 done
 need() {
     grep -q -- "$2" "$1" || {
-        echo "new-service: anchor '$2' missing in ${1#"$ROOT"/} — restore it (AGENTS.md §3); nothing was changed" >&2
+        echo "new-service: anchor '$2' missing in ${1#"$ROOT"/} — restore it (AGENTS.md §2); nothing was changed" >&2
         exit 1
     }
 }

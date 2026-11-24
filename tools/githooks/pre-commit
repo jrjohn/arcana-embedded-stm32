@@ -13,8 +13,8 @@ while IFS= read -r f; do
     if [[ "$f" =~ ^Targets/[^/]+/Main/[^/]+$ ]] && [[ ! "$f" =~ /Main/(App\.cpp|AppContainer\.(c|h)pp)$ ]]; then
         echo "pre-commit: $f — new source directly in Main/. Put it in a layer dir ($LAYERS; AGENTS.md §2) or use tools/new-service.sh" >&2
         fail=1
-    elif [[ "$f" =~ ^Targets/[^/]+/Main/([^/]+)/ ]] && [[ ! "${BASH_REMATCH[1]}" =~ ^($LAYERS)$ ]]; then
-        echo "pre-commit: $f — Main/${BASH_REMATCH[1]}/ is not a layer ($LAYERS; AGENTS.md §2)" >&2
+    elif [[ "$f" =~ ^Targets/[^/]+/Main/([^/]+)/ ]] && dir="${BASH_REMATCH[1]}" && [[ ! "$dir" =~ ^($LAYERS)$ ]]; then
+        echo "pre-commit: $f — Main/$dir/ is not a layer ($LAYERS; AGENTS.md §2)" >&2
         fail=1
     elif [[ "$f" =~ ^Targets/[^/]+/Main/.+\.c$ ]]; then
         echo "pre-commit: $f — new .c under Main/. Use C++ (AGENTS.md R7)" >&2
