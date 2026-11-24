@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.3](https://github.com/jrjohn/arcana-embedded-stm32/compare/v1.0.2...v1.0.3) (2026-11-24)
+
+
+### Bug Fixes
+
+* **arch:** service 改依賴介面,只有 AppContainer 引用 *Impl ([#16](https://github.com/jrjohn/arcana-embedded-stm32/issues/16)) ([69be9ce](https://github.com/jrjohn/arcana-embedded-stm32/commit/69be9ce494e05bcfe605129c95a2e58dbde95c2c))
+
 ## [1.0.2](https://github.com/jrjohn/arcana-embedded-stm32/compare/v1.0.1...v1.0.2) (2026-10-13)
 
 
