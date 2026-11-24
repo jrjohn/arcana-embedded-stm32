@@ -14,6 +14,7 @@
 #include "BleService.hpp"
 #include "OtaService.hpp"
 #include "ServiceTypes.hpp"
+// new-service:interfaces (tools/new-service.sh inserts interface includes above this line)
 
 // Forward declarations for future services
 namespace arcana {
@@ -54,6 +55,7 @@ private:
     mqtt::MqttService*               mMqtt;
     ble::BleService*                 mBle;
     OtaService*                      mOta;
+    // new-service:members (tools/new-service.sh inserts interface pointers above this line)
 };
 
 } // namespace arcana

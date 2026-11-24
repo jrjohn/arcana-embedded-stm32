@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Fast layer check on what this commit ADDS (no docker). Full check: tools/arch-check.sh + CI.
+# Only added files / added lines are judged, so legacy files never block an unrelated commit.
+# Regex, not `case` globs: in a case pattern `*` also matches `/`.
+set -euo pipefail
+
+fail=0
+LAYERS='service|command|core|driver|transport|view'
+
+while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    [[ "$f" =~ \.(c|cpp|h|hpp)$ ]] || continue
+    if [[ "$f" =~ ^Targets/[^/]+/Main/[^/]+$ ]] && [[ ! "$f" =~ /Main/(App\.cpp|AppContainer\.(c|h)pp)$ ]]; then
+        echo "pre-commit: $f — new source directly in Main/. Put it in a layer dir ($LAYERS; AGENTS.md §2) or use tools/new-service.sh" >&2
+        fail=1
+    elif [[ "$f" =~ ^Targets/[^/]+/Main/([^/]+)/ ]] && dir="${BASH_REMATCH[1]}" && [[ ! "$dir" =~ ^($LAYERS)$ ]]; then
+        echo "pre-commit: $f — Main/$dir/ is not a layer ($LAYERS; AGENTS.md §2)" >&2
+        fail=1
+    elif [[ "$f" =~ ^Targets/[^/]+/Main/.+\.c$ ]]; then
+        echo "pre-commit: $f — new .c under Main/. Use C++ (AGENTS.md R7)" >&2
+        fail=1
+    elif [[ "$f" =~ ^Shared/(Inc|Src)/[^/]+$ ]]; then
+        echo "pre-commit: $f — new source directly in Shared/Inc|Src. Put it under core/, command/, db/ or view/ (AGENTS.md §2)" >&2
+        fail=1
+    fi
+done <<< "$(git diff --cached --name-only --diff-filter=AR)"
+
+# R2: only AppContainer.cpp may include *Impl.hpp (an impl may include its own; tests may).
+while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    [[ "$f" =~ \.(c|cpp|h|hpp)$ ]] || continue
+    [[ "$f" =~ (^|/)AppContainer\.cpp$ || "$f" =~ Impl\.(c|h)pp$ || "$f" =~ ^Tests/ ]] && continue
+    if git diff --cached -U0 -- "$f" | grep -E '^\+[^+]' | grep -qE '#include[[:space:]]+"[^"]*Impl\.hpp"'; then
+        echo "pre-commit: $f adds an #include of an *Impl.hpp — only AppContainer.cpp may (AGENTS.md R2)" >&2
+        fail=1
+    fi
+done <<< "$(git diff --cached --name-only --diff-filter=ACMR)"
+
+if [ "$fail" -ne 0 ]; then
+    echo "pre-commit: blocked. Full check: tools/arch-check.sh" >&2
+    exit 1
+fi

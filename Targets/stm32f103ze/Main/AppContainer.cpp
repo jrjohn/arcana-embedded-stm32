@@ -22,6 +22,7 @@
 #include "EspFlasher.hpp"
 #include "Log.hpp"
 #include "EventCodes.hpp"
+// new-service:impls (tools/new-service.sh inserts *Impl includes above this line)
 
 namespace arcana {
 
@@ -121,6 +122,7 @@ void AppContainer::wireServices() {
 #ifdef ARCANA_LIGHT_SENSOR
     mBle->input.LightData  = mLight->output.DataEvents;
 #endif
+    // new-service:wire (tools/new-service.sh inserts getInstance() + Input wiring above this line)
 }
 
 void AppContainer::wireViews() {
@@ -165,6 +167,7 @@ void AppContainer::initHAL() {
     g.Pin=GPIO_PIN_13;HAL_GPIO_Init(GPIOG,&g);HAL_GPIO_WritePin(GPIOG,GPIO_PIN_13,GPIO_PIN_SET);
     g.Pin=GPIO_PIN_14;HAL_GPIO_Init(GPIOG,&g);HAL_GPIO_WritePin(GPIOG,GPIO_PIN_14,GPIO_PIN_SET);
 #endif
+    // new-service:initHAL (tools/new-service.sh inserts initHAL() calls above this line)
 }
 
 void AppContainer::initServices() {
@@ -179,6 +182,8 @@ void AppContainer::initServices() {
     mWifi->init();
     mMqtt->init();
     mBle->init();
+
+    // new-service:init (tools/new-service.sh inserts init() calls above this line)
 
     // View layer init (mutex, queues)
     sMainView.init();
@@ -204,6 +209,7 @@ void AppContainer::startServices() {
 
     // IO key service (independent KEY1/KEY2 polling task)
     io::IoServiceImpl::getInstance().start();
+    // new-service:start (tools/new-service.sh inserts start() calls above this line)
 
     // View layer start (render task + ViewModel subscriptions)
     sMainView.start();
