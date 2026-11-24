@@ -13,6 +13,8 @@
 #include "BleServiceImpl.hpp"
 #include "OtaServiceImpl.hpp"
 #include "IoServiceImpl.hpp"
+#include "RegistrationServiceImpl.hpp"
+#include "HttpUploadServiceImpl.hpp"
 #include "MainViewModel.hpp"
 #include "MainView.hpp"
 #include "IDisplay.hpp"
@@ -92,15 +94,30 @@ void AppContainer::wireServices() {
     // Wire SdStorage <- Sensor
     mSdStorage->input.SensorData = mSensor->output.DataEvents;
 
+    // Cross-service collaborators: each service depends only on interfaces;
+    // concrete instances are bound here (the only place allowed to see *Impl).
+    io::IoService*            ioSvc  = &io::IoServiceImpl::getInstance();
+    reg::RegistrationService* regSvc = &reg::RegistrationServiceImpl::getInstance();
+    mSdStorage->input.Io      = ioSvc;
+    mSdStorage->input.SdBench = mSdBench;
+    regSvc->input.Storage     = mSdStorage;
+    HttpUploadServiceImpl::input.Storage      = mSdStorage;
+    HttpUploadServiceImpl::input.Registration = regSvc;
+    HttpUploadServiceImpl::input.Io           = ioSvc;
+
     // Wire MQTT <- WiFi + Sensor + Light
     mMqtt->input.Wifi       = mWifi;
+    mMqtt->input.Registration       = regSvc;
+    mMqtt->input.Storage            = mSdStorage;
+    mMqtt->input.UploadPendingFiles = &HttpUploadServiceImpl::uploadPendingFiles;
     mMqtt->input.SensorData = mSensor->output.DataEvents;
 #ifdef ARCANA_LIGHT_SENSOR
     mMqtt->input.LightData  = mLight->output.DataEvents;
 #endif
 
     // Wire BLE <- Sensor + Light (JSON streaming)
-    mBle->input.SensorData = mSensor->output.DataEvents;
+    mBle->input.SensorData   = mSensor->output.DataEvents;
+    mBle->input.Registration = regSvc;
 #ifdef ARCANA_LIGHT_SENSOR
     mBle->input.LightData  = mLight->output.DataEvents;
 #endif

@@ -103,6 +103,24 @@ struct RegistrationServiceTestAccess {
 }}
 using arcana::reg::RegistrationServiceTestAccess;
 
+#include "IoServiceImpl.hpp"
+#include "HttpUploadServiceImpl.hpp"
+/* Collaborator wiring — production does this in AppContainer::wireServices(). */
+static const bool sWired = [] {
+    auto& m   = static_cast<MqttServiceImpl&>(MqttServiceImpl::getInstance());
+    auto& st  = AtsStorageServiceImpl::getInstance();
+    auto& reg = arcana::reg::RegistrationServiceImpl::getInstance();
+    auto& io  = arcana::io::IoServiceImpl::getInstance();
+    reg.input.Storage = &st;
+    m.input.Registration       = &reg;
+    m.input.Storage            = &st;
+    m.input.UploadPendingFiles = &arcana::HttpUploadServiceImpl::uploadPendingFiles;
+    arcana::HttpUploadServiceImpl::input.Storage      = &st;
+    arcana::HttpUploadServiceImpl::input.Registration = &reg;
+    arcana::HttpUploadServiceImpl::input.Io           = &io;
+    return true;
+}();
+
 namespace {
 
 MqttServiceImpl& mqtt() {

@@ -5,6 +5,7 @@
 #include "ServiceTypes.hpp"
 
 namespace arcana {
+namespace reg { class RegistrationService; }
 namespace ble {
 
 /**
@@ -16,6 +17,7 @@ public:
     struct Input {
         Observable<SensorDataModel>* SensorData;
         Observable<LightDataModel>*  LightData;
+        reg::RegistrationService*    Registration;  // comm key
     };
 
     Input input;
@@ -30,6 +32,7 @@ protected:
     BleService() : input() {
         input.SensorData = 0;
         input.LightData = 0;
+        input.Registration = 0;
     }
 };
 

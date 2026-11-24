@@ -5,7 +5,10 @@
 #include "ServiceTypes.hpp"
 
 namespace arcana {
+class Esp8266;
 namespace wifi { class WifiService; }
+namespace reg { class RegistrationService; }
+namespace atsstorage { class AtsStorageService; }
 
 namespace mqtt {
 
@@ -15,6 +18,9 @@ public:
         Observable<SensorDataModel>* SensorData;
         Observable<LightDataModel>*  LightData;
         wifi::WifiService*           Wifi;
+        reg::RegistrationService*    Registration;
+        atsstorage::AtsStorageService* Storage;       // timezone config
+        uint8_t (*UploadPendingFiles)(Esp8266& esp);  // HTTPS upload (stateless)
     };
 
     struct Output {
@@ -36,6 +42,9 @@ protected:
         input.SensorData = 0;
         input.LightData = 0;
         input.Wifi = 0;
+        input.Registration = 0;
+        input.Storage = 0;
+        input.UploadPendingFiles = 0;
         output.CommandEvents = 0;
         output.ConnectionStatus = 0;
     }

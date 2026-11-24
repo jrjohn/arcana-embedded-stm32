@@ -1,11 +1,14 @@
 #pragma once
 
 #include "Esp8266.hpp"
-#include "AtsStorageServiceImpl.hpp"
 #include "ff.h"
 #include <cstdint>
 
 namespace arcana {
+
+namespace atsstorage { class AtsStorageService; }
+namespace reg { class RegistrationService; }
+namespace io { class IoService; }
 
 /** Global upload progress — read by LCD, written by upload task */
 struct UploadProgress {
@@ -29,6 +32,14 @@ extern UploadProgress g_uploadProgress;
  */
 class HttpUploadServiceImpl {
 public:
+    /** Collaborators (interfaces) — wired once by AppContainer before start. */
+    struct Input {
+        atsstorage::AtsStorageService* Storage;
+        reg::RegistrationService*      Registration;
+        io::IoService*                 Io;
+    };
+    static Input input;
+
     /**
      * Upload all pending .ats files + device.ats.
      * @param esp   ESP8266 instance (MQTT must be disconnected)

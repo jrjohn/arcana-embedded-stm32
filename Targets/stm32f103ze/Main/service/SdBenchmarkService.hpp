@@ -20,6 +20,8 @@ public:
     virtual ServiceStatus init() = 0;
     virtual ServiceStatus start() = 0;
     virtual void stop() = 0;
+    /** Re-publish SD capacity (e.g. after format) */
+    virtual void refreshSdInfo() = 0;
 
 protected:
     SdBenchmarkService() : output() {

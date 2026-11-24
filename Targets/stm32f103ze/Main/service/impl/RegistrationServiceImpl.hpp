@@ -31,13 +31,13 @@ public:
     bool saveCredentials();
 
     /** Invalidate cached credentials (force re-register on next attempt) */
-    void invalidate() { mCreds.valid = false; mForceRegister = true; }
+    void invalidate() override { mCreds.valid = false; mForceRegister = true; }
 
     /** Get 8-char device ID (hex of hardware UID) */
     const char* deviceId() const { return mDeviceId; }
 
     /** Get comm_key (ECDH-derived). Falls back to device_key if not registered. */
-    const uint8_t* getCommKey() const {
+    const uint8_t* getCommKey() const override {
         return mCreds.hasCommKey ? mCreds.commKey : mDeviceKey;
     }
 

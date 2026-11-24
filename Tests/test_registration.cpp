@@ -61,6 +61,14 @@ const uint8_t* test_storage_stored();
 uint16_t test_storage_stored_len();
 }}
 
+#include "AtsStorageServiceImpl.hpp"
+/* Collaborator wiring — production does this in AppContainer::wireServices(). */
+static const bool sWired = [] {
+    arcana::reg::RegistrationServiceImpl::getInstance().input.Storage =
+        &arcana::atsstorage::AtsStorageServiceImpl::getInstance();
+    return true;
+}();
+
 namespace {
 
 void resetAll(RegistrationServiceImpl& reg) {

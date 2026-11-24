@@ -81,6 +81,16 @@ using arcana::atsstorage::AtsStorageTestAccess;
 using arcana::SensorDataModel;
 using arcana::SystemClock;
 
+#include "IoServiceImpl.hpp"
+#include "SdBenchmarkServiceImpl.hpp"
+/* Collaborator wiring — production does this in AppContainer::wireServices(). */
+static const bool sWired = [] {
+    auto& s = arcana::atsstorage::AtsStorageServiceImpl::getInstance();
+    s.input.Io      = &arcana::io::IoServiceImpl::getInstance();
+    s.input.SdBench = &arcana::sdbench::SdBenchmarkServiceImpl::getInstance();
+    return true;
+}();
+
 namespace {
 
 AtsStorageServiceImpl& storage() {

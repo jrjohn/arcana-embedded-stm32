@@ -79,6 +79,13 @@ using arcana::LightDataModel;
 using arcana::Observable;
 using arcana::ServiceStatus;
 
+/* Collaborator wiring — production does this in AppContainer::wireServices(). */
+static const bool sWired = [] {
+    arcana::ble::BleServiceImpl::getInstance().input.Registration =
+        &arcana::reg::RegistrationServiceImpl::getInstance();
+    return true;
+}();
+
 namespace {
 
 BleServiceImpl& ble() {
