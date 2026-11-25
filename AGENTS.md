@@ -114,6 +114,17 @@ PASS = score ≥ threshold (90) **and** zero CRITICAL violations. Reading the re
 On a false positive: open an issue on arcana-arch-qube with the report JSON and the file.
 NEVER lower `--threshold`, add exclusions, or move code into a vendor directory to pass.
 
+### What enforces the check locally (there is no CI server)
+
+| Trigger | Mechanism | Blocks when |
+|---|---|---|
+| Claude Code finishes a turn | `.claude/settings.json` Stop hook → `tools/claude-stop-arch-check.sh` | source under `Shared/`, `Targets/`, `Tests/`, `test/` changed and `tools/arch-check.sh` fails (gives up after 3 blocks, saying the work is NOT done) |
+| `git push` | `tools/githooks/pre-push` | pushed commits touch `Shared/`, `Targets/`, `Tests/`, `test/` and the check fails or cannot run |
+| `git commit` | `tools/githooks/pre-commit` | fast layering checks (no Docker) |
+
+Claude Code asks once whether to trust this project's settings: answer yes, or the Stop hook never runs.
+Git hooks run only after `tools/install-hooks.sh`.
+
 ## 6. Session checkpoints (Claude Code on John's machine)
 
 Merged from the former `CLAUDE.md`; applies to every agent that keeps notes across sessions.
