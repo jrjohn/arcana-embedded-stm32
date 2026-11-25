@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/jrjohn/arcana-embedded-stm32/compare/v1.1.0...v1.2.0) (2026-11-25)
+
+
+### Features
+
+* enforce arch-check locally (Claude Code Stop hook + pre-push) ([#22](https://github.com/jrjohn/arcana-embedded-stm32/issues/22)) ([15028fe](https://github.com/jrjohn/arcana-embedded-stm32/commit/15028fe81adbcd111df2f95423dda876d1cdb63e))
+
 ## [1.1.0](https://github.com/jrjohn/arcana-embedded-stm32/compare/v1.0.3...v1.1.0) (2026-11-24)
 
 
