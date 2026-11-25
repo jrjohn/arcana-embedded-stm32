@@ -90,7 +90,7 @@ also needs a run on hardware, and your summary must say whether it had one.
 arch-qube (https://github.com/jrjohn/arcana-arch-qube; usage skill:
 https://github.com/jrjohn/arcana-skills/tree/main/arch-qube-skill) scans the source for the
 layer rules in §2–§3 with the `stm32` profile and scores them. The version is pinned in
-`tools/arch-qube.version` (0.5.6). `tools/arch-qube-image.sh` tries
+`tools/arch-qube.version` (0.5.7). `tools/arch-qube-image.sh` tries
 `ghcr.io/jrjohn/arch-qube:<version>`, then `arcana.boo/arcana/arch-qube:<version>`; if
 neither is available it exits 2 — **NOT a pass**. There is no fallback to `:latest`: that
 fallback silently changed arcana-embedded-esp32's CI verdict. The Jenkinsfile uses the same script.
