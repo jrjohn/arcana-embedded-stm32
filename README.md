@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Architecture%20Rating-⭐⭐⭐⭐%208.3%2F10-gold?style=for-the-badge" alt="Architecture Rating">
-  <img src="https://img.shields.io/badge/Architecture-MVVM_Embedded-gold?style=for-the-badge" alt="Architecture">
-  <img src="https://img.shields.io/badge/MCU-STM32F051_/_F103-03234B?style=for-the-badge&logo=stmicroelectronics" alt="STM32">
-  <img src="https://img.shields.io/badge/RTOS-FreeRTOS-00A86B?style=for-the-badge" alt="FreeRTOS">
-  <img src="https://img.shields.io/badge/Language-C++20-00599C?style=for-the-badge&logo=cplusplus" alt="C++">
-  <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License">
-  <img src="https://img.shields.io/badge/Coverage-80.0%25-brightgreen?style=for-the-badge" alt="Coverage">
-  <img src="https://img.shields.io/badge/Tests-42_passing-blue?style=for-the-badge&logo=googletest" alt="Tests">
+  <img src=".github/badges/architecture-rating-8-3-10-gold-1288e74a.svg" alt="Architecture Rating">
+  <img src=".github/badges/architecture-mvvm-embedded-gold-8dc9dd1c.svg" alt="Architecture">
+  <img src=".github/badges/f103-03234b-f76163c7.svg" alt="STM32">
+  <img src=".github/badges/rtos-freertos-00a86b-a0b2fe1f.svg" alt="FreeRTOS">
+  <img src=".github/badges/language-c-20-00599c-78428611.svg" alt="C++">
+  <img src=".github/badges/license-mit-green-544c7119.svg" alt="License">
+  <img src=".github/badges/coverage-80-0-brightgreen-f96120d1.svg" alt="Coverage">
+  <img src=".github/badges/tests-42-passing-blue-700269d1.svg" alt="Tests">
 </p>
 
 <h1 align="center">Arcana Embedded STM32</h1>
